@@ -8,7 +8,9 @@ use App\Exceptions\JobAnalysisProviderException;
 use App\Models\JobAnalysis;
 use App\Models\JobAnalysisFinding;
 use App\Models\JobAnalysisFindingEvidence;
+use App\Models\JobMatch;
 use App\Models\JobPosting;
+use App\Support\CurrentCareerProfile;
 use App\Support\JobAnalysis\GenerateJobAnalysis;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
@@ -86,6 +88,25 @@ class JobAnalysisController extends Controller
             'overall_seniority' => $analysis->overall_seniority?->value,
             'seniority_rationale' => $analysis->seniority_rationale,
             'categories' => $this->groupFindingsByCategory($analysis->findings),
+            'matches' => $analysis->jobMatches()
+                ->where('career_profile_id', CurrentCareerProfile::resolve()->id)
+                ->withCount('findings')
+                ->latest('generated_at')
+                ->get()
+                ->map($this->transformMatchSummary(...))
+                ->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function transformMatchSummary(JobMatch $match): array
+    {
+        return [
+            'id' => $match->id,
+            'generated_at' => $match->generated_at->toDateTimeString(),
+            'findings_count' => $match->findings_count,
         ];
     }
 

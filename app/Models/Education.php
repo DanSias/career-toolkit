@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -43,5 +44,17 @@ class Education extends Model
     public function careerProfile(): BelongsTo
     {
         return $this->belongsTo(CareerProfile::class);
+    }
+
+    /**
+     * Every JobMatch run that has cited this record as candidate
+     * support. See docs/domain-model.md "JobMatch" — this is the FK end
+     * that is deliberately restricted, not cascading, on delete.
+     *
+     * @return HasMany<EducationMatch, $this>
+     */
+    public function educationMatches(): HasMany
+    {
+        return $this->hasMany(EducationMatch::class);
     }
 }

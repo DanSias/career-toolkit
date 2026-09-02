@@ -93,6 +93,17 @@ class CareerProfile extends Model implements HasCareerProfileOwnership
         return $this->hasMany(JobPosting::class);
     }
 
+    /**
+     * Zero or more JobMatch runs comparing this profile's canonical
+     * data against a JobAnalysis. See docs/domain-model.md "JobMatch".
+     *
+     * @return HasMany<JobMatch, $this>
+     */
+    public function jobMatches(): HasMany
+    {
+        return $this->hasMany(JobMatch::class);
+    }
+
     public function ownerCareerProfileId(): ?int
     {
         return $this->id;

@@ -125,6 +125,18 @@ class CareerFact extends Model
     }
 
     /**
+     * Every JobMatch run that has cited this fact as candidate support.
+     * See docs/domain-model.md "JobMatch" — this is the FK end that is
+     * deliberately restricted, not cascading, on delete.
+     *
+     * @return HasMany<CareerFactMatch, $this>
+     */
+    public function careerFactMatches(): HasMany
+    {
+        return $this->hasMany(CareerFactMatch::class);
+    }
+
+    /**
      * Re-point this fact's attribution back to the CareerProfile that owns
      * it. Used when the model it was attributed to (Employer, Role, or
      * Project) is being deleted, so the fact itself is never lost — see

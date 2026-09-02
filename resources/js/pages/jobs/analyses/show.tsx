@@ -1,10 +1,57 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import AppShell from '@/layouts/app-shell';
 import { show as jobsShow } from '@/routes/jobs';
+import {
+    show as matchesShow,
+    store as matchesStore,
+} from '@/routes/jobs/analyses/matches';
 import type {
     JobAnalysisFinding,
     JobAnalysisShowProps,
 } from '@/types/job-analysis';
+
+type PageErrors = { errors?: { match_generation?: string } };
+
+function GenerateMatchAction({
+    jobId,
+    analysisId,
+}: {
+    jobId: number;
+    analysisId: number;
+}) {
+    const form = useForm({});
+    const { errors } = usePage<PageErrors>().props;
+
+    return (
+        <div>
+            <button
+                type="button"
+                disabled={form.processing}
+                onClick={() =>
+                    form.post(
+                        matchesStore.url({
+                            jobPosting: jobId,
+                            jobAnalysis: analysisId,
+                        }),
+                    )
+                }
+                className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+            >
+                {form.processing
+                    ? 'Matching…'
+                    : 'Match Against My Profile'}
+            </button>
+            {errors?.match_generation && (
+                <p
+                    role="alert"
+                    className="mt-2 text-sm text-red-600 dark:text-red-400"
+                >
+                    {errors.match_generation}
+                </p>
+            )}
+        </div>
+    );
+}
 
 function formatLabel(value: string | null): string | null {
     if (!value) {
@@ -183,6 +230,51 @@ export default function JobAnalysesShow({
                         </span>
                     )}
                 </p>
+            </div>
+
+            <div className="mt-6">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                        Candidate Match
+                    </h2>
+                    <GenerateMatchAction
+                        jobId={job.id}
+                        analysisId={analysis.id}
+                    />
+                </div>
+
+                {analysis.matches.length === 0 ? (
+                    <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+                        No match has been generated yet.
+                    </p>
+                ) : (
+                    <ul className="mt-2 divide-y divide-neutral-200 rounded-lg border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
+                        {analysis.matches.map((match) => (
+                            <li key={match.id}>
+                                <Link
+                                    href={matchesShow.url({
+                                        jobPosting: job.id,
+                                        jobAnalysis: analysis.id,
+                                        jobMatch: match.id,
+                                    })}
+                                    className="flex items-center justify-between px-4 py-3 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+                                >
+                                    <span className="text-neutral-700 dark:text-neutral-300">
+                                        {match.generated_at ?? '—'}
+                                    </span>
+                                    <span className="text-xs text-neutral-400 dark:text-neutral-500">
+                                        {match.findings_count ?? 0}{' '}
+                                        finding
+                                        {match.findings_count === 1
+                                            ? ''
+                                            : 's'}{' '}
+                                        addressed
+                                    </span>
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
 
             <div className="mt-6 space-y-8">

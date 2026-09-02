@@ -84,6 +84,18 @@ class JobAnalysis extends Model
     }
 
     /**
+     * Zero or more JobMatch runs comparing this JobAnalysis against a
+     * CareerProfile — no "current" pointer, same convention as
+     * jobAnalyses() on JobPosting. See docs/domain-model.md "JobMatch".
+     *
+     * @return HasMany<JobMatch, $this>
+     */
+    public function jobMatches(): HasMany
+    {
+        return $this->hasMany(JobMatch::class);
+    }
+
+    /**
      * A JobAnalysis is a frozen snapshot: once created, it is never
      * updated — a correction or re-analysis creates a new JobAnalysis
      * row instead. This only guards against updating an already-persisted

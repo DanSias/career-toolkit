@@ -1,3 +1,5 @@
+import type { JobMatchSummary } from '@/types/job-match';
+
 export type JobAnalysisEvidence = {
     excerpt: string;
     source_section: string | null;
@@ -35,6 +37,7 @@ export type JobAnalysisDetail = {
     overall_seniority: string | null;
     seniority_rationale: string | null;
     categories: JobAnalysisCategoryGroup[];
+    matches: JobMatchSummary[];
 };
 
 export type JobAnalysisJobContext = {

@@ -392,9 +392,19 @@ seen before.
 | `Role`              | `Project`                                                                                |
 | `CareerFact`        | `Evidence`, `Metric`, `career_fact_skill` pivot rows                                     |
 | `Skill` / `Project` | their pivot rows only, never the other side                                              |
+| `JobAnalysis`       | `JobMatch` → `JobMatchFinding` → `CareerFactMatch`/`EducationMatch`                       |
+| `JobMatch`          | `JobMatchFinding` → `CareerFactMatch`/`EducationMatch`                                   |
 
 `CareerProfile` is treated as the true aggregate root: deleting it deletes
-everything it owns, with no special handling needed.
+everything it owns, with no special handling needed — **except** that a
+`CareerProfile` owning a `CareerFact`/`Education` already cited by a
+`JobMatch` cannot be deleted at all until that history is dealt with, the
+same way any other RESTRICT-protected dependent blocks deletion; a
+`CareerProfile` with no `JobMatch` history still deletes freely. See
+"JobMatch" below for why `career_fact_matches.career_fact_id` and
+`education_matches.education_id` RESTRICT rather than cascade — the one
+deliberately non-cascading FK direction in this table, alongside the
+`Employer`/`Role`/`Project` reassignment case just below.
 
 **The one deliberately non-cascading case:** deleting an `Employer`,
 `Role`, or `Project` must never destroy a `CareerFact` merely because that
@@ -685,6 +695,163 @@ A future `ResumeVariant` (see below) is expected to eventually reference
 a specific `JobAnalysis` snapshot as the basis for a tailoring decision —
 but that pointer does not exist yet, and nothing in this schema commits
 to its exact shape.
+
+## JobMatch
+
+`JobMatch`, `JobMatchFinding`, `CareerFactMatch`, and `EducationMatch`
+together are a **derived, AI-generated comparison of one `JobAnalysis`
+snapshot against one `CareerProfile`'s canonical evidence** — not
+canonical data itself, and not a revision to either side it compares.
+Where `JobAnalysis` describes a job in isolation (candidate-independent,
+see above), `JobMatch` is the first layer that actually reads
+`CareerFact`/`Education` data. See `docs/job-match-contract.md` for the
+exact structured-output shape this maps onto, and
+`docs/job-match-generation.md` for the generation pipeline, provider
+boundary, and prompt/schema version conventions.
+
+**Each `JobMatch` row is a complete, versioned, immutable snapshot**, for
+the same reasons as `JobAnalysis`: a `JobAnalysis` can accumulate zero or
+more `JobMatch` runs over time, there is no `current_job_match_id`
+pointer, and once created none of a `JobMatch`/`JobMatchFinding`/
+`CareerFactMatch`/`EducationMatch` row's fields are ever updated in
+place — a correction is a new `JobMatch` snapshot. Enforced the same way
+as `JobAnalysis`: an `updating` guard on all four models, deliberately
+not blocking initial creation of a snapshot's own tree.
+
+**`JobMatchFinding` is one row per `JobAnalysisFinding` belonging to the
+matched analysis, always** — including a finding with no support found
+at all, so "the model omitted this one" is never indistinguishable from
+"the model deliberately found nothing." Its `coverage` is a holistic
+judgment about the finding as a whole (one of `supported`, `partial`,
+`no_evidence`, `not_assessable`), independent from any single
+`CareerFactMatch`/`EducationMatch`'s own `relationship` — several
+`contextual`-only references can jointly justify `supported` even though
+none alone would.
+
+**`coverage` deliberately has no `contradicted` case.** Design considered
+it and rejected it: `CareerFactType` (`Bullet`/`Metric`/`Capability`/
+`Narrative`) has no "preference/constraint" case, so nothing in the
+schema gives a matcher trustworthy structured grounds to assert an actual
+contradiction rather than an absence. `no_evidence` and `not_assessable`
+are both **epistemic, never capability**, judgments:
+
+- **`no_evidence`** means the canonical dataset supplied to *this run*
+  contains no meaningful evidence for the finding — never "the candidate
+  cannot do this." A capability genuinely absent from the current
+  dataset is indistinguishable, at this layer, from one simply never
+  captured yet.
+- **`not_assessable`** means the finding falls outside what this matcher
+  is authorized to determine from the career-history/education evidence
+  domain at all — visa/citizenship/work-authorization, current physical
+  location, relocation willingness, current willingness to travel,
+  salary preference, start-date availability, and other forward-looking
+  personal preferences/eligibility states. Past professional travel is
+  relevant *context* but does not prove present willingness to travel;
+  past remote work does not prove a current remote-only preference. This
+  is a domain-authorization boundary, not "could some hypothetical
+  freeform `CareerFact` narrative ever touch this topic" — that framing
+  was considered and rejected as too meaningless given how flexible
+  narrative text is.
+
+**`CareerFactMatch.relationship` / `EducationMatch.relationship`** (the
+shared `MatchRelationship` enum: `direct`, `transferable`, `contextual`)
+is categorical, not ordinal — it answers *what kind* of support a
+`CareerFact`/`Education` row provides, not a quality ranking from weak to
+strong. This is a deliberate departure from an earlier ordinal design
+(`direct`/`strong`/`supporting`), made specifically to avoid the same
+miscalibration risk `JobAnalysis.basis` showed in practice: an LLM asked
+to rank strength tends to drift toward a "safe middle" value regardless
+of the actual case, whereas a categorical kind-of-support question has no
+such gravitational pull.
+
+**Education is a first-class matchable unit, via its own small
+`EducationMatch` table — not a generic polymorphic "candidate support"
+framework.** `CareerFact` and `Education` are the only two matchable
+entity types, and each gets its own concrete join table
+(`career_fact_matches`, `education_matches`) sharing the `MatchRelationship`
+enum, rather than a single morph table standing in for both. Bare `Skill`
+tags are deliberately **not** independent evidence in this layer — they
+remain context-only, attached to the `CareerFact` they came from, exactly
+as in `docs/domain-model.md` "Skills" above.
+
+**`Education` has no `visibility` field, and that absence is not a grant
+of default output eligibility.** `EducationMatch` isn't subject to
+`CareerFact.visibility` gating simply because there's nothing to gate on
+— a future resume-generation stage may consider `Education` without that
+specific check, but that stage still separately decides, on its own
+terms, whether a given `Education` record belongs in a given output. "No
+`CareerFact`-style restriction" is not the same claim as "included by
+default." This milestone's own read-only review UI displays `Education`
+normally regardless, since it is an internal inspection surface, not a
+resume-output surface.
+
+**Deletion/FK behavior deliberately RESTRICTs rather than cascades on
+`career_fact_matches.career_fact_id` and `education_matches.education_id`**
+— the one place this subtree's deletion behavior differs from the
+cascade-everywhere table above. A `JobMatch` is a historical, immutable
+snapshot; if a live `CareerFact` or `Education` row it cited were later
+deleted and the reference cascaded away silently, that snapshot would
+lose support rows without anyone editing the `JobMatch` itself, which
+would violate the same immutability guarantee the `updating` guard
+exists to protect. Inspection of the existing deletion behavior (this
+document's "Deletion behavior" section, and `Employer`/`Role`/`Project`'s
+reassignment-on-delete hooks) found no existing pathway that deletes a
+single `CareerFact`/`Education` row outside of whole-`CareerProfile`
+deletion — `Employer`/`Role`/`Project` deletion explicitly *reassigns*
+`CareerFact`s rather than deleting them — so RESTRICT introduces no
+conflict with any existing lifecycle: an unreferenced `CareerFact`/
+`Education` still deletes freely, and a `CareerProfile` with `JobMatch`
+history behaves like any other row with a live RESTRICT-protected
+dependent (deletion is blocked until the history is dealt with), exactly
+as `CareerProfile` deletion is already blocked in other RESTRICT-adjacent
+cases elsewhere in this schema. `JobMatchFinding`, `CareerFactMatch`, and
+`EducationMatch` still cascade normally within a snapshot's own tree when
+the `JobMatch` itself (or its parent `JobAnalysis`) is deleted — only the
+cross-reference to *live* canonical data is restrictive.
+
+**`input_snapshot` (JSON, required) freezes the exact normalized
+candidate+job payload actually supplied to the provider** — the
+`CandidatePayloadBuilder`/`JobPayloadBuilder` output at generation time,
+byte-for-byte, distinct from `raw_response` (the validated structured
+output). Together they give full bidirectional auditability: what was
+asked, and what came back. A later edit to a live `CareerFact`'s
+statement never retroactively changes what an already-persisted
+`JobMatch`'s `input_snapshot` says was supplied. **`visibility` is the
+one deliberate exception to snapshot-freezing** — a `CareerFactMatch`'s
+effective visibility is always resolved *live* against the current
+`CareerFact.visibility`, never frozen at generation time. This is an
+intentional asymmetry: visibility is a real-time access-control policy
+decision, not a historical fact about what was asked or answered, and
+tightening a fact's visibility later must be respected by every
+consumer, including old `JobMatch` snapshots — freezing old permissions
+into a snapshot would silently defeat that.
+
+**`coverage_rationale` and `rationale` are internal model-generated
+commentary only — never canonical evidence and never approved resume
+wording.** A future resume-generation stage must resolve the underlying
+`CareerFact`/`Education` reference, enforce *current* visibility, and
+generate its own wording; it may never copy a `JobMatch` rationale string
+directly into candidate-facing output. This is a documentation-only rule
+— there is no persisted flag distinguishing "safe" rationale from
+"unsafe" rationale, because the rule is unconditional. In particular,
+`coverage_rationale` can synthesize commentary drawn from several
+`CareerFact`/`Education` references of mixed visibility at once, so it
+can never be conditionally surfaced based on any one constituent
+reference's visibility — it is categorically internal-only, always,
+with no exception path.
+
+**No years-of-experience arithmetic is ever computed by this layer.**
+Summing or unioning `Role` date intervals to derive an implied years
+figure is never performed — a fact attributed to a 4-year `Role` does not
+prove 4 years of that specific skill, since the role's dates say nothing
+about how much of that time actually involved the skill in question. The
+matcher never states a computed years figure anywhere (not in
+`coverage_rationale`, not in a `CareerFactMatch`/`EducationMatch`
+`rationale`); a `JobAnalysisFinding`'s own stated
+`years_experience_min`/`years_experience_max` remains visible as-is, and
+raw `Role`/`Project` date context may be shown in the UI, but uncertainty
+about actual duration is reflected through `coverage` (typically
+`partial`), never through invented arithmetic.
 
 ## Deferred: future resume-artifact concepts
 

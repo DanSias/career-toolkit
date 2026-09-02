@@ -3,11 +3,13 @@
 namespace App\Providers;
 
 use App\Contracts\GeneratesJobAnalysis;
+use App\Contracts\GeneratesJobMatch;
 use App\Models\CareerProfile;
 use App\Models\Employer;
 use App\Models\Project;
 use App\Models\Role;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
+use App\Support\JobMatch\Providers\OpenAIJobMatchClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
@@ -23,6 +25,11 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(GeneratesJobAnalysis::class, fn () => new OpenAIJobAnalysisClient(
+            apiKey: (string) config('services.openai.key'),
+            model: (string) config('services.openai.model'),
+        ));
+
+        $this->app->bind(GeneratesJobMatch::class, fn () => new OpenAIJobMatchClient(
             apiKey: (string) config('services.openai.key'),
             model: (string) config('services.openai.model'),
         ));
