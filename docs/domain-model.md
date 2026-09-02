@@ -18,6 +18,7 @@ AI functionality, resume generation, or authentication behavior exists yet.
 | `Evidence` | `CareerFact` | One piece of provenance for a fact |
 | `Metric` | `CareerFact` (optional, 1:1) | Structured quantitative data for a fact |
 | `Skill` | `CareerProfile` | A build technology, platform integration, capability, or practice |
+| `Education` | `CareerProfile` | One academic credential — plain structured data, not a CareerFact |
 
 `CareerFact` ↔ `Skill` and `Project` ↔ `Skill` are many-to-many via plain
 pivot tables (`career_fact_skill`, `project_skill`).
@@ -38,7 +39,9 @@ User
       │    ├── Metric (hasOne, optional)
       │    └── Skill (belongsToMany)
       │
-      └── Skill (hasMany)
+      ├── Skill (hasMany)
+      │
+      └── Education (hasMany)
 ```
 
 A `CareerFact` has **two relationships** to the rest of the graph: it
@@ -122,6 +125,42 @@ into the analytics platform lead") is just a `CareerFact` attributed to the
 would either duplicate what `Employer` already provides, or duplicate what
 an `Employer`-attributed `CareerFact` already provides.
 
+## Role date precision
+
+`Role` dates are `start_year`/`start_month`/`end_year`/`end_month` — four
+nullable-where-appropriate integer columns — not a SQL `DATE` pair. This
+was discovered while mapping real evidence for the first canonical
+dataset: every source (resume, portfolio, direct confirmation) only ever
+gives month/year for employment dates, never a day. An earlier version of
+this schema used `DATE` columns, which would have forced persisting a
+fabricated day (e.g. `2013-06-01`) that no source actually supports —
+silently asserting precision that doesn't exist. That version was replaced
+in place (not layered under a new migration) since no real data had been
+imported yet.
+
+Columns: `start_year` (`unsignedSmallInteger`, required), `start_month`
+(`unsignedTinyInteger`, nullable — a role can be evidenced to year-only
+precision), `end_year` (nullable, for a current role), `end_month`
+(nullable). No day-level field exists anywhere in this table, by design.
+
+**Invariants**, enforced the same way as CareerFact's attribution check —
+a `#[Boot]`-attributed `saving` listener on `Role`
+(`enforceValidDateRange()`), so every writer that goes through Eloquent is
+covered automatically:
+
+- `start_month`/`end_month`, when present, must be 1–12
+- `end_month` cannot be set without `end_year` (an end date needs at least
+  a year)
+- `end_year` cannot be before `start_year`
+- within the same year, `end_month` cannot be before `start_month`
+
+A violation throws `App\Exceptions\InvalidRoleDateRangeException`. See
+`tests/Feature/Domain/RoleDateRangeTest.php`.
+
+Education dates (see "Education" below) are year-only by the same
+reasoning — no source ever evidences even a month for a degree, only a
+graduation year.
+
 ## Why `Metric` is subordinate to `CareerFact`
 
 Every quantitative claim encountered during reconciliation (85% reporting
@@ -130,15 +169,41 @@ Liquid Gravity figures) was a property of exactly one claim — never shared
 or referenced independently across multiple facts. There was no case
 where a `Metric` needed to be queried, linked to, or exist on its own.
 `career_fact_metrics` is a one-to-one table (`career_fact_id` is unique)
-storing `value`, `unit`, an optional `comparator`, a `scope_note`, and a
-`guardrail` — the last field exists specifically to prevent a future
-resume generator from restating "gave visibility into $25M+ in tracked
-spend" as "managed a $25M budget" or "generated $25M in revenue."
+storing `value`, `value_max`, `unit`, an optional `comparator`, a
+`scope_note`, and a `guardrail` — the last field exists specifically to
+prevent a future resume generator from restating "gave visibility into
+$25M+ in tracked spend" as "managed a $25M budget" or "generated $25M in
+revenue."
 
 If a real need for independently-addressable metrics ever appears (e.g.
 the same external number needs to be referenced by two different facts
 without duplication), it can be extracted into its own entity then —
 nothing about this shape forecloses that.
+
+### Bounded ranges
+
+`value` is always the primary/lower figure; `value_max` is `null` for a
+single-ended value (`85`, `25000000` with `comparator: at_least`, `20`
+with `comparator: at_least`) and set only when a claim is a genuine
+two-sided range with no single confirmed number — e.g. "approximately
+10–15 hours/month" is `value: 10, value_max: 15, comparator:
+approximately`. This was added after the first canonical-dataset mapping
+produced exactly that case and the prior single-`value` shape had no way
+to represent it without inventing a midpoint (`12.5`) nobody confirmed.
+
+`comparator` continues to describe the whole figure, range or not —
+`approximately` on a range means "approximately this range," not fuzziness
+around a single point.
+
+**Invariant:** `value_max`, when present, cannot be less than `value`.
+Enforced the same way as the other model-level invariants in this
+document — a `#[Boot]`-attributed `saving` listener on `Metric`
+(`enforceValidRange()`) throws `App\Exceptions\InvalidMetricRangeException`
+on violation, covering every Eloquent write path. See
+`tests/Feature/Domain/MetricRangeTest.php`. No general-purpose measurement
+system (units of range, comparator combinations beyond this, etc.) was
+built beyond this one nullable column — it solves the one real case found
+so far.
 
 ## Evidence and provenance
 
@@ -236,6 +301,24 @@ list — this is what let the reconciliation report distinguish "GitLab"
 (platform integration, project-evidenced) from "Docker" (build technology,
 resume-asserted only) instead of treating both as interchangeable "skills."
 
+## Education
+
+`Education` belongs to `CareerProfile` directly — a flat list, not nested
+under any Employer/Role/Project. It's deliberately plain structured
+profile data, the same tier as `Employer`: `institution`, `degree`,
+`field_of_study` (nullable), `start_year` (nullable), `end_year`
+(nullable), `sort_order`. It carries **no** `verification`, `visibility`,
+or `Evidence` relationship — those are CareerFact concepts, and a degree
+isn't a selectable, sourced claim the way a resume bullet is; it's a fact
+about the person, recorded once. Year-only precision, for the same reason
+`Role` is month/year-only: no source found during the first
+canonical-dataset mapping evidenced anything more precise than a
+graduation year for any degree (the resume gives no education dates at
+all; the portfolio gives only a `graduated` year per degree). Deliberately
+excludes GPA, honors, activities, coursework, thesis, and location — none
+of that is evidenced by any current source, and none was added
+speculatively.
+
 ## Stable identifiers
 
 Auto-increment `bigint` primary keys are used throughout — simple, fast,
@@ -264,11 +347,37 @@ user's dataset — this can become a composite `(career_profile_id, slug)`
 unique constraint later if the application ever needs to support unrelated
 multi-tenant profiles.
 
+**This was revisited and confirmed, not just assumed** — the proposed
+canonical dataset (`data/canonical-career-data.proposed.json`) uses
+JSON-only `employer_key`/`role_key` values (e.g. `"rocketgate"`,
+`"pearson-seo-analyst"`) purely so its own records can cross-reference
+each other within that one file. No schema column was added to
+accommodate them, on purpose. A future deterministic importer resolves
+these the same way any of this proposal's structural references resolve,
+without ever treating a proposal key as a persisted field:
+
+1. **Employer** — look up by `(career_profile_id, name)`; create if
+   absent.
+2. **Role** — look up by `(employer_id, title, start_year, start_month)`;
+   create if absent. This tuple is already unique in practice for one
+   person's real career history (no two roles at the same employer share
+   both a title and an exact start), and doesn't require a new column to
+   get there.
+3. **Project** — resolves directly via the real `slug` column; no lookup
+   tuple needed.
+4. **CareerFact** — resolves directly via the real `key` column.
+
+The proposal's `employer_key`/`role_key` values exist only to make *this
+one file* self-consistent and reviewable; an importer is expected to
+re-derive Employer/Role identity from their real columns (name, title,
+dates) at import time, the same way it would for any dataset it had never
+seen before.
+
 ## Deletion behavior
 
 | Deleting... | ...cascades (DB-level `onDelete('cascade')`) |
 |---|---|
-| `CareerProfile` | `Employer`, `CareerFact`, `Skill` (and everything under them) |
+| `CareerProfile` | `Employer`, `CareerFact`, `Skill`, `Education` (and everything under them) |
 | `Employer` | `Role` → `Project` |
 | `Role` | `Project` |
 | `CareerFact` | `Evidence`, `Metric`, `career_fact_skill` pivot rows |
@@ -332,6 +441,63 @@ schema concern.
 from automatic selection unless a reviewer has explicitly approved it for
 that use. No selection/generation logic exists yet to enforce this — it's
 recorded here so the constraint isn't lost before that logic is built.
+
+## Deterministic import
+
+`php artisan career:import [path] [--user-email=]` (`App\Console\Commands\ImportCanonicalCareerData`)
+loads the reviewed canonical dataset — a JSON file, never an LLM at
+import time — and persists it. It's the one sanctioned way real career
+data enters the database; the data itself is never added to a generic
+model factory (factories exist only to generate synthetic data for
+tests).
+
+**Resolution, not raw insertion.** Every entity is matched by a stable
+natural key before being written, using exactly the rules in "Stable
+identifiers" above — Employer by `(career_profile_id, name)`, Role by
+`(employer_id, title, start_year, start_month)`, Project by `slug`, Skill
+by `(career_profile_id, slug)`, CareerFact by `key`, Education by
+`(career_profile_id, institution, degree, field_of_study)`. Everything
+goes through `updateOrCreate`, so the command is idempotent by
+construction: running it twice against an unchanged file produces the
+same database state as running it once, and running it again after an
+edited file deterministically applies that edit — it doesn't just skip
+because a row already exists.
+
+**Evidence and pivots are fully replaced per parent, not diffed.** A
+CareerFact's `Evidence` rows are deleted and recreated from the file on
+every import, and its `Skill` associations are `sync()`'d — both are the
+simplest correct way to guarantee the database matches the file exactly
+after each run, without building a change-diffing mechanism this
+one-file, human-reviewed dataset doesn't need. A `Metric` is
+upserted when the file has one and deleted when it doesn't, for the same
+reason.
+
+**Fails loudly, not silently.** Before writing anything, the command
+checks the dataset itself for natural-key collisions (e.g. two roles that
+would resolve to the same Employer/title/start) and refuses to import if
+it finds one — `updateOrCreate` alone would otherwise silently merge them.
+During import, any reference that doesn't resolve (an `employer_key` a
+Role points at, a `role_key` a Project points at, an `attributable`
+target a CareerFact points at, a skill key) throws
+`App\Exceptions\CanonicalDataImportException` immediately. The whole run
+is wrapped in a single `DB::transaction()`, so any failure — including a
+domain-integrity rejection from CareerFact's attribution check, Role's
+date-range check, or Metric's range check, all of which still fire
+normally since this command writes through Eloquent like everything
+else — rolls back everything from that run, never leaving a partial
+import in place.
+
+**The local User.** `CareerProfile.user_id` is required, and the dataset
+doesn't carry account data (rightly — it's career data, not credentials).
+The command resolves the local owner via `--user-email` (defaulting to
+the project owner's own address) with `firstOrCreate`, matching the
+"eventually one local user" expectation from the initial application
+setup — it never fabricates a second identity on repeat runs.
+
+See `tests/Feature/Domain/ImportCanonicalCareerDataTest.php` for first-run,
+idempotent-second-run, deterministic-update, and every failure case above,
+each exercised against a small fixture dataset built in the test itself —
+never against the real canonical data.
 
 ## Deferred: future resume-artifact concepts
 

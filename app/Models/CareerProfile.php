@@ -59,6 +59,14 @@ class CareerProfile extends Model implements HasCareerProfileOwnership
         return $this->hasMany(Skill::class);
     }
 
+    /**
+     * @return HasMany<Education, $this>
+     */
+    public function educations(): HasMany
+    {
+        return $this->hasMany(Education::class);
+    }
+
     public function ownerCareerProfileId(): ?int
     {
         return $this->id;

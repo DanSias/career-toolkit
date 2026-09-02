@@ -1,0 +1,1070 @@
+{
+  "_meta": {
+    "status": "PROPOSED — NOT YET IMPORTED",
+    "purpose": "Structured proposal for the first canonical Career Toolkit dataset, for human review before persistence. Maps to app/Models as of docs/domain-model.md.",
+    "generated": "2026-09-02",
+    "updated": "2026-09-02",
+    "changelog": [
+      "Role dates now use start_year/start_month/end_year/end_month integers (schema no longer uses SQL DATE for Role — see docs/domain-model.md 'Role date precision'). No fabricated day-of-month anywhere.",
+      "Added an `educations` array (3 records) — Education is now a real model owned by CareerProfile.",
+      "pearson-marketing-budget-forecast-hours-saved-per-month now has a real bounded-range Metric (value 10, value_max 15) and is verification: verified, not needs_confirmation — the range itself is the confirmed fact. See app/Models/Metric.php 'value_max'.",
+      "CareerFact quality-audit cleanup: rocketgate-workflow-intelligence-independently-implemented no longer restates the general 'independently implemented' conclusion (kept once, at Role level, in rocketgate-independently-implemented-from-team-requirements) — trimmed to project-specific Flow/documentation/Jira/credentials context only.",
+      "rocketgate-merchant-integration-enablement split into two atomic facts: rocketgate-merchant-integration-technical-contact (meeting merchants, assessing their stack, directing them to the right library/approach) and rocketgate-merchant-integration-testing-troubleshooting (testing payment flows, troubleshooting, answering technical questions).",
+      "Removed rocketgate-transaction-remediation-phase1-approved-users and -phase2-approved-users as standalone CareerFacts. Their values (1,780 / 44 approved users) are preserved as scope context in the scope_note of the corresponding -phase1-transactions-corrected / -phase2-transactions-corrected metrics — not lost, just no longer independently reusable 'accomplishments' on their own.",
+      "Removed profile-full-stack-engineer-summary — it restated the resume's marketing 'Professional Summary' paragraph (including evaluative language like 'comfortable...deliver reliable, maintainable software') with no information beyond what the Laravel/React/TypeScript Skills and their own project-level CareerFacts already establish with stronger evidence.",
+      "Net effect: 53 -> 51 CareerFacts (removed 3, split 1 into 2)."
+    ],
+    "field_notes": {
+      "employer_key / role_key / project_key / skill_key": "JSON-only cross-reference identifiers for this proposal. They are NOT schema columns — Employer and Role have no stable `key` column in the current schema (see docs/domain-model.md 'Stable identifiers' for exactly how a future importer resolves Employer by (career_profile_id, name) and Role by (employer_id, title, start_year, start_month) instead). Project.key IS the real `slug` column value. Skill.key IS the real `slug` column value. CareerFact.key IS the real `key` column value.",
+      "roles[].start_year / start_month / end_year / end_month": "Integers, matching the real schema columns exactly (see app/Models/Role.php). start_month/end_month are null wherever only a year is evidenced — never fabricated. end_month/end_year null together means a current role.",
+      "educations[].start_year / end_year": "Integers, year-only (see app/Models/Education.php) — no source evidences a month for any degree.",
+      "career_facts[].metric.value_max": "Null except for pearson-marketing-budget-forecast-hours-saved-per-month, the one genuine bounded range in this dataset. When present, value..value_max is the range; never a fabricated midpoint.",
+      "_review_comment": "Present on some records only. Reviewer-facing context for this proposal. Not a schema field — discard before import.",
+      "_section (within career_facts array only)": "Objects containing only a `_section` key are pure visual dividers grouping the facts below them by Role/Project, with no CareerFact fields of their own. An importer must skip any object lacking a `key` field — do not attempt to map these to CareerFact rows."
+    }
+  },
+
+  "career_profile": {
+    "key": "daniel-sias",
+    "name": "Daniel Sias"
+  },
+
+  "employers": [
+    {
+      "key": "rocketgate",
+      "name": "RocketGate",
+      "short_name": null,
+      "description": null
+    },
+    {
+      "key": "pearson",
+      "name": "Pearson Online Learning Services",
+      "short_name": "Pearson",
+      "description": null
+    },
+    {
+      "key": "liquid-gravity",
+      "name": "Liquid Gravity Engineering",
+      "short_name": null,
+      "description": null
+    }
+  ],
+
+  "roles": [
+    {
+      "key": "rocketgate-developer-support-engineer",
+      "employer_key": "rocketgate",
+      "title": "Developer Support Engineer",
+      "start_year": 2025,
+      "start_month": 5,
+      "end_year": null,
+      "end_month": null,
+      "sort_order": 0,
+      "summary": null
+    },
+    {
+      "key": "pearson-data-analytics-lead",
+      "employer_key": "pearson",
+      "title": "Data & Analytics Lead Developer / Data Analyst",
+      "start_year": 2015,
+      "start_month": 9,
+      "end_year": 2024,
+      "end_month": 7,
+      "sort_order": 0,
+      "summary": null
+    },
+    {
+      "key": "pearson-seo-analyst",
+      "employer_key": "pearson",
+      "title": "Search Engine Optimization Analyst",
+      "start_year": 2013,
+      "start_month": 6,
+      "end_year": 2015,
+      "end_month": 9,
+      "sort_order": 1,
+      "summary": null
+    },
+    {
+      "key": "liquid-gravity-founder",
+      "employer_key": "liquid-gravity",
+      "title": "Founder & Full Stack Developer / Marketing Consultant",
+      "start_year": 2005,
+      "start_month": 7,
+      "end_year": 2013,
+      "end_month": 6,
+      "sort_order": 0,
+      "summary": null
+    }
+  ],
+
+  "educations": [
+    {
+      "institution": "University of Central Florida",
+      "degree": "Master of Science",
+      "field_of_study": "Optics",
+      "start_year": null,
+      "end_year": 2009,
+      "sort_order": 0,
+      "_review_comment": "Resume gives no education dates at all. Graduation year sourced from the portfolio's education.ts 'graduated' field, not the resume."
+    },
+    {
+      "institution": "University of Florida",
+      "degree": "Master of Science",
+      "field_of_study": "Management",
+      "start_year": null,
+      "end_year": 2005,
+      "sort_order": 1,
+      "_review_comment": "Same sourcing note as above. Graduation year (2005) is consistent with Liquid Gravity Engineering's July 2005 founding date immediately after."
+    },
+    {
+      "institution": "Embry-Riddle Aeronautical University",
+      "degree": "Bachelor of Science",
+      "field_of_study": "Engineering Physics",
+      "start_year": null,
+      "end_year": 2004,
+      "sort_order": 2,
+      "_review_comment": "Resume states 'BS in Engineering Physics' — split into degree/field_of_study here, not a reworded claim. Same sourcing note as above for the graduation year."
+    }
+  ],
+
+  "projects": [
+    {
+      "key": "workflow-intelligence",
+      "role_key": "rocketgate-developer-support-engineer",
+      "name": "Workflow Intelligence",
+      "description": "A Laravel/Vue platform that unifies Jira work-item and GitLab merge-request/deployment activity into a single workflow model, computing deterministic delivery metrics and evidence-linked dashboards, with AI used only to explain already-computed results. RocketGate's flagship internal engineering-visibility platform; began from discussions about an existing internal tool, Flow.",
+      "default_visibility": "public",
+      "sort_order": 0
+    },
+    {
+      "key": "verbatim",
+      "role_key": "rocketgate-developer-support-engineer",
+      "name": "Verbatim",
+      "description": "A grounded documentation Q&A and support-reply-drafting system: retrieval and confidence scoring are deterministic, and an LLM is used only for synthesis over pre-selected source material, with citations mapped back to the exact retrieved section.",
+      "default_visibility": "public",
+      "sort_order": 1
+    },
+    {
+      "key": "transaction-toolkit",
+      "role_key": "rocketgate-developer-support-engineer",
+      "name": "Transaction Toolkit",
+      "description": "A local-first investigation and analytics tool that snapshots merchant transaction history locally and supports repeatable analysis across declines, authentication, retries, and concentration, with deterministic reporting by default and optional AI explanation layered on top of pre-aggregated, PII-excluding metrics.",
+      "default_visibility": "public",
+      "sort_order": 2
+    },
+    {
+      "key": "knowledge-exporter",
+      "role_key": "rocketgate-developer-support-engineer",
+      "name": "Knowledge Exporter",
+      "description": "A provider-abstracted, read-only export pipeline that converts Freshdesk and Confluence content into deterministic Markdown, using SHA-256 content comparison so repeat runs create, update, or skip files rather than rewriting everything.",
+      "default_visibility": "public",
+      "sort_order": 3
+    },
+    {
+      "key": "transaction-remediation-tooling",
+      "role_key": "rocketgate-developer-support-engineer",
+      "name": "Transaction Remediation Tooling",
+      "description": "Production tooling for safely analyzing, planning, executing, verifying, recovering from, and auditing high-risk corrections to a RocketGate merchant's transaction data. Originated as a deterministic donor-lineage backfill for missing location/tax-jurisdiction metadata (source repository: rg-transaction-reconstruction, where it is referred to as 'transaction reconstruction') and grew into a broader, multi-phase remediation engagement. Restricted by default — this concerns a specific merchant's data and process, not a generally applicable platform.",
+      "default_visibility": "restricted",
+      "sort_order": 4
+    },
+    {
+      "key": "nexus-analytics-platform",
+      "role_key": "pearson-data-analytics-lead",
+      "name": "Nexus: Analytics Command Center",
+      "description": "A full-stack React/Node.js analytics platform unifying BigQuery and Salesforce data behind a single API layer, replacing manual export-and-compile reporting with live dashboards.",
+      "default_visibility": "public",
+      "sort_order": 0
+    },
+    {
+      "key": "marketing-budget-forecast-hub",
+      "role_key": "pearson-data-analytics-lead",
+      "name": "Marketing Budget & Forecast Hub",
+      "description": "A centralized forecasting platform (React/Node.js/PostgreSQL) supporting multi-user input and approval workflows, replacing shared-spreadsheet budget planning. Referred to in the resume as the 'Marketing Forecasting Platform'.",
+      "default_visibility": "public",
+      "sort_order": 1
+    },
+    {
+      "key": "salesforce-migration-data-warehouse",
+      "role_key": "pearson-data-analytics-lead",
+      "name": "Salesforce Migration & Data Warehouse Setup",
+      "description": "Collaborated on migrating legacy MS SQL Server reporting data into Salesforce and a new BigQuery data warehouse, preserving historical accuracy while unlocking scalable, real-time reporting.",
+      "default_visibility": "public",
+      "sort_order": 2
+    },
+    {
+      "key": "executive-insights-dashboard",
+      "role_key": "pearson-data-analytics-lead",
+      "name": "Executive Insights Dashboard",
+      "description": "Consolidated department performance, goals, and emerging issues into one interactive React/Node.js/BigQuery dashboard, replacing separate departmental spreadsheets with a shared, real-time view.",
+      "default_visibility": "public",
+      "sort_order": 3
+    },
+    {
+      "key": "email-marketing-performance-tracker",
+      "role_key": "pearson-data-analytics-lead",
+      "name": "Email Marketing Performance Tracker",
+      "description": "A centralized React/Node.js dashboard pulling Salesforce Marketing Cloud and Google Analytics data into one view, so marketing teams could compare open rates, click-through, and conversions without manual exports.",
+      "default_visibility": "public",
+      "sort_order": 4
+    },
+    {
+      "key": "seo-performance-tracker",
+      "role_key": "pearson-data-analytics-lead",
+      "name": "SEO Performance Tracker",
+      "description": "A Node.js/React dashboard built on the Ahrefs API that automated keyword-rank tracking, site health, and competitor analysis into one place the SEO team could check daily.",
+      "default_visibility": "public",
+      "sort_order": 5
+    },
+    {
+      "key": "recruitment-agent-activity-tracking",
+      "role_key": "pearson-data-analytics-lead",
+      "name": "Recruitment Agent Activity Tracking",
+      "description": "Integrated the Nice inContact API with React/Node.js to surface recruitment agent activity and lead progression in one dashboard, giving managers same-day visibility instead of a weekly report.",
+      "default_visibility": "public",
+      "sort_order": 6
+    }
+  ],
+
+  "skills": [
+    { "key": "laravel", "name": "Laravel", "category": "build_technology", "description": null },
+    { "key": "php", "name": "PHP", "category": "build_technology", "description": null },
+    { "key": "vue", "name": "Vue.js", "category": "build_technology", "description": null },
+    { "key": "typescript", "name": "TypeScript", "category": "build_technology", "description": null },
+    { "key": "tailwind-css", "name": "Tailwind CSS", "category": "build_technology", "description": null },
+    { "key": "inertia", "name": "Inertia.js", "category": "build_technology", "description": null },
+    { "key": "mysql", "name": "MySQL", "category": "build_technology", "description": null },
+    { "key": "react", "name": "React", "category": "build_technology", "description": null },
+    { "key": "next-js", "name": "Next.js", "category": "build_technology", "description": null },
+    { "key": "node-js", "name": "Node.js", "category": "build_technology", "description": null },
+    { "key": "express", "name": "Express.js", "category": "build_technology", "description": null },
+    { "key": "postgresql", "name": "PostgreSQL", "category": "build_technology", "description": null },
+    { "key": "sqlite", "name": "SQLite", "category": "build_technology", "description": null },
+    { "key": "prisma", "name": "Prisma", "category": "build_technology", "description": null },
+    { "key": "python", "name": "Python", "category": "build_technology", "description": "Resume-asserted only; also appears in the portfolio's Salesforce Migration project tech list, but no dedicated case study demonstrates it." },
+    { "key": "docker", "name": "Docker", "category": "build_technology", "description": "Resume-asserted only; no project or role evidence found in the portfolio or repositories inspected." },
+    { "key": "auth-js", "name": "Auth.js", "category": "build_technology", "description": null },
+
+    { "key": "jira", "name": "Jira", "category": "platform_integration", "description": null },
+    { "key": "gitlab", "name": "GitLab", "category": "platform_integration", "description": "RocketGate's source-control/merge-request platform. Do not conflate with GitHub — the resume's 'GitHub-based development workflows' bullet is not corroborated by any RocketGate-specific portfolio or repository evidence." },
+    { "key": "github", "name": "GitHub", "category": "platform_integration", "description": "Evidenced for personal/portfolio projects and CI (GitHub Actions), not as a RocketGate-specific claim." },
+    { "key": "freshdesk", "name": "Freshdesk", "category": "platform_integration", "description": null },
+    { "key": "confluence", "name": "Confluence", "category": "platform_integration", "description": null },
+    { "key": "salesforce", "name": "Salesforce", "category": "platform_integration", "description": null },
+    { "key": "salesforce-marketing-cloud", "name": "Salesforce Marketing Cloud", "category": "platform_integration", "description": null },
+    { "key": "bigquery", "name": "BigQuery", "category": "platform_integration", "description": null },
+    { "key": "google-analytics", "name": "Google Analytics", "category": "platform_integration", "description": null },
+    { "key": "google-cloud-functions", "name": "Google Cloud Functions", "category": "platform_integration", "description": null },
+    { "key": "tableau", "name": "Tableau", "category": "platform_integration", "description": null },
+    { "key": "ahrefs", "name": "Ahrefs API", "category": "platform_integration", "description": null },
+    { "key": "nice-incontact", "name": "Nice inContact", "category": "platform_integration", "description": null },
+    { "key": "openai", "name": "OpenAI", "category": "platform_integration", "description": null },
+    { "key": "anthropic", "name": "Anthropic", "category": "platform_integration", "description": null },
+    { "key": "notebooklm", "name": "NotebookLM", "category": "platform_integration", "description": "User-confirmed only; not documented in the public portfolio." },
+    { "key": "rocketgate-transaction-history-api", "name": "RocketGate Transaction History API", "category": "platform_integration", "description": "Repository-evidenced (rg-transaction-reconstruction)." },
+    { "key": "ms-sql-server", "name": "MS SQL Server", "category": "platform_integration", "description": "Resume/portfolio-asserted (Salesforce Migration project) as the legacy system migrated away from." },
+    { "key": "azure", "name": "Microsoft Azure", "category": "platform_integration", "description": "Resume-asserted only; no project evidence found." },
+    { "key": "aws", "name": "AWS", "category": "platform_integration", "description": "Resume-asserted only; the only concretely evidenced cloud-platform usage in the portfolio is Google Cloud Functions." },
+    { "key": "google-cloud", "name": "Google Cloud (general)", "category": "platform_integration", "description": "Resume-asserted broadly; concretely evidenced only via BigQuery and Cloud Functions specifically." },
+
+    { "key": "api-integration-design", "name": "API integration & design", "category": "capability", "description": null },
+    { "key": "developer-tooling", "name": "Developer tooling", "category": "capability", "description": null },
+    { "key": "deterministic-ai-boundaries", "name": "Deterministic AI boundaries", "category": "capability", "description": "Designing systems where AI explains or synthesizes over already-computed/retrieved results, never computes or retrieves them directly." },
+    { "key": "data-pipelines", "name": "Data pipelines", "category": "capability", "description": null },
+    { "key": "analytics-systems", "name": "Analytics systems", "category": "capability", "description": null },
+    { "key": "ai-assisted-development", "name": "AI-assisted development", "category": "capability", "description": null },
+    { "key": "security-conscious-engineering", "name": "Security-conscious engineering", "category": "capability", "description": "Narrowly evidenced via Transaction Toolkit's encrypted local credential vault and PII-exclusion contracts — do not generalize to all RocketGate work without further evidence." },
+    { "key": "merchant-integration-enablement", "name": "Merchant integration enablement", "category": "capability", "description": null },
+    { "key": "technical-remediation-planning", "name": "High-risk data remediation engineering", "category": "capability", "description": "Planning and safely executing corrections to production data with verification, recovery, and audit built in." },
+
+    { "key": "git", "name": "Git", "category": "practice", "description": null },
+    { "key": "merge-requests", "name": "Pull requests / merge requests", "category": "practice", "description": null },
+    { "key": "ci-cd", "name": "CI/CD", "category": "practice", "description": "Strongly evidenced for personal projects (GitHub Actions); RocketGate-specific CI/CD evidence not established." },
+    { "key": "agile-scrum", "name": "Agile/Scrum", "category": "practice", "description": "Resume-asserted only; no project-level evidence found." }
+  ],
+
+  "career_facts": [
+
+    { "_section": "=== CareerProfile-level (career-wide) facts ===" },
+
+    {
+      "key": "profile-ai-assisted-development-pattern",
+      "fact_type": "capability",
+      "statement": "Consistently uses AI-assisted development workflows to move from prototype to production more quickly, while keeping AI out of the computation/decision path for the systems it builds (deterministic metrics and results, AI limited to explanation or synthesis).",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "Cross-project pattern, not a single-project claim — see the deterministic-AI-boundary facts on Workflow Intelligence, Transaction Toolkit, and Verbatim for the specific implementations.",
+      "attributable": { "type": "career_profile", "key": "daniel-sias" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Professional Summary", "quoted_text": "using AI-assisted development to turn prototypes into production-ready features" },
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/skills.ts", "locator": "AI-Assisted Development capability" }
+      ],
+      "metric": null,
+      "skills": ["ai-assisted-development", "deterministic-ai-boundaries"]
+    },
+    {
+      "key": "profile-github-personal-projects",
+      "fact_type": "capability",
+      "statement": "Uses GitHub for personal and open-source project version control, with GitHub Actions CI on personal projects.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Deliberately career-wide/personal, not attributed to RocketGate — see rocketgate-source-control-gitlab for the RocketGate-specific, GitLab-based claim.",
+      "attributable": { "type": "career_profile", "key": "daniel-sias" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/README.md", "locator": "Stack / CI section", "quoted_text": "CI: GitHub Actions (lint, typecheck, build, E2E on Chromium)" },
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/contact.ts", "locator": "github field" }
+      ],
+      "metric": null,
+      "skills": ["github", "ci-cd"]
+    },
+
+    { "_section": "=== RocketGate — Role-level facts ===" },
+
+    {
+      "key": "rocketgate-independently-implemented-from-team-requirements",
+      "fact_type": "capability",
+      "statement": "Independently designed and implemented the technical solution for each major RocketGate initiative (Workflow Intelligence, Verbatim, Transaction Toolkit, Knowledge Exporter, and the transaction remediation tooling) from team-defined business requirements and operational needs — the team provided requirements, context, documentation, tickets, feedback, and access; the technical implementation was owned independently.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "User-confirmed characterization of the general working pattern across RocketGate initiatives; deliberately does not claim complete isolation from the team.",
+      "attributable": { "type": "role", "key": "rocketgate-developer-support-engineer" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly by user: team supplied business need, requirements, context, documentation, tickets, feedback, access, and credentials; Daniel owned the technical implementation for Workflow Intelligence, Verbatim, Transaction Toolkit, Knowledge Exporter, and the transaction remediation tooling." }
+      ],
+      "metric": null,
+      "skills": []
+    },
+    {
+      "key": "rocketgate-source-control-gitlab",
+      "fact_type": "capability",
+      "statement": "RocketGate's engineering source-control and code-review workflow uses GitLab, integrated with Jira for work-item tracking.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "Supersedes the resume's 'GitHub-based development workflows' bullet as a RocketGate-specific claim — see profile-github-personal-projects for GitHub's actual (non-RocketGate) evidence.",
+      "attributable": { "type": "role", "key": "rocketgate-developer-support-engineer" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/experience/RocketGate.tsx", "locator": "technologies array", "quoted_text": "GitLab" },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/workflow-intelligence/page.tsx", "locator": "description / determinism principles", "quoted_text": "Jira and GitLab activity" },
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: GitLab is the relevant source-control/collaboration platform for RocketGate professional work; do not attribute GitHub-based workflows to RocketGate specifically." }
+      ],
+      "metric": null,
+      "skills": ["gitlab", "jira", "git", "merge-requests"]
+    },
+    {
+      "key": "rocketgate-ai-assisted-knowledge-management",
+      "fact_type": "narrative",
+      "statement": "Built and used a set of AI-assisted knowledge-management tooling spanning deterministic knowledge extraction and preparation (Knowledge Exporter), grounded AI question-answering over documentation with citation mapping (Verbatim), and a NotebookLM-based conversational knowledge base built from existing internal knowledge sources.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Broader, role-level workstream fact citing evidence from multiple projects — see the individual Knowledge Exporter, Verbatim, and NotebookLM facts for project-specific detail. Visibility set to restricted pending review since it references internal knowledge-base tooling as a whole; individual public project facts (Knowledge Exporter, Verbatim) remain public on their own.",
+      "attributable": { "type": "role", "key": "rocketgate-developer-support-engineer" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/knowledge-exporter/page.tsx", "locator": "note field", "quoted_text": "Designed as an upstream source-preparation layer for downstream knowledge tools, including Verbatim — a complementary, standalone tool rather than an integrated pipeline." },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/experience/RocketGate.tsx", "locator": "supportingSystems descriptions" },
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: the resume-level concept of 'AI-assisted knowledge management' spans Knowledge Exporter, Verbatim, and a NotebookLM knowledge base built from existing knowledge bases." }
+      ],
+      "metric": null,
+      "skills": ["deterministic-ai-boundaries", "developer-tooling"]
+    },
+    {
+      "key": "rocketgate-notebooklm-knowledge-base",
+      "fact_type": "bullet",
+      "statement": "Built a NotebookLM-based knowledge base from RocketGate's existing internal knowledge bases, so users could ask questions conversationally over that information.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "User-confirmed only — NotebookLM does not currently appear as a formal Project in the portfolio, so no architecture beyond this statement is proposed.",
+      "attributable": { "type": "role", "key": "rocketgate-developer-support-engineer" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly by user; no corroborating portfolio or repository source exists." }
+      ],
+      "metric": null,
+      "skills": ["notebooklm", "deterministic-ai-boundaries"]
+    },
+    {
+      "key": "rocketgate-merchant-integration-technical-contact",
+      "fact_type": "bullet",
+      "statement": "Served as the technical point of contact for new RocketGate merchants: met with their technical teams, assessed their technology stack, and directed them to the appropriate existing RocketGate integration library and approach (e.g. PHP or Node.js) for their site or application.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "Deliberately framed as integration enablement/support, not as personally writing every merchant's integration. No merchant counts or outcome metrics are claimed — none were confirmed. Split from a single combined fact into this and rocketgate-merchant-integration-testing-troubleshooting, so each is independently selectable.",
+      "attributable": { "type": "role", "key": "rocketgate-developer-support-engineer" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly by user, with an explicit instruction not to claim personally-written merchant integrations or invent quantitative outcomes." },
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "RocketGate", "quoted_text": "Collaborated across engineering, product, and support teams to investigate complex payment integrations and deliver production-ready solutions" }
+      ],
+      "metric": null,
+      "skills": ["merchant-integration-enablement", "php", "node-js"]
+    },
+    {
+      "key": "rocketgate-merchant-integration-testing-troubleshooting",
+      "fact_type": "bullet",
+      "statement": "Tested payment flows and troubleshot merchant integration issues, answering technical integration questions during onboarding.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "No merchant counts or outcome metrics are claimed — none were confirmed. Split from a single combined fact into this and rocketgate-merchant-integration-technical-contact, so each is independently selectable.",
+      "attributable": { "type": "role", "key": "rocketgate-developer-support-engineer" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly by user, with an explicit instruction not to claim personally-written merchant integrations or invent quantitative outcomes." }
+      ],
+      "metric": null,
+      "skills": ["merchant-integration-enablement"]
+    },
+    {
+      "key": "rocketgate-developer-documentation-onboarding",
+      "fact_type": "bullet",
+      "statement": "Modernized developer documentation and support resources for merchant integration and internal onboarding, aimed at improving integration guidance and reducing time to get up to speed.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Existence is supported by both resume and portfolio; no dedicated case study or architecture detail exists, and no quantitative outcome (e.g. ticket-time reduction) is confirmed, so none is claimed.",
+      "attributable": { "type": "role", "key": "rocketgate-developer-support-engineer" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "RocketGate", "quoted_text": "Modernized developer documentation and support resources, improving integration guidance, reducing ticket response time, and streamlining onboarding for payment platform customers." },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/experience/RocketGate.tsx", "locator": "supportingSystems: Developer Documentation & Onboarding" }
+      ],
+      "metric": null,
+      "skills": ["developer-tooling"]
+    },
+
+    { "_section": "=== RocketGate — Workflow Intelligence (Project) ===" },
+
+    {
+      "key": "rocketgate-workflow-intelligence-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built Workflow Intelligence, a Laravel/Vue platform that gives engineering teams visibility into work items, stage history, and delivery progress, replacing scattered status updates and manual cross-referencing with a single evidence-linked source of truth.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": null,
+      "attributable": { "type": "project", "key": "workflow-intelligence" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "RocketGate", "quoted_text": "Built Workflow Intelligence, a Laravel/Vue platform providing engineering teams with visibility into work items, stage history, and development progress." },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/workflow-intelligence/page.tsx", "locator": "hero description" }
+      ],
+      "metric": null,
+      "skills": ["laravel", "vue", "typescript", "mysql", "tailwind-css", "inertia"]
+    },
+    {
+      "key": "rocketgate-workflow-intelligence-ownership-breadth",
+      "fact_type": "capability",
+      "statement": "Owned Workflow Intelligence across product design, UX, architecture, backend, frontend, analytics, and AI integration.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "Breadth of responsibility, kept distinct from the independently-implemented-from-team-requirements fact below per explicit user guidance — these are related but separate claims with separate evidence.",
+      "attributable": { "type": "project", "key": "workflow-intelligence" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/workflow-intelligence/page.tsx", "locator": "Responsibilities field", "quoted_text": "Product Design • UX • Architecture • Backend • Frontend • Analytics • AI Integration" }
+      ],
+      "metric": null,
+      "skills": []
+    },
+    {
+      "key": "rocketgate-workflow-intelligence-independently-implemented",
+      "fact_type": "narrative",
+      "statement": "Workflow Intelligence began from discussions about Flow, an existing internal tool; the team supplied context on Flow, existing internal documentation, Jira tickets, and credentials/access (including API access where needed), which Daniel translated into the technical implementation.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Project-specific origin/context only — deliberately does not restate the general 'independently implemented' conclusion, which lives once, at Role level, in rocketgate-independently-implemented-from-team-requirements. Restricted by default since it references an internal predecessor tool (Flow) not documented publicly; the public-facing project description itself remains public via the 'what it is' fact above.",
+      "attributable": { "type": "project", "key": "workflow-intelligence" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly by user: Workflow Intelligence began with discussions about the existing internal tool Flow; team supplied information/context, documentation, Jira tickets, and credentials/access; Daniel performed the full implementation." }
+      ],
+      "metric": null,
+      "skills": []
+    },
+    {
+      "key": "rocketgate-workflow-intelligence-jira-gitlab-unification",
+      "fact_type": "bullet",
+      "statement": "Normalized Jira work-item and GitLab merge-request/deployment activity into a single workflow model, so dashboards, evidence drawers, and AI summaries all read from the same underlying computation instead of each re-deriving it.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": null,
+      "attributable": { "type": "project", "key": "workflow-intelligence" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/workflow-intelligence/page.tsx", "locator": "'From Data to Decisions' section" },
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Workflow Intelligence project highlight", "quoted_text": "Technologies: Laravel • Vue.js • TypeScript • Tailwind CSS • MySQL • Jira API • GitLab API" }
+      ],
+      "metric": null,
+      "skills": ["jira", "gitlab"]
+    },
+    {
+      "key": "rocketgate-workflow-intelligence-deterministic-evidence-linked-design",
+      "fact_type": "capability",
+      "statement": "Designed Workflow Intelligence around deterministic, evidence-linked metrics: every aggregate number computed once and reused everywhere it appears, traceable from a dashboard number down to the exact work items, merge requests, and releases behind it, with AI used only to explain already-computed results rather than to compute or select them.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Portfolio-only — this level of architectural detail is not present in the resume.",
+      "attributable": { "type": "project", "key": "workflow-intelligence" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/workflow-intelligence/page.tsx", "locator": "'Building Trust Through Determinism' section", "quoted_text": "AI explains the data. It never invents the data." },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/workflow-intelligence/page.tsx", "locator": "'Show Me the Evidence' section" }
+      ],
+      "metric": null,
+      "skills": ["deterministic-ai-boundaries", "openai"]
+    },
+
+    { "_section": "=== RocketGate — Verbatim (Project) ===" },
+
+    {
+      "key": "rocketgate-verbatim-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built Verbatim, a documentation Q&A system where retrieval and confidence scoring are deterministic and an LLM is used only for synthesis over pre-selected source chunks, with every answer's citations mapped back to the exact retrieved section.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Portfolio-only — not mentioned in the resume.",
+      "attributable": { "type": "project", "key": "verbatim" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/verbatim/page.tsx", "locator": "hero description and 'Results' list" },
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Verbatim entry" }
+      ],
+      "metric": null,
+      "skills": ["next-js", "react", "typescript", "postgresql", "prisma", "auth-js", "openai", "anthropic", "deterministic-ai-boundaries"]
+    },
+    {
+      "key": "rocketgate-verbatim-support-reply-reuse",
+      "fact_type": "bullet",
+      "statement": "Reused Verbatim's grounded retrieval layer to power support-reply drafting, so support responses draw from the same deterministic, citation-mapped knowledge base as the documentation Q&A experience.",
+      "verification": "strongly_supported",
+      "visibility": "restricted",
+      "notes": "Restricted by default — describes internal support-workflow usage rather than the public-facing Q&A product itself.",
+      "attributable": { "type": "project", "key": "verbatim" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/experience/RocketGate.tsx", "locator": "Verbatim supportingSystems description", "quoted_text": "The same knowledge layer also powers grounded support-reply drafting and internal retrieval/debugging tools." }
+      ],
+      "metric": null,
+      "skills": []
+    },
+
+    { "_section": "=== RocketGate — Transaction Toolkit (Project) ===" },
+
+    {
+      "key": "rocketgate-transaction-toolkit-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built Transaction Toolkit, a local-first tool that snapshots merchant transaction history and supports repeatable investigation across declines, authentication, retries, and concentration, producing deterministic reports by default with optional AI explanation layered on top of pre-aggregated, PII-excluding metrics.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "This is distinct from Transaction Remediation Tooling — see that Project's own facts. Do not merge.",
+      "attributable": { "type": "project", "key": "transaction-toolkit" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/transaction-toolkit/page.tsx", "locator": "hero description" },
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "RocketGate", "quoted_text": "Developed transaction reconstruction tools, operational tracking..." }
+      ],
+      "metric": null,
+      "skills": ["react", "typescript", "node-js", "express", "sqlite", "openai", "deterministic-ai-boundaries"]
+    },
+    {
+      "key": "rocketgate-transaction-toolkit-local-first-security",
+      "fact_type": "capability",
+      "statement": "Designed Transaction Toolkit's credential handling to match its local-first, single-operator security model: gateway credentials and API keys encrypted at rest (AES-256-GCM, per-encryption random IV, scrypt-derived key), with the key held only in process memory while unlocked and no persistent session.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Portfolio-only, and the narrowest evidence found for the 'security-conscious engineering' capability — do not generalize this to other RocketGate projects without further evidence.",
+      "attributable": { "type": "project", "key": "transaction-toolkit" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/transaction-toolkit/page.tsx", "locator": "'Traceable Reports & Local-First Security' section" }
+      ],
+      "metric": null,
+      "skills": ["security-conscious-engineering"]
+    },
+
+    { "_section": "=== RocketGate — Knowledge Exporter (Project) ===" },
+
+    {
+      "key": "rocketgate-knowledge-exporter-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built Knowledge Exporter, a provider-abstracted, read-only pipeline that converts Freshdesk and Confluence content into deterministic Markdown, using SHA-256 content comparison so repeat runs create, update, or skip files rather than rewriting everything, producing an auditable per-run change report.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Explicitly deterministic/non-AI — do not describe it as an AI product. It is one contributor to the broader 'AI-assisted knowledge management' role-level fact as source preparation, not as an AI tool itself.",
+      "attributable": { "type": "project", "key": "knowledge-exporter" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/app/projects/knowledge-exporter/page.tsx", "locator": "hero description and 'Results' list" }
+      ],
+      "metric": null,
+      "skills": ["next-js", "typescript", "freshdesk", "confluence", "data-pipelines"]
+    },
+
+    { "_section": "=== RocketGate — Transaction Remediation Tooling (Project, restricted) ===" },
+
+    {
+      "key": "rocketgate-transaction-remediation-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built production tooling to safely analyze, plan, execute, verify, recover from, and audit high-risk corrections to a RocketGate merchant's transaction data, originating as a deterministic donor-lineage backfill for missing location/tax-jurisdiction metadata and growing into a broader, multi-phase remediation engagement.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Source repository refers to the original scope as 'transaction reconstruction' (rg-transaction-reconstruction) — preserved here as the repository's own terminology, not renamed at the source.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "repository", "path": "rg-transaction-reconstruction/README.md", "locator": "Problem Statement", "quoted_text": "This tool reconstructs the missing UDF1 on MIT rows by tracing transaction lineage back to a qualifying donor CIT, without modifying any source data." },
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: the work evolved beyond a simple reconstruction script into production-grade remediation tooling; distinct from Transaction Toolkit." }
+      ],
+      "metric": null,
+      "skills": ["typescript", "node-js", "rocketgate-transaction-history-api", "technical-remediation-planning"]
+    },
+    {
+      "key": "rocketgate-transaction-remediation-deterministic-donor-lineage",
+      "fact_type": "capability",
+      "statement": "Implemented a deterministic donor-lineage strategy for resolving missing transaction metadata: matching each affected record to a qualifying prior transaction for the same customer (falling back to a subscription-level match), with anything unresolved written to an explicit exceptions report rather than silently guessed.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": null,
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "repository", "path": "rg-transaction-reconstruction/README.md", "locator": "UDF1 Reconstruction Strategy" },
+        { "source": "repository", "path": "rg-transaction-reconstruction/docs/project-notes.md", "locator": "Current default backfill rule" }
+      ],
+      "metric": null,
+      "skills": ["technical-remediation-planning"]
+    },
+    {
+      "key": "rocketgate-transaction-remediation-plan-and-dry-run",
+      "fact_type": "capability",
+      "statement": "Built the remediation process around a reviewable plan produced before any live data was modified, with a dry-run mode to validate scope and expected outcomes ahead of execution.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Dry-run capability is directly repository-evidenced for the analysis/backfill pipeline (batch runner --dry-run flag). 'Immutable execution plan' as applied specifically to the write/remediation execution step is user-confirmed; no separate execution-plan module was found in the current repository snapshot.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "repository", "path": "rg-transaction-reconstruction/src/batch/runner.ts", "locator": "BatchRunOptions.dryRun / dry-run mode handling" },
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: the remediation tooling used immutable execution plans and dry-run capability." }
+      ],
+      "metric": null,
+      "skills": ["technical-remediation-planning"]
+    },
+    {
+      "key": "rocketgate-transaction-remediation-safe-live-execution",
+      "fact_type": "capability",
+      "statement": "Built the remediation execution to run safely against RocketGate's live transaction API through coordinated request throttling and idempotent write operations, so a repeated or partially-completed run could not double-apply a correction.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "User-confirmed only. No write-path throttling/idempotency code was found in the current repository snapshot, which implements the read-only analysis/backfill pipeline; this fact rests on the user's direct, first-hand account as the engineer who built it.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: coordinated API throttling and idempotent execution were implemented for the remediation write operations." }
+      ],
+      "metric": null,
+      "skills": ["technical-remediation-planning"]
+    },
+    {
+      "key": "rocketgate-transaction-remediation-resumable-recovery",
+      "fact_type": "capability",
+      "statement": "Structured the remediation as resumable, multi-stage processing with recovery workflows, so an interrupted run could continue without repeating completed work or re-touching already-corrected records.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Partially corroborated by the repository's analysis/backfill batch runner, which skips periods whose output already exists unless --force is passed — a genuine resumability pattern, though for the read-side analysis pipeline specifically, not confirmed proof of the write-side remediation execution's own recovery behavior. The write-side claim rests primarily on user confirmation.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "repository", "path": "rg-transaction-reconstruction/src/batch/runner.ts", "locator": "SKIP BEHAVIOR doc comment: periods already containing run-stats.json are skipped unless force=true" },
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: resumable multi-stage processing and recovery workflows were implemented for the remediation execution." }
+      ],
+      "metric": null,
+      "skills": ["technical-remediation-planning"]
+    },
+    {
+      "key": "rocketgate-transaction-remediation-post-write-verification",
+      "fact_type": "capability",
+      "statement": "Verified every corrected transaction record against the source system after the write completed, rather than assuming a submitted write had succeeded as issued.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "User-confirmed; consistent with the phase-level 'transactions verified' counts reported alongside 'transactions updated' for both remediation phases.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: post-write verification was performed; Phase 1 and Phase 2 each report a 'transactions verified' count matching the 'transactions updated' count." }
+      ],
+      "metric": null,
+      "skills": ["technical-remediation-planning"]
+    },
+    {
+      "key": "rocketgate-transaction-remediation-audit-trails-completeness-audits",
+      "fact_type": "capability",
+      "statement": "Maintained audit trails through the remediation process and ran automated completeness audits to confirm the full population of affected transactions reached and remained in the correct state.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Partially corroborated by the repository's general provenance/auditability discipline on its analysis-pipeline outputs (e.g. dataset-metadata.json provenance, per-run stats). The specific completeness-audit claim is directly evidenced by the final live audit metric (43,348/43,348) below.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "repository", "path": "rg-transaction-reconstruction/src/batch/persistDataset.ts", "locator": "dataset-metadata.json provenance comment" },
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: audit trails and automated completeness audits were built into the remediation tooling." }
+      ],
+      "metric": null,
+      "skills": ["technical-remediation-planning"]
+    },
+    {
+      "key": "rocketgate-transaction-remediation-phase1-transactions-corrected",
+      "fact_type": "metric",
+      "statement": "Phase 1 of the transaction remediation engagement corrected 24,589 transaction records, each subsequently verified.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": null,
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: Phase 1 — 24,589 transactions updated, 24,589 transactions verified, 1,780 approved users." }
+      ],
+      "metric": { "value": 24589, "unit": "transactions_corrected", "comparator": "exact", "scope_note": "Phase 1 (original migration), 1,780 approved users. Verification count matches this figure exactly — see rocketgate-transaction-remediation-post-write-verification for the general verification-practice fact.", "guardrail": null },
+      "skills": []
+    },
+    {
+      "key": "rocketgate-transaction-remediation-phase2-initial-scope-expansion",
+      "fact_type": "bullet",
+      "statement": "Phase 2's initial follow-up review identified approximately 390 transactions requiring correction; further investigation substantially expanded the required scope of work beyond that initial estimate.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Captures the investigation-driven scope expansion; the actual completed scope is the 7,457-transaction figure below.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: Phase 2 initial follow-up identified 390 transactions; investigation expanded the required work to 7,457 transactions." }
+      ],
+      "metric": { "value": 390, "unit": "transactions_initially_identified", "comparator": "exact", "scope_note": "Phase 2 initial follow-up scope, before investigation expanded it — see rocketgate-transaction-remediation-phase2-transactions-corrected for the completed scope.", "guardrail": "Do not present as the completed scope of Phase 2 — 7,457 is the completed figure." },
+      "skills": []
+    },
+    {
+      "key": "rocketgate-transaction-remediation-phase2-transactions-corrected",
+      "fact_type": "metric",
+      "statement": "Phase 2 of the transaction remediation engagement corrected 7,457 transaction records, each subsequently verified.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": null,
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: Phase 2 — 7,457 transactions updated (5,770 previously missing UDF1 values, 1,687 conflicting values overwritten per merchant instruction), 7,457 transactions verified, 44 approved users." }
+      ],
+      "metric": { "value": 7457, "unit": "transactions_corrected", "comparator": "exact", "scope_note": "Phase 2 (merchant follow-up), 44 approved users. Composed of 5,770 previously-missing-value backfills and 1,687 merchant-directed conflict resolutions — see the two breakdown facts below.", "guardrail": null },
+      "skills": []
+    },
+    {
+      "key": "rocketgate-transaction-remediation-phase2-missing-values-backfilled",
+      "fact_type": "metric",
+      "statement": "Of Phase 2's corrections, 5,770 transaction records had previously missing UDF1 (location/tax-jurisdiction) values backfilled.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Sub-breakdown of the Phase 2 total (7,457) — not additive with it.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: 5,770 of the Phase 2 corrections were previously-missing UDF1 values." }
+      ],
+      "metric": { "value": 5770, "unit": "transactions_corrected", "comparator": "exact", "scope_note": "Subset of the Phase 2 total (7,457): records with no prior UDF1 value.", "guardrail": "This is a subset of the 7,457 Phase 2 total, not an additional figure." },
+      "skills": []
+    },
+    {
+      "key": "rocketgate-transaction-remediation-phase2-conflicts-resolved",
+      "fact_type": "metric",
+      "statement": "Of Phase 2's corrections, 1,687 transaction records had conflicting UDF1 values overwritten according to explicit merchant instruction.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Sub-breakdown of the Phase 2 total (7,457) — not additive with it. Demonstrates acting on explicit stakeholder/merchant direction for data-correction decisions, not an autonomous judgment call.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: 1,687 of the Phase 2 corrections were conflicting values overwritten per merchant instruction." }
+      ],
+      "metric": { "value": 1687, "unit": "transactions_corrected", "comparator": "exact", "scope_note": "Subset of the Phase 2 total (7,457): records with a conflicting prior value, resolved per explicit merchant direction.", "guardrail": "This is a subset of the 7,457 Phase 2 total, not an additional figure. Do not present as an autonomous data-correction judgment call — resolution followed explicit merchant instruction." },
+      "skills": []
+    },
+    {
+      "key": "rocketgate-transaction-remediation-total-corrected",
+      "fact_type": "metric",
+      "statement": "Across both execution phases, corrected approximately 32,000+ transaction records for a RocketGate merchant.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Conservative headline figure per explicit user guidance. Precise phase totals (24,589 + 7,457 = 32,046) are documented in scope_note; the 32,000+ framing accounts for the fact that this sum assumes the two phases did not overlap.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: total corrected records = Phase 1 (24,589) + Phase 2 (7,457) = 32,046, assuming the two phases did not overlap as tracked; 32,000+ is the appropriate conservative resume-facing presentation." }
+      ],
+      "metric": { "value": 32000, "unit": "transactions_corrected", "comparator": "at_least", "scope_note": "Sum of Phase 1 (24,589) and Phase 2 (7,457) = 32,046, presented conservatively as 32,000+ because the exact total assumes non-overlapping phases.", "guardrail": "Do not present as the final live-audit figure (43,348) — that is a separate, later analyzed-population count, not a corrected-records count. Do not restate as a percentage or success rate." },
+      "skills": []
+    },
+    {
+      "key": "rocketgate-transaction-remediation-final-audit-population",
+      "fact_type": "metric",
+      "statement": "A final live audit analyzed all 43,348 of the merchant's currently existing transactions.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "This is the analyzed population of the final audit, distinct from the total corrected-records figure (32,000+) — do not conflate the two.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: final live audit analyzed 43,348 current transactions." }
+      ],
+      "metric": { "value": 43348, "unit": "transactions_analyzed", "comparator": "exact", "scope_note": "Final live audit, all currently existing merchant transactions at that point in time.", "guardrail": "Do not describe this as the number of transactions corrected — 32,000+ is the corrected-records figure." },
+      "skills": []
+    },
+    {
+      "key": "rocketgate-transaction-remediation-final-audit-desired-state",
+      "fact_type": "metric",
+      "statement": "The final live audit found all 43,348 currently existing transactions in the approved, desired data state.",
+      "verification": "verified",
+      "visibility": "restricted",
+      "notes": "Precise framing per explicit user guidance — this is an audit-outcome statement about the analyzed population at that point in time, not a general accuracy/success-rate claim.",
+      "attributable": { "type": "project", "key": "transaction-remediation-tooling" },
+      "evidence": [
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: final live audit found 43,348 / 43,348 currently existing transactions in the approved desired state." }
+      ],
+      "metric": { "value": 43348, "unit": "transactions_in_desired_state", "comparator": "exact", "scope_note": "Equal to the analyzed population (43,348) — every currently existing transaction audited was found compliant at that point in time.", "guardrail": "Do not restate as '100% accuracy', '100% success rate', or 'zero defects'. Do not extend this claim to transactions outside the final audit's population (e.g. historical/already-superseded records)." },
+      "skills": []
+    },
+
+    { "_section": "=== Pearson — SEO Analyst (Role-level) ===" },
+
+    {
+      "key": "pearson-seo-analyst-what-they-did",
+      "fact_type": "bullet",
+      "statement": "Led data-driven SEO initiatives supporting 34 university programs, combining technical SEO, analytics, automation, and experimentation to improve organic growth and lead generation.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Resume-only — the '34 university programs' detail does not appear in the current live portfolio (it existed in an earlier, since-rewritten portfolio component, not the current one, so it is not cited as portfolio evidence here).",
+      "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Search Engine Optimization Analyst", "quoted_text": "Led data-driven SEO initiatives supporting 34 university programs, combining technical SEO, analytics, automation, and experimentation to improve organic growth and lead generation." }
+      ],
+      "metric": null,
+      "skills": ["tableau", "google-analytics"]
+    },
+    {
+      "key": "pearson-seo-analyst-budget-managed",
+      "fact_type": "metric",
+      "statement": "Directly managed a $1.3M SEO budget, using data analysis to guide content strategy and improve conversion performance across multiple programs.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": null,
+      "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Search Engine Optimization Analyst", "quoted_text": "Managed a $1.3M SEO budget, using data analysis to guide content strategy and improve conversion performance across multiple programs." },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/experience/Pearson.tsx", "locator": "impact array", "quoted_text": "$1.3M SEO budget managed" }
+      ],
+      "metric": { "value": 1300000, "unit": "usd", "comparator": "exact", "scope_note": "Directly managed budget, SEO Analyst role (June 2013 – Sept 2015).", "guardrail": "Distinct from the $25M+ marketing-spend visibility metric on the later Data & Analytics Lead Developer role — this is direct budget ownership, that is reporting/tracking visibility, not ownership." },
+      "skills": []
+    },
+
+    { "_section": "=== Pearson — Data & Analytics Lead Developer (Role-level) ===" },
+
+    {
+      "key": "pearson-data-analytics-lead-stakeholder-partnership",
+      "fact_type": "bullet",
+      "statement": "Partnered with marketing, finance, and engineering stakeholders to translate business requirements into scalable full-stack applications supporting analytics, forecasting, and operational reporting.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Resume-only, general role-level collaboration context.",
+      "attributable": { "type": "role", "key": "pearson-data-analytics-lead" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Data & Analytics Lead Developer / Data Analyst", "quoted_text": "Partnered with marketing, finance, and engineering stakeholders to translate business requirements into scalable full-stack applications supporting analytics, forecasting, and operational reporting." }
+      ],
+      "metric": null,
+      "skills": []
+    },
+
+    { "_section": "=== Pearson — Nexus (Project) ===" },
+
+    {
+      "key": "pearson-nexus-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built Nexus, a full-stack React/Node.js analytics platform unifying BigQuery and Salesforce data behind a single API layer, replacing a manual export-and-compile reporting cycle with live dashboards.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": null,
+      "attributable": { "type": "project", "key": "nexus-analytics-platform" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Nexus project highlight" },
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Nexus: Analytics Command Center entry" }
+      ],
+      "metric": null,
+      "skills": ["react", "node-js", "express", "bigquery", "salesforce", "api-integration-design", "analytics-systems", "data-pipelines"]
+    },
+    {
+      "key": "pearson-nexus-reporting-time-reduction",
+      "fact_type": "metric",
+      "statement": "Nexus reduced reporting time by 85%.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": null,
+      "attributable": { "type": "project", "key": "nexus-analytics-platform" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Data & Analytics Lead Developer / Data Analyst", "quoted_text": "reducing report generation time by 85%" },
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Nexus outcome field", "quoted_text": "Cut reporting time by 85%" }
+      ],
+      "metric": { "value": 85, "unit": "percent_reduction", "comparator": "exact", "scope_note": "Reporting-time reduction attributable to the Nexus platform specifically.", "guardrail": null },
+      "skills": []
+    },
+    {
+      "key": "pearson-nexus-marketing-spend-visibility",
+      "fact_type": "metric",
+      "statement": "Nexus gave teams real-time visibility and KPI tracking across $25M+ in annual marketing spend.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": null,
+      "attributable": { "type": "project", "key": "nexus-analytics-platform" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Data & Analytics Lead Developer / Data Analyst", "quoted_text": "automating KPI tracking for $25M+ in annual marketing spend" },
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Nexus outcome field", "quoted_text": "gave teams real-time visibility into $25M+ in tracked marketing and ad spend" }
+      ],
+      "metric": { "value": 25000000, "unit": "usd", "comparator": "at_least", "scope_note": "Scope of marketing/ad spend Nexus provided tracking and reporting visibility into — not a budget Daniel owned, optimized, or personally managed.", "guardrail": "Do not restate as budget personally managed, revenue generated, spend saved, or spend optimized directly by Daniel. This is a visibility/tracking-scope metric only." },
+      "skills": []
+    },
+    {
+      "key": "pearson-nexus-hours-saved-per-week",
+      "fact_type": "metric",
+      "statement": "Nexus's automated reporting saved approximately 20+ hours per week across teams by replacing spreadsheet-driven workflows with scalable web applications.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "User-confirmed as a legitimate, distinct metric from the Marketing Budget & Forecast Hub's separate time-savings figure — do not merge the two.",
+      "attributable": { "type": "project", "key": "nexus-analytics-platform" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Nexus project highlight", "quoted_text": "Replaced spreadsheet-driven workflows with scalable web applications, saving 20+ hours per week across teams" },
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: the Nexus-related reporting work saved approximately 20+ hours per week across teams; this is a legitimate, distinct metric from the Marketing Forecasting Platform's time savings." }
+      ],
+      "metric": { "value": 20, "unit": "hours_per_week", "comparator": "at_least", "scope_note": "Time saved across teams through Nexus's automated reporting, distinct from the Marketing Budget & Forecast Hub's separate ~10–15 hours/month figure.", "guardrail": "Do not merge with or restate as the Marketing Budget & Forecast Hub's hours-per-month figure — these are two separate systems and two separate confirmed metrics." },
+      "skills": []
+    },
+
+    { "_section": "=== Pearson — Marketing Budget & Forecast Hub (Project) ===" },
+
+    {
+      "key": "pearson-marketing-budget-forecast-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built the Marketing Budget & Forecast Hub (referred to in the resume as the Marketing Forecasting Platform), a centralized, multi-user forecasting platform with approval workflows, replacing fragile shared-spreadsheet budget planning.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": null,
+      "attributable": { "type": "project", "key": "marketing-budget-forecast-hub" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Data & Analytics Lead Developer / Data Analyst", "quoted_text": "Developed a centralized marketing forecasting platform that replaced manual spreadsheets" },
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Marketing Budget & Forecast Hub entry" }
+      ],
+      "metric": null,
+      "skills": ["react", "node-js", "express", "postgresql", "tailwind-css"]
+    },
+    {
+      "key": "pearson-marketing-budget-forecast-hours-saved-per-month",
+      "fact_type": "metric",
+      "statement": "Saved approximately 10–15 hours per month for internal teams by replacing manual spreadsheet-based budget planning with the Marketing Budget & Forecast Hub.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "The range itself (10-15 hours/month) is the user-confirmed canonical fact — this is not needs_confirmation merely because no single exact value exists within it. The old resume/portfolio '20+ hours/month' wording is preserved below as superseded Evidence, not as the canonical figure. See app/Models/Metric.php 'value_max' for the bounded-range representation.",
+      "attributable": { "type": "project", "key": "marketing-budget-forecast-hub" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Data & Analytics Lead Developer / Data Analyst", "quoted_text": "saving 20+ hours per month while improving budget planning and reporting accuracy", "note": "Superseded — user has corrected this figure; preserved here for provenance only, not as the canonical value." },
+        { "source": "user_confirmed", "confirmed_at": "2026-09-02", "note": "Confirmed directly: the resume/portfolio '20+ hours/month' figure for the Marketing Forecasting Platform is not supported; current recollection is approximately 10–15 hours/month, exact value unknown. Canonicalize conservatively as an approximate range — the range itself is the confirmed fact." }
+      ],
+      "metric": { "value": 10, "value_max": 15, "unit": "hours_per_month", "comparator": "approximately", "scope_note": "Bounded range — no single exact value within 10-15 is confirmed; do not narrow to a specific number (e.g. do not present as 'approximately 12.5 hours/month').", "guardrail": "Do not restate as '20+ hours/month' (the superseded figure) or as the Nexus platform's separate, distinct 20+ hours/week metric." },
+      "skills": []
+    },
+
+    { "_section": "=== Pearson — other Data & Analytics-era Projects (portfolio-only) ===" },
+
+    {
+      "key": "pearson-salesforce-migration-collaboration",
+      "fact_type": "bullet",
+      "statement": "Collaborated on the Salesforce migration and BigQuery data warehouse implementation, helping transition legacy MS SQL Server reporting systems while maintaining data integrity.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "Deliberately preserved as a collaborative contribution, not sole ownership — that is how both the resume and portfolio describe it.",
+      "attributable": { "type": "project", "key": "salesforce-migration-data-warehouse" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Data & Analytics Lead Developer / Data Analyst", "quoted_text": "Collaborated on the Salesforce migration and BigQuery data warehouse implementation, helping transition legacy reporting systems while maintaining data integrity." },
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Salesforce Migration & Data Warehouse Setup entry" }
+      ],
+      "metric": null,
+      "skills": ["salesforce", "bigquery", "ms-sql-server", "python", "google-cloud-functions"]
+    },
+    {
+      "key": "pearson-executive-insights-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built the Executive Insights Dashboard, consolidating department performance, goals, and emerging issues into one interactive dashboard, replacing separate departmental spreadsheets with a shared, real-time view for leadership.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Portfolio-only.",
+      "attributable": { "type": "project", "key": "executive-insights-dashboard" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Executive Insights Dashboard entry" }
+      ],
+      "metric": null,
+      "skills": ["react", "node-js", "bigquery", "postgresql", "google-cloud-functions", "analytics-systems"]
+    },
+    {
+      "key": "pearson-email-marketing-tracker-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built the Email Marketing Performance Tracker, a centralized dashboard pulling Salesforce Marketing Cloud and Google Analytics data into one view, so marketing teams could compare open rates, click-through, and conversions without manual exports.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Portfolio-only.",
+      "attributable": { "type": "project", "key": "email-marketing-performance-tracker" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Email Marketing Performance Tracker entry" }
+      ],
+      "metric": null,
+      "skills": ["react", "node-js", "salesforce-marketing-cloud", "google-analytics", "bigquery"]
+    },
+    {
+      "key": "pearson-seo-performance-tracker-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Built the SEO Performance Tracker, a dashboard on the Ahrefs API that automated keyword-rank tracking, site health, and competitor analysis into one place the SEO team could check daily.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Portfolio-only. Distinct from the SEO Analyst role — this is a later, Data & Analytics-era tool, not a restatement of the earlier role's work.",
+      "attributable": { "type": "project", "key": "seo-performance-tracker" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "SEO Performance Tracker entry" }
+      ],
+      "metric": null,
+      "skills": ["node-js", "react", "ahrefs", "postgresql", "express"]
+    },
+    {
+      "key": "pearson-recruitment-agent-tracking-what-it-is",
+      "fact_type": "bullet",
+      "statement": "Integrated the Nice inContact API with React/Node.js to surface recruitment agent activity and lead progression in one dashboard, giving managers same-day visibility instead of a weekly report.",
+      "verification": "strongly_supported",
+      "visibility": "public",
+      "notes": "Portfolio-only.",
+      "attributable": { "type": "project", "key": "recruitment-agent-activity-tracking" },
+      "evidence": [
+        { "source": "portfolio", "path": "danielsias-dev/src/constants/projects.ts", "locator": "Recruitment Agent Activity Tracking entry" }
+      ],
+      "metric": null,
+      "skills": ["react", "node-js", "nice-incontact", "bigquery", "postgresql"]
+    },
+
+    { "_section": "=== Liquid Gravity Engineering (Role-level) ===" },
+
+    {
+      "key": "liquid-gravity-what-they-did",
+      "fact_type": "narrative",
+      "statement": "Founded and led a marketing technology consultancy, building custom web applications, CRM integrations, automation tools, and conversion-focused solutions for clients across multiple industries.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "Both resume and portfolio describe this identically at the consultancy level; no client names, industries, or project names are established by either source, so none are invented here.",
+      "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Liquid Gravity Engineering", "quoted_text": "Founded and led a marketing technology consultancy, building custom web applications, CRM integrations, automation tools, and conversion-focused solutions for clients across multiple industries." },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/experience/LiquidGravity.tsx", "locator": "summary field" }
+      ],
+      "metric": null,
+      "skills": ["php"]
+    },
+    {
+      "key": "liquid-gravity-conversion-increase",
+      "fact_type": "metric",
+      "statement": "Delivered a 37% increase in post-purchase conversion rates.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "Kept at the employer/role level — neither source attributes this to a specific client or project, and none is invented here.",
+      "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Liquid Gravity Engineering", "quoted_text": "a 37% increase in post-purchase conversion rates" },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/experience/LiquidGravity.tsx", "locator": "impact array", "quoted_text": "37% increase in post-purchase conversion" }
+      ],
+      "metric": { "value": 37, "unit": "percent_increase", "comparator": "exact", "scope_note": "Consultancy/role-level — no specific client or project is attributed by either source.", "guardrail": null },
+      "skills": []
+    },
+    {
+      "key": "liquid-gravity-lead-generation-growth",
+      "fact_type": "metric",
+      "statement": "Delivered 201.2% growth in lead generation without increasing advertising spend.",
+      "verification": "verified",
+      "visibility": "public",
+      "notes": "Kept at the employer/role level for the same reason as the conversion metric above.",
+      "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+      "evidence": [
+        { "source": "resume", "document": "sources/resume/Daniel_Sias_Resume.pdf", "section": "Liquid Gravity Engineering", "quoted_text": "201.2% growth in lead generation without increasing advertising spend" },
+        { "source": "portfolio", "path": "danielsias-dev/src/app/experience/LiquidGravity.tsx", "locator": "impact array", "quoted_text": "201.2% growth in lead generation, no added ad spend" }
+      ],
+      "metric": { "value": 201.2, "unit": "percent_increase", "comparator": "exact", "scope_note": "Consultancy/role-level — no specific client or project is attributed by either source.", "guardrail": null },
+      "skills": []
+    }
+  ]
+}

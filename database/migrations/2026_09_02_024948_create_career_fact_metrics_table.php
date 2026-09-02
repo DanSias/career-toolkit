@@ -15,6 +15,10 @@ return new class extends Migration
             $table->id();
             $table->foreignId('career_fact_id')->unique()->constrained()->cascadeOnDelete();
             $table->decimal('value', 15, 2);
+            // Present only for a bounded range (e.g. "10-15 hours/month");
+            // null means `value` is a single-ended figure. See
+            // docs/domain-model.md.
+            $table->decimal('value_max', 15, 2)->nullable();
             // Open-ended by design (percent_reduction, usd, hours_per_month,
             // ...) — not an enum. See docs/domain-model.md.
             $table->string('unit');

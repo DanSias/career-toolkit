@@ -15,8 +15,12 @@ return new class extends Migration
             $table->id();
             $table->foreignId('employer_id')->constrained()->cascadeOnDelete();
             $table->string('title');
-            $table->date('start_date');
-            $table->date('end_date')->nullable();
+            // Month/year precision only — no source ever evidences a day
+            // of month for employment dates. See docs/domain-model.md.
+            $table->unsignedSmallInteger('start_year');
+            $table->unsignedTinyInteger('start_month')->nullable();
+            $table->unsignedSmallInteger('end_year')->nullable();
+            $table->unsignedTinyInteger('end_month')->nullable();
             $table->text('summary')->nullable();
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();

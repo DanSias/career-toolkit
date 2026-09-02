@@ -28,20 +28,25 @@ it('lets one employer have multiple successive roles', function () {
 
     $seo = Role::factory()->for($employer)->create([
         'title' => 'SEO Analyst',
-        'start_date' => '2013-06-01',
-        'end_date' => '2015-09-01',
+        'start_year' => 2013,
+        'start_month' => 6,
+        'end_year' => 2015,
+        'end_month' => 9,
     ]);
 
     $lead = Role::factory()->for($employer)->create([
         'title' => 'Data & Analytics Lead Developer',
-        'start_date' => '2015-09-01',
-        'end_date' => null,
+        'start_year' => 2015,
+        'start_month' => 9,
+        'end_year' => null,
+        'end_month' => null,
     ]);
 
     expect($employer->roles)->toHaveCount(2)
         ->and($employer->roles->pluck('title')->all())->toBe([$seo->title, $lead->title])
-        ->and($lead->end_date)->toBeNull()
-        ->and($seo->end_date->toDateString())->toBe('2015-09-01');
+        ->and($lead->end_year)->toBeNull()
+        ->and($seo->end_year)->toBe(2015)
+        ->and($seo->end_month)->toBe(9);
 });
 
 it('lets a role have zero or many projects', function () {
@@ -53,9 +58,23 @@ it('lets a role have zero or many projects', function () {
         ->and($roleWithProjects->projects)->toHaveCount(2);
 });
 
-it('requires a role start date but allows an open-ended end date for a current role', function () {
-    $current = Role::factory()->create(['start_date' => '2025-05-01', 'end_date' => null]);
+it('requires a role start year but allows an open-ended end for a current role', function () {
+    $current = Role::factory()->create([
+        'start_year' => 2025,
+        'start_month' => 5,
+        'end_year' => null,
+        'end_month' => null,
+    ]);
 
-    expect($current->start_date->toDateString())->toBe('2025-05-01')
-        ->and($current->end_date)->toBeNull();
+    expect($current->start_year)->toBe(2025)
+        ->and($current->start_month)->toBe(5)
+        ->and($current->end_year)->toBeNull()
+        ->and($current->end_month)->toBeNull();
+});
+
+it('allows a role start year with no month, for year-only evidence', function () {
+    $role = Role::factory()->create(['start_year' => 2013, 'start_month' => null]);
+
+    expect($role->start_year)->toBe(2013)
+        ->and($role->start_month)->toBeNull();
 });
