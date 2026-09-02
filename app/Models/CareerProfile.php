@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -44,11 +45,28 @@ class CareerProfile extends Model implements HasCareerProfileOwnership
     }
 
     /**
+     * Every CareerFact this profile owns, regardless of what it's
+     * attributed to — see docs/domain-model.md, "CareerFact has two
+     * relationships to the rest of the graph."
+     *
      * @return HasMany<CareerFact, $this>
      */
     public function careerFacts(): HasMany
     {
         return $this->hasMany(CareerFact::class);
+    }
+
+    /**
+     * CareerFacts attributed directly to the CareerProfile itself, as
+     * opposed to one of its Employers, Roles, or Projects. Named
+     * distinctly from careerFacts() above since that name is already
+     * taken by "every fact this profile owns."
+     *
+     * @return MorphMany<CareerFact, $this>
+     */
+    public function directCareerFacts(): MorphMany
+    {
+        return $this->morphMany(CareerFact::class, 'attributable');
     }
 
     /**

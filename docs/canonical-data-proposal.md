@@ -12,12 +12,12 @@
 
 ## Employers and Roles
 
-| Employer | Role | Dates (real precision) |
-|---|---|---|
-| RocketGate | Developer Support Engineer | May 2025 – Current |
-| Pearson Online Learning Services | Data & Analytics Lead Developer / Data Analyst | Sept 2015 – July 2024 |
-| Pearson Online Learning Services | SEO Analyst | June 2013 – Sept 2015 |
-| Liquid Gravity Engineering | Founder & Full Stack Developer / Marketing Consultant | July 2005 – June 2013 |
+| Employer                         | Role                                                  | Dates (real precision) |
+| -------------------------------- | ----------------------------------------------------- | ---------------------- |
+| RocketGate                       | Developer Support Engineer                            | May 2025 – Current     |
+| Pearson Online Learning Services | Data & Analytics Lead Developer / Data Analyst        | Sept 2015 – July 2024  |
+| Pearson Online Learning Services | SEO Analyst                                           | June 2013 – Sept 2015  |
+| Liquid Gravity Engineering       | Founder & Full Stack Developer / Marketing Consultant | July 2005 – June 2013  |
 
 Total Pearson tenure: June 2013 – July 2024, ~11 years, across two roles. The portfolio's "Nine years" summary sentence is not reproduced as canonical — see "Corrections applied" below.
 
@@ -27,30 +27,30 @@ Every date above is stored as `start_year`/`start_month`/`end_year`/`end_month` 
 
 Three records, all in `data/canonical-career-data.proposed.json`'s `educations` array, none yet in the resume-level detail beyond degree + field + graduation year (the resume gives no education dates at all):
 
-| Institution | Degree | Field | End Year |
-|---|---|---|---|
-| University of Central Florida | Master of Science | Optics | 2009 |
-| University of Florida | Master of Science | Management | 2005 |
-| Embry-Riddle Aeronautical University | Bachelor of Science | Engineering Physics | 2004 |
+| Institution                          | Degree              | Field               | End Year |
+| ------------------------------------ | ------------------- | ------------------- | -------- |
+| University of Central Florida        | Master of Science   | Optics              | 2009     |
+| University of Florida                | Master of Science   | Management          | 2005     |
+| Embry-Riddle Aeronautical University | Bachelor of Science | Engineering Physics | 2004     |
 
 `start_year` is `null` for all three — no source (resume or portfolio) evidences a start year, only graduation year (sourced from the portfolio's `education.ts`). Education records carry no `verification`/`visibility`/`Evidence` — see `docs/domain-model.md` for why that's by design, not an oversight.
 
 ## Projects proposed
 
-| Project | Role | Visibility | Why it's a Project |
-|---|---|---|---|
-| Workflow Intelligence | RocketGate | public | Flagship, dedicated case study, rich independent evidence |
-| Verbatim | RocketGate | public | Dedicated case study |
-| Transaction Toolkit | RocketGate | public | Dedicated case study — distinct from Transaction Remediation Tooling |
-| Knowledge Exporter | RocketGate | public | Dedicated case study |
-| Transaction Remediation Tooling | RocketGate | **restricted** | Repository + extensive user-confirmed detail; merchant-specific, not publicly documented |
-| Nexus: Analytics Command Center | Pearson (Data & Analytics Lead) | public | Portfolio "lead" project, dual-sourced with resume |
-| Marketing Budget & Forecast Hub | Pearson (Data & Analytics Lead) | public | Named portfolio project, dual-sourced with resume |
-| Salesforce Migration & Data Warehouse Setup | Pearson (Data & Analytics Lead) | public | Named portfolio project, dual-sourced with resume |
-| Executive Insights Dashboard | Pearson (Data & Analytics Lead) | public | Named portfolio project (portfolio-only) |
-| Email Marketing Performance Tracker | Pearson (Data & Analytics Lead) | public | Named portfolio project (portfolio-only) |
-| SEO Performance Tracker | Pearson (Data & Analytics Lead) | public | Named portfolio project (portfolio-only) |
-| Recruitment Agent Activity Tracking | Pearson (Data & Analytics Lead) | public | Named portfolio project (portfolio-only) |
+| Project                                     | Role                            | Visibility     | Why it's a Project                                                                       |
+| ------------------------------------------- | ------------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
+| Workflow Intelligence                       | RocketGate                      | public         | Flagship, dedicated case study, rich independent evidence                                |
+| Verbatim                                    | RocketGate                      | public         | Dedicated case study                                                                     |
+| Transaction Toolkit                         | RocketGate                      | public         | Dedicated case study — distinct from Transaction Remediation Tooling                     |
+| Knowledge Exporter                          | RocketGate                      | public         | Dedicated case study                                                                     |
+| Transaction Remediation Tooling             | RocketGate                      | **restricted** | Repository + extensive user-confirmed detail; merchant-specific, not publicly documented |
+| Nexus: Analytics Command Center             | Pearson (Data & Analytics Lead) | public         | Portfolio "lead" project, dual-sourced with resume                                       |
+| Marketing Budget & Forecast Hub             | Pearson (Data & Analytics Lead) | public         | Named portfolio project, dual-sourced with resume                                        |
+| Salesforce Migration & Data Warehouse Setup | Pearson (Data & Analytics Lead) | public         | Named portfolio project, dual-sourced with resume                                        |
+| Executive Insights Dashboard                | Pearson (Data & Analytics Lead) | public         | Named portfolio project (portfolio-only)                                                 |
+| Email Marketing Performance Tracker         | Pearson (Data & Analytics Lead) | public         | Named portfolio project (portfolio-only)                                                 |
+| SEO Performance Tracker                     | Pearson (Data & Analytics Lead) | public         | Named portfolio project (portfolio-only)                                                 |
+| Recruitment Agent Activity Tracking         | Pearson (Data & Analytics Lead) | public         | Named portfolio project (portfolio-only)                                                 |
 
 **Not created as Projects:** Developer Documentation & Onboarding (RocketGate) and the SEO Analyst role's work stay as Role-level facts — neither has enough distinct, named-entity evidence (architecture, dedicated description) to justify a Project record on its own; a single fact is enough.
 
@@ -62,7 +62,7 @@ Three records, all in `data/canonical-career-data.proposed.json`'s `educations` 
 - **RocketGate source control:** canonicalized as **GitLab** (`rocketgate-source-control-gitlab`), not GitHub. GitHub is preserved as a separate, career-wide (not RocketGate-specific) fact (`profile-github-personal-projects`), evidenced by the portfolio's own repo/CI.
 - **RocketGate ownership:** canonicalized as "independently designed and implemented from team-defined business requirements" — explicitly not "solo." Ownership breadth (ties to Workflow Intelligence's documented Product Design/UX/Architecture/Backend/Frontend/Analytics/AI Integration responsibilities) and the independently-implemented characterization are kept as two separate facts, per your explicit guidance.
 - **AI-assisted knowledge management:** canonicalized as a Role-level fact citing Knowledge Exporter, Verbatim, and NotebookLM together, without rewriting Knowledge Exporter itself as an AI product (it stays deterministic/non-AI in its own fact).
-- **Merchant integration:** canonicalized as integration *enablement/support* (meeting merchants, directing them to existing libraries, testing flows, troubleshooting) — not "wrote every merchant's integration." No merchant counts or outcome metrics invented.
+- **Merchant integration:** canonicalized as integration _enablement/support_ (meeting merchants, directing them to existing libraries, testing flows, troubleshooting) — not "wrote every merchant's integration." No merchant counts or outcome metrics invented.
 - **Transaction Reconstruction vs. Transaction Remediation vs. Transaction Toolkit:** three distinct things now. Transaction Toolkit (public, portfolio-documented investigation/analytics app) is unrelated to Transaction Remediation Tooling (restricted, repository + user-confirmed, the merchant data-correction engagement). "Transaction Reconstruction" is preserved only as the source repository's own name for the original, narrower scope of that second project.
 - **Transaction Remediation metrics:** the 43,348-transaction final audit is represented as two separate facts/metrics — population analyzed, and population found in the desired state — deliberately never phrased as "100% accuracy" or a success rate. The total corrected-records figure is canonicalized conservatively as **32,000+** (with the precise 24,589 + 7,457 = 32,046 derivation preserved in the metric's `scope_note`), kept structurally distinct from the 43,348 audit figure.
 - **$25M+ / $1.3M / 85%:** all three guardrails from the prior reconciliation are preserved unchanged in this proposal (see the Metrics section of the review report).

@@ -7,18 +7,18 @@ AI functionality, resume generation, or authentication behavior exists yet.
 
 ## Entity overview
 
-| Entity | Belongs to | Holds |
-|---|---|---|
-| `User` | — | Laravel's standard account/ownership root |
-| `CareerProfile` | `User` | A person's canonical career dataset |
-| `Employer` | `CareerProfile` | An organization |
-| `Role` | `Employer` | One title/period of employment |
-| `Project` | `Role` | A named, evidenced body of work (zero or many per Role) |
-| `CareerFact` | `CareerProfile` (+ attributed to one of the four models above) | One atomic, selectable claim |
-| `Evidence` | `CareerFact` | One piece of provenance for a fact |
-| `Metric` | `CareerFact` (optional, 1:1) | Structured quantitative data for a fact |
-| `Skill` | `CareerProfile` | A build technology, platform integration, capability, or practice |
-| `Education` | `CareerProfile` | One academic credential — plain structured data, not a CareerFact |
+| Entity          | Belongs to                                                     | Holds                                                             |
+| --------------- | -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `User`          | —                                                              | Laravel's standard account/ownership root                         |
+| `CareerProfile` | `User`                                                         | A person's canonical career dataset                               |
+| `Employer`      | `CareerProfile`                                                | An organization                                                   |
+| `Role`          | `Employer`                                                     | One title/period of employment                                    |
+| `Project`       | `Role`                                                         | A named, evidenced body of work (zero or many per Role)           |
+| `CareerFact`    | `CareerProfile` (+ attributed to one of the four models above) | One atomic, selectable claim                                      |
+| `Evidence`      | `CareerFact`                                                   | One piece of provenance for a fact                                |
+| `Metric`        | `CareerFact` (optional, 1:1)                                   | Structured quantitative data for a fact                           |
+| `Skill`         | `CareerProfile`                                                | A build technology, platform integration, capability, or practice |
+| `Education`     | `CareerProfile`                                                | One academic credential — plain structured data, not a CareerFact |
 
 `CareerFact` ↔ `Skill` and `Project` ↔ `Skill` are many-to-many via plain
 pivot tables (`career_fact_skill`, `project_skill`).
@@ -55,7 +55,7 @@ application layer instead. See "Attribution integrity" below.
 ## Attribution integrity
 
 **Invariant:** a `CareerFact`'s `attributable` target must belong to the
-*same* `CareerProfile` as the fact itself. Ownership of an attribution
+_same_ `CareerProfile` as the fact itself. Ownership of an attribution
 target is resolved by walking existing relationships — never by a stored
 `career_profile_id` on `Role`/`Project`:
 
@@ -76,7 +76,7 @@ own `career_profile_id`.
 **Enforcement is centralized in one place:** a `#[Boot]`-attributed method
 on `CareerFact` (`enforceAttributionIntegrity()`) registers a `saving`
 listener — the same convention already used by `Employer`/`Role`/`Project`
-for their deletion-safety hooks. `saving` fires on every create *and*
+for their deletion-safety hooks. `saving` fires on every create _and_
 every update, so the same check protects all of:
 
 - an unsupported `attributable_type` (not in the enforced morph map, or
@@ -85,7 +85,7 @@ every update, so the same check protects all of:
 - a same-profile violation on create
 - changing an existing fact's `attributable_*` to a cross-profile target
 - changing an existing fact's `career_profile_id` such that its
-  *unchanged* attribution becomes cross-profile
+  _unchanged_ attribution becomes cross-profile
 
 A violation throws `App\Exceptions\InvalidCareerFactAttributionException`
 and the save does not happen. See
@@ -212,17 +212,17 @@ plain `has-many` relationship to `CareerFact` — one fact commonly has
 several. It uses ordinary nullable columns rather than an opaque JSON blob
 for the fields common across every source type discovered so far:
 
-| Column | Used by |
-|---|---|
-| `source` | all — which kind of source (see below) |
-| `document` | resume |
-| `path` | portfolio, repository |
-| `section` | resume |
-| `locator` | resume, portfolio, repository |
-| `quoted_text` | any source, when the literal wording was captured |
-| `confirmed_at` | user_confirmed |
-| `note` | user_confirmed, or a free note on any source |
-| `metadata` (`json`, nullable) | escape hatch — see below |
+| Column                        | Used by                                           |
+| ----------------------------- | ------------------------------------------------- |
+| `source`                      | all — which kind of source (see below)            |
+| `document`                    | resume                                            |
+| `path`                        | portfolio, repository                             |
+| `section`                     | resume                                            |
+| `locator`                     | resume, portfolio, repository                     |
+| `quoted_text`                 | any source, when the literal wording was captured |
+| `confirmed_at`                | user_confirmed                                    |
+| `note`                        | user_confirmed, or a free note on any source      |
+| `metadata` (`json`, nullable) | escape hatch — see below                          |
 
 This covers every shape from the reconciliation examples (resume
 document/section/locator, portfolio path/locator, repository path/locator,
@@ -252,7 +252,7 @@ querying or its own lifecycle (it's written once, alongside the evidence
 row, and never referenced except through its fact). A separate entity
 would only re-implement what `Evidence` already provides, at the cost of
 an extra join. If a future need arises for multiple distinct wordings
-*within* a single evidence citation over time, this can be revisited then.
+_within_ a single evidence citation over time, this can be revisited then.
 
 ## Verification vs. visibility
 
@@ -261,12 +261,12 @@ plain strings and cast through PHP backed enums (`App\Enums\Verification`,
 `App\Enums\Visibility`) rather than database enums:
 
 - **Verification** (`verified` / `strongly_supported` / `needs_confirmation`)
-  answers *"do we trust this claim?"* — independent of where it came from.
+  answers _"do we trust this claim?"_ — independent of where it came from.
   A single-source, user-confirmed fact can be `verified`; a
   well-documented, multi-source portfolio claim can still be
   `needs_confirmation` if its exact framing is unresolved.
-- **Visibility** (`public` / `restricted` / `private`) answers *"may an
-  automated resume/application generator expose this?"* — a
+- **Visibility** (`public` / `restricted` / `private`) answers _"may an
+  automated resume/application generator expose this?"_ — a
   confidentiality question, unrelated to trust.
 
 Neither is derived from the other, and neither is derived from a fact's
@@ -276,7 +276,7 @@ automatically more "verified" than one referenced by one — see
 
 `Project` also carries an optional `default_visibility` column, independent
 of any individual `CareerFact`'s visibility — because an entire project's
-*existence* may need to stay non-public even before any fact about it is
+_existence_ may need to stay non-public even before any fact about it is
 reviewed (the reconciliation's Transaction Reconstruction tooling is a
 concrete example: no public case study, real API hostnames referenced).
 Nothing currently derives a fact's visibility from its project's default;
@@ -286,8 +286,8 @@ that would need to be an explicit, deliberate application-level decision.
 
 `Skill` holds no "evidence strength" column. Evidence strength
 (`project_evidenced` / `experience_evidenced` / `resume_asserted` / etc.,
-per the reconciliation report) is a property of *which facts and projects
-reference a skill and how well those are verified* — not a fixed property
+per the reconciliation report) is a property of _which facts and projects
+reference a skill and how well those are verified_ — not a fixed property
 of the skill itself. Storing it directly on `Skill` would let it drift out
 of sync with the facts that actually justify it. It's derivable via a
 query (e.g. the strongest verification level among `CareerFact`s and
@@ -328,7 +328,7 @@ were considered and rejected: nothing here needs distributed ID
 generation, and switching every PK/FK would add real complexity for no
 concrete benefit yet.
 
-Auto-increment IDs are *not* stable across a database rebuild, re-seed, or
+Auto-increment IDs are _not_ stable across a database rebuild, re-seed, or
 future import/export round-trip, though — and `CareerFact` and `Project`
 are specifically expected to be referenced externally (evidence citations,
 resume-generation history, human-readable YAML/JSON snapshots). Those two
@@ -367,21 +367,21 @@ without ever treating a proposal key as a persisted field:
    tuple needed.
 4. **CareerFact** — resolves directly via the real `key` column.
 
-The proposal's `employer_key`/`role_key` values exist only to make *this
-one file* self-consistent and reviewable; an importer is expected to
+The proposal's `employer_key`/`role_key` values exist only to make _this
+one file_ self-consistent and reviewable; an importer is expected to
 re-derive Employer/Role identity from their real columns (name, title,
 dates) at import time, the same way it would for any dataset it had never
 seen before.
 
 ## Deletion behavior
 
-| Deleting... | ...cascades (DB-level `onDelete('cascade')`) |
-|---|---|
-| `CareerProfile` | `Employer`, `CareerFact`, `Skill`, `Education` (and everything under them) |
-| `Employer` | `Role` → `Project` |
-| `Role` | `Project` |
-| `CareerFact` | `Evidence`, `Metric`, `career_fact_skill` pivot rows |
-| `Skill` / `Project` | their pivot rows only, never the other side |
+| Deleting...         | ...cascades (DB-level `onDelete('cascade')`)                               |
+| ------------------- | -------------------------------------------------------------------------- |
+| `CareerProfile`     | `Employer`, `CareerFact`, `Skill`, `Education` (and everything under them) |
+| `Employer`          | `Role` → `Project`                                                         |
+| `Role`              | `Project`                                                                  |
+| `CareerFact`        | `Evidence`, `Metric`, `career_fact_skill` pivot rows                       |
+| `Skill` / `Project` | their pivot rows only, never the other side                                |
 
 `CareerProfile` is treated as the true aggregate root: deleting it deletes
 everything it owns, with no special handling needed.
@@ -419,7 +419,7 @@ Every "list of values expected to evolve" column (`fact_type`,
 database column — never a database-level `ENUM` — paired with a PHP
 backed enum (`app/Enums/`) used via Eloquent's `casts()`. Extending any of
 these lists is a one-line addition to the enum class; it never requires a
-migration. `metric.unit` is deliberately left as a plain string with *no*
+migration. `metric.unit` is deliberately left as a plain string with _no_
 backing enum — the space of possible units (percent, USD, hours/month,
 counts, ...) is open-ended by nature, not a closed list of categories.
 
@@ -504,7 +504,7 @@ never against the real canonical data.
 `JobApplication`, `ResumeVariant`, and `ResumeFactSelection` are not
 implemented. One constraint they'll need to satisfy is captured here so it
 isn't lost: a generated/submitted `ResumeVariant` must snapshot the exact
-selected `CareerFact` content and wording *at generation time*, rather
+selected `CareerFact` content and wording _at generation time_, rather
 than merely reference live `CareerFact` rows by ID — so a later correction
 to a canonical fact can never retroactively alter a resume that was
 already submitted somewhere. Nothing in the schema above blocks this; it's

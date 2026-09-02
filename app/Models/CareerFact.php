@@ -62,6 +62,16 @@ class CareerFact extends Model
     /** @use HasFactory<CareerFactFactory> */
     use HasFactory;
 
+    /**
+     * Route-model binds by the stable `key` column rather than the
+     * auto-increment id, so URLs stay meaningful and stable across a
+     * re-import. See docs/domain-model.md "Stable identifiers".
+     */
+    public function getRouteKeyName(): string
+    {
+        return 'key';
+    }
+
     protected function casts(): array
     {
         return [
