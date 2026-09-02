@@ -20,6 +20,9 @@ AI functionality, resume generation, or authentication behavior exists yet.
 | `Skill`         | `CareerProfile`                                                | A build technology, platform integration, capability, or practice |
 | `Education`     | `CareerProfile`                                                | One academic credential — plain structured data, not a CareerFact |
 | `JobPosting`    | `CareerProfile`                                                | The verbatim source material for a target job                     |
+| `JobAnalysis`   | `JobPosting`                                                   | One versioned, immutable structured-analysis snapshot of a posting |
+| `JobAnalysisFinding` | `JobAnalysis`                                             | One discrete observation extracted from a posting                 |
+| `JobAnalysisFindingEvidence` | `JobAnalysisFinding`                              | One verbatim excerpt substantiating a finding                     |
 
 `CareerFact` ↔ `Skill` is many-to-many via a plain pivot table
 (`career_fact_skill`). `project_skill` also exists but is currently
@@ -46,6 +49,9 @@ User
       ├── Education (hasMany)
       │
       └── JobPosting (hasMany)
+           └── JobAnalysis (hasMany — zero or more snapshots, no "current" pointer)
+                └── JobAnalysisFinding (hasMany)
+                     └── JobAnalysisFindingEvidence (hasMany)
 ```
 
 A `CareerFact` has **two relationships** to the rest of the graph: it
@@ -590,9 +596,93 @@ changed or vanished — depend on it being the actual submitted text, not
 a normalized approximation of it.
 
 `JobPosting` intentionally has no relationship to `CareerFact`,
-`Evidence`, or any other canonical-data entity yet. Structured job
-analysis, requirement extraction, and CareerFact matching are later
-milestones layered on top of this record — not fields on it.
+`Evidence`, or any other canonical-data entity. It does have one
+relationship layered on top of it now — `jobAnalyses` (hasMany), see
+below — but that relationship stays entirely on the "what does this job
+want" side; `JobPosting` itself still holds no analysis, keyword,
+requirement, match-score, or selected-fact data as columns. CareerFact
+matching is a later milestone.
+
+## JobAnalysis
+
+`JobAnalysis`, `JobAnalysisFinding`, and `JobAnalysisFindingEvidence`
+together are a **derived, AI-generated interpretation of one
+`JobPosting`** — not source data. `JobPosting.description` is the
+source; a `JobAnalysis` is one structured reading of it, produced by
+extracting findings from that text. Nothing in this layer is
+canonical-career-data — it describes the job, never the candidate. See
+`docs/job-analysis-contract.md` for the exact structured-output shape
+this maps onto (no LLM integration exists yet — that document is a
+contract for a future milestone, not implemented behavior).
+
+**Each `JobAnalysis` row is a complete, versioned, immutable snapshot.**
+A `JobPosting` can accumulate zero or more `JobAnalysis` rows over time
+(e.g. re-running analysis after a prompt or model change), and there is
+deliberately no `current_job_analysis_id` pointer on `JobPosting` —
+"which snapshot is current" is a UI/query concern for whenever an actual
+consumer of this data is built, not a schema-level fact today. Once a
+`JobAnalysis` (or any of its findings/evidence) is created, none of its
+fields are ever updated in place; a correction is a new `JobAnalysis`
+row, exactly as a `CareerFact` correction would be a new fact rather
+than a mutated one. This is enforced at the model layer (a `saving`
+guard on `JobAnalysisFinding` validates on every save, while an
+`updating` guard on all three models blocks any change to an
+already-persisted row) rather than left as a convention, and the guard
+is deliberately on `updating`, not `saving`, so that constructing a
+snapshot — creating its `JobAnalysisFinding` and
+`JobAnalysisFindingEvidence` children — is never blocked; only editing
+an existing row is.
+
+**`JobAnalysisFinding` is the unit of interpretation.** Each row is one
+discrete observation pulled from the posting — a required qualification,
+a travel expectation, a culture signal, and so on — never a paragraph
+summary or a bag of keywords. `category` (13 fixed cases, from
+`responsibility` and `required_qualification` through `travel` and
+`authorization`) says what kind of observation it is; `basis` says how
+directly the posting supports it (`explicit`, `strongly_implied`, or
+`inferred`).
+
+**`JobAnalysisFindingEvidence` is a real hasMany child table, not an
+inline column or JSON array**, because a single finding is routinely
+substantiated by more than one excerpt from the same posting (a travel
+requirement restated in both the "Requirements" and "About the Role"
+sections is one finding with two evidence rows, not two findings). This
+mirrors `CareerFact` → `Evidence` structurally, but the two are not
+otherwise connected in any way — see the candidate-independence note
+below.
+
+**`requirement_strength` is nullable with exactly three real values**
+(`required`, `preferred`, `not_required`) — there is no fourth "just
+mentioned" value. Null does not collapse into "not required"; it means
+either the finding's `category` doesn't carry a requirement strength at
+all (e.g. `culture_signal`, `success_measure`), or the posting is
+genuinely silent on strength for an otherwise-relevant finding.
+`not_required` is reserved for postings that **explicitly disclaim** a
+qualification (e.g. "ERP experience is not required") — that is real,
+distinct signal from the posting simply never bringing the topic up, and
+collapsing the two into one representation would lose it.
+
+**`years_experience_min`/`years_experience_max` are a faithful
+transcription, never a computed eligibility floor or ceiling.** "5+
+years" is stored as `min=5.0, max=null` (a floor with no stated ceiling);
+"7-10 years" is stored as `min=7.0, max=10.0`. Nothing at this layer
+interprets these numbers against a candidate's actual experience — that
+comparison, if it's ever built, is a future matching milestone, not
+something this schema computes or asserts.
+
+**This entire subtree is candidate-independent by design.** `JobAnalysis`,
+`JobAnalysisFinding`, and `JobAnalysisFindingEvidence` hold no
+relationship — direct, polymorphic, or otherwise — to `CareerFact`,
+`Skill`, `Project`, `Employer`, or `Role`. A `JobAnalysis` describes what
+a job posting is asking for in isolation; it says nothing about how well
+any candidate matches it. Matching, scoring, and CareerFact selection are
+later milestones layered on top of this data, not fields or relationships
+on it.
+
+A future `ResumeVariant` (see below) is expected to eventually reference
+a specific `JobAnalysis` snapshot as the basis for a tailoring decision —
+but that pointer does not exist yet, and nothing in this schema commits
+to its exact shape.
 
 ## Deferred: future resume-artifact concepts
 
