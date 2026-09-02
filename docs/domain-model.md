@@ -612,8 +612,10 @@ source; a `JobAnalysis` is one structured reading of it, produced by
 extracting findings from that text. Nothing in this layer is
 canonical-career-data — it describes the job, never the candidate. See
 `docs/job-analysis-contract.md` for the exact structured-output shape
-this maps onto (no LLM integration exists yet — that document is a
-contract for a future milestone, not implemented behavior).
+this maps onto, and `docs/job-analysis-generation.md` for how a
+snapshot is actually produced and persisted — the generation pipeline,
+provider boundary, and prompt/schema version conventions live there
+rather than in this document.
 
 **Each `JobAnalysis` row is a complete, versioned, immutable snapshot.**
 A `JobPosting` can accumulate zero or more `JobAnalysis` rows over time

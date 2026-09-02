@@ -18,6 +18,15 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
+// tests/Llm holds the opt-in, real-provider five-posting evaluation —
+// deliberately outside phpunit.xml's default testsuites, so it never
+// runs as part of `php artisan test` / the default Feature+Unit suite.
+// Run it explicitly: `vendor/bin/pest tests/Llm`. See
+// docs/job-analysis-generation.md.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Llm');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

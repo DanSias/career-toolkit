@@ -8,6 +8,13 @@ export type JobPostingSummary = {
     captured_at: string | null;
 };
 
+export type JobAnalysisSummary = {
+    id: number;
+    generated_at: string | null;
+    overall_seniority: string | null;
+    findings_count: number | null;
+};
+
 export type JobPostingDetail = {
     id: number;
     company: string;
@@ -16,6 +23,7 @@ export type JobPostingDetail = {
     source_url: string | null;
     captured_at: string | null;
     description: string;
+    analyses: JobAnalysisSummary[];
 };
 
 export type JobsIndexProps = {

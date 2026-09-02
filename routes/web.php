@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CareerDataController;
+use App\Http\Controllers\JobAnalysisController;
 use App\Http\Controllers\JobPostingController;
 use Illuminate\Support\Facades\Route;
 
@@ -11,3 +12,6 @@ Route::get('/jobs', [JobPostingController::class, 'index'])->name('jobs.index');
 Route::get('/jobs/create', [JobPostingController::class, 'create'])->name('jobs.create');
 Route::post('/jobs', [JobPostingController::class, 'store'])->name('jobs.store');
 Route::get('/jobs/{jobPosting}', [JobPostingController::class, 'show'])->name('jobs.show');
+
+Route::post('/jobs/{jobPosting}/analyses', [JobAnalysisController::class, 'store'])->name('jobs.analyses.store');
+Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}', [JobAnalysisController::class, 'show'])->name('jobs.analyses.show');

@@ -40,6 +40,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $seniority_rationale
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property-read int|null $findings_count Only present when loaded via withCount('findings').
  */
 #[Fillable([
     'job_posting_id',

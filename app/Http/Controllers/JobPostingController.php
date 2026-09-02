@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreJobPostingRequest;
+use App\Models\JobAnalysis;
 use App\Models\JobPosting;
 use App\Support\CurrentCareerProfile;
 use Illuminate\Http\RedirectResponse;
@@ -78,6 +79,25 @@ class JobPostingController extends Controller
             'source_url' => $job->source_url,
             'captured_at' => $job->created_at?->toDateString(),
             'description' => $job->description,
+            'analyses' => $job->jobAnalyses()
+                ->withCount('findings')
+                ->latest('generated_at')
+                ->get()
+                ->map($this->transformAnalysisSummary(...))
+                ->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function transformAnalysisSummary(JobAnalysis $analysis): array
+    {
+        return [
+            'id' => $analysis->id,
+            'generated_at' => $analysis->generated_at->toDateTimeString(),
+            'overall_seniority' => $analysis->overall_seniority?->value,
+            'findings_count' => $analysis->findings_count,
         ];
     }
 }

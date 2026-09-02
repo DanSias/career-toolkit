@@ -1,11 +1,11 @@
 # JobAnalysis structured-output contract
 
-This documents the JSON shape a `JobAnalysis` snapshot is built from. It
-exists so the eventual LLM integration has a fixed target to produce and
-validate against — **this document is the contract, not the
-implementation**. No prompt, model call, or generation code exists yet;
-see `docs/domain-model.md` "JobAnalysis" for the persisted domain model
-this maps onto.
+This documents the JSON shape a `JobAnalysis` snapshot is built from —
+**this document is the contract, not the implementation**. See
+`docs/domain-model.md` "JobAnalysis" for the persisted domain model this
+maps onto, and `docs/job-analysis-generation.md` for how a snapshot is
+actually generated and persisted (the prompt, provider, and validation
+pipeline).
 
 `schema_version` on `JobAnalysis` identifies which version of this
 contract a given snapshot was generated against, so the contract can
@@ -28,7 +28,7 @@ snapshots.
       "basis": "explicit",
       "requirement_strength": "required",
       "emphasis": "normal",
-      "maturity": null,
+      "maturity": "unspecified",
       "years_experience_min": 5.0,
       "years_experience_max": null,
       "recency_requirement": null,
@@ -49,7 +49,7 @@ snapshots.
       "basis": "explicit",
       "requirement_strength": "not_required",
       "emphasis": "normal",
-      "maturity": null,
+      "maturity": "unspecified",
       "years_experience_min": null,
       "years_experience_max": null,
       "recency_requirement": null,
@@ -70,7 +70,7 @@ snapshots.
       "basis": "explicit",
       "requirement_strength": "required",
       "emphasis": "high",
-      "maturity": null,
+      "maturity": "unspecified",
       "years_experience_min": null,
       "years_experience_max": null,
       "recency_requirement": null,
@@ -98,8 +98,28 @@ snapshots.
 - **`overall_seniority`** is always an *inferred* judgment — one of
   `junior`, `mid`, `senior`, `staff_or_above`, `unspecified` — since no
   posting states its own seniority level as a fact the way it might state
-  a years-of-experience floor. `seniority_rationale` is free text
-  explaining why.
+  a years-of-experience floor. It is **required in every generated
+  analysis and is never `null`**: when the posting gives no real
+  seniority signal, the value is the literal string `unspecified`, not
+  an absent/null field. (`JobAnalysis.overall_seniority` is a nullable
+  database column, but that nullability exists only for flexibility at
+  the storage layer — e.g. a future non-generated way to create a
+  snapshot — and does not represent an additional state a generation
+  produces; every generated analysis populates it.) `seniority_rationale`
+  is required alongside it — a short free-text explanation, including
+  for `unspecified` (e.g. "posting gives no seniority signal").
+- **`emphasis`** is `high`, `normal`, or `low`, and is **required on
+  every finding** — there is no null/absent case. `normal` is the
+  ordinary, default level: use it whenever nothing about the posting
+  makes a finding stand out as unusually stressed (`high`) or
+  deliberately de-emphasized (`low`).
+- **`maturity`** is `production`, `prototype_or_experimental`, or
+  `unspecified`, and is **required on every finding** — there is no
+  null/absent case. `unspecified` is the fallback whenever the source
+  text does not establish whether a technology/capability finding
+  refers to production use versus prototyping/experimentation, or
+  whenever the distinction doesn't meaningfully apply to that finding at
+  all (most non-technology categories).
 - **`category`** must be exactly one of the 13 fixed
   `JobAnalysisFindingCategory` cases: `responsibility`,
   `required_qualification`, `preferred_qualification`, `technology`,
@@ -129,11 +149,8 @@ snapshots.
 
 ## Deliberately out of scope here
 
-- The actual prompt text sent to a model.
-- Which model/provider generates this (`generated_by` on `JobAnalysis`
-  exists to record it, but nothing here prescribes a value).
+- The actual prompt text and provider request/response shapes — see
+  `docs/job-analysis-generation.md`.
 - Retry, validation-failure, or partial-generation handling — a
   `JobAnalysis` row only ever exists once generation has produced output
   matching this contract; failed/in-progress attempts are not modeled.
-- Any translation from this JSON into HTTP request/response types — that
-  belongs to whichever milestone actually builds the integration.

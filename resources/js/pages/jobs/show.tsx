@@ -1,7 +1,38 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import AppShell from '@/layouts/app-shell';
 import { index as jobsIndex } from '@/routes/jobs';
+import { show as analysesShow, store as analysesStore } from '@/routes/jobs/analyses';
 import type { JobShowProps } from '@/types/job-posting';
+
+type PageErrors = { errors?: { generation?: string } };
+
+function GenerateAnalysisAction({ jobId }: { jobId: number }) {
+    const form = useForm({});
+    const { errors } = usePage<PageErrors>().props;
+
+    return (
+        <div>
+            <button
+                type="button"
+                disabled={form.processing}
+                onClick={() =>
+                    form.post(analysesStore.url({ jobPosting: jobId }))
+                }
+                className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+            >
+                {form.processing ? 'Generating…' : 'Generate Analysis'}
+            </button>
+            {errors?.generation && (
+                <p
+                    role="alert"
+                    className="mt-2 text-sm text-red-600 dark:text-red-400"
+                >
+                    {errors.generation}
+                </p>
+            )}
+        </div>
+    );
+}
 
 export default function JobsShow({ job }: JobShowProps) {
     return (
@@ -56,6 +87,47 @@ export default function JobsShow({ job }: JobShowProps) {
                         <dd>{job.captured_at}</dd>
                     </div>
                 </dl>
+            </div>
+
+            <div className="mt-6">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                        Job Analysis
+                    </h2>
+                    <GenerateAnalysisAction jobId={job.id} />
+                </div>
+
+                {job.analyses.length === 0 ? (
+                    <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+                        No analysis has been generated yet.
+                    </p>
+                ) : (
+                    <ul className="mt-2 divide-y divide-neutral-200 rounded-lg border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
+                        {job.analyses.map((analysis) => (
+                            <li key={analysis.id}>
+                                <Link
+                                    href={analysesShow.url({
+                                        jobPosting: job.id,
+                                        jobAnalysis: analysis.id,
+                                    })}
+                                    className="flex items-center justify-between px-4 py-3 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+                                >
+                                    <span className="text-neutral-700 dark:text-neutral-300">
+                                        {analysis.generated_at ?? '—'}
+                                    </span>
+                                    <span className="text-xs text-neutral-400 dark:text-neutral-500">
+                                        {analysis.overall_seniority ?? 'unspecified'}{' '}
+                                        · {analysis.findings_count ?? 0}{' '}
+                                        finding
+                                        {analysis.findings_count === 1
+                                            ? ''
+                                            : 's'}
+                                    </span>
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
 
             <div className="mt-6">
