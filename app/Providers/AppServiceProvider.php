@@ -2,7 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\CareerProfile;
+use App\Models\Employer;
+use App\Models\Project;
+use App\Models\Role;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +29,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureMorphMap();
     }
 
     /**
@@ -46,5 +52,22 @@ class AppServiceProvider extends ServiceProvider
                 ->uncompromised()
             : null,
         );
+    }
+
+    /**
+     * Use short, stable aliases for CareerFact's polymorphic attribution
+     * targets instead of full class names, so a future namespace refactor
+     * can't silently orphan stored attributions. Enforced (not just
+     * mapped), so an un-mapped model can never be used as an attributable
+     * target by accident. See docs/domain-model.md.
+     */
+    protected function configureMorphMap(): void
+    {
+        Relation::enforceMorphMap([
+            'career_profile' => CareerProfile::class,
+            'employer' => Employer::class,
+            'role' => Role::class,
+            'project' => Project::class,
+        ]);
     }
 }
