@@ -16,6 +16,15 @@ it('renders the Career Data index successfully', function () {
     $this->get(route('career-data.index'))->assertOk();
 });
 
+it('resolves the current profile through the same deterministic rule as CurrentCareerProfile::resolve(), not an arbitrary first()', function () {
+    $first = CareerProfile::factory()->create(['name' => 'First Profile']);
+    CareerProfile::factory()->create(['name' => 'Second Profile']);
+
+    $this->get(route('career-data.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('profile.name', $first->name));
+});
+
 it('shows a graceful empty state when no career profile exists', function () {
     $this->get(route('career-data.index'))
         ->assertOk()

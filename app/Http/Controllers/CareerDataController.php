@@ -13,6 +13,7 @@ use App\Models\Role;
 use App\Models\Skill;
 use App\Support\CareerData\MetricFormatter;
 use App\Support\CareerData\RoleDateFormatter;
+use App\Support\CurrentCareerProfile;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
@@ -43,16 +44,10 @@ class CareerDataController extends Controller
 
     public function index(): Response
     {
-        $profile = CareerProfile::query()
-            ->with([
-                'directCareerFacts',
-                'employers' => fn ($query) => $query->orderBy('sort_order')->withCount('careerFacts'),
-                'employers.roles' => fn ($query) => $query->orderBy('sort_order')->withCount('careerFacts'),
-                'employers.roles.projects' => fn ($query) => $query->orderBy('sort_order')->withCount('careerFacts'),
-                'employers.roles.projects.skills',
-                'educations' => fn ($query) => $query->orderBy('sort_order'),
-            ])
-            ->first();
+        // Not resolve(): this page has a deliberate, tested empty state
+        // for "no profile yet" (a freshly migrated, not-yet-imported
+        // database) — see App\Support\CurrentCareerProfile.
+        $profile = CurrentCareerProfile::tryResolve();
 
         if ($profile === null) {
             return Inertia::render('career-data/index', [
@@ -62,6 +57,19 @@ class CareerDataController extends Controller
                 'skills' => [],
             ]);
         }
+
+        $profile->load([
+            'directCareerFacts',
+            'employers' => fn ($query) => $query->orderBy('sort_order')->withCount('careerFacts'),
+            'employers.roles' => fn ($query) => $query->orderBy('sort_order')->withCount('careerFacts'),
+            'employers.roles.projects' => fn ($query) => $query->orderBy('sort_order')->withCount('careerFacts'),
+            // Project skills are derived (see Project::derivedSkills() /
+            // docs/domain-model.md), not stored in project_skill — eager
+            // loading each Project's directly-attributed facts and their
+            // Skills here is what lets derivedSkills() avoid N+1 below.
+            'employers.roles.projects.careerFacts.skills',
+            'educations' => fn ($query) => $query->orderBy('sort_order'),
+        ]);
 
         $skills = Skill::query()
             ->where('career_profile_id', $profile->id)
@@ -141,7 +149,7 @@ class CareerDataController extends Controller
             'description' => $project->description,
             'visibility' => $project->default_visibility?->value,
             'fact_count' => $project->career_facts_count,
-            'skills' => $project->skills->map($this->transformSkillRef(...))->all(),
+            'skills' => $project->derivedSkills()->map($this->transformSkillRef(...))->all(),
         ];
     }
 

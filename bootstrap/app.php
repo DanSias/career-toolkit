@@ -18,6 +18,14 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+
+        // JobPosting.description must stay byte-for-byte verbatim — the
+        // framework's default global TrimStrings middleware would
+        // otherwise trim its leading/trailing whitespace like any other
+        // input. Ordinary single-line fields (company, title, location,
+        // source_url) still get trimmed normally. See
+        // docs/domain-model.md "JobPosting".
+        $middleware->trimStrings(except: ['description']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

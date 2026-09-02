@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * A named, evidenced body of work within a Role. Zero or many per Role.
@@ -55,6 +56,13 @@ class Project extends Model implements HasCareerProfileOwnership
     }
 
     /**
+     * Direct, explicit Project-level skill assertions — distinct from
+     * derivedSkills() below. Currently unpopulated across the whole
+     * dataset (`project_skill` is empty) and unused by the UI, which
+     * reads derivedSkills() instead. Kept, not removed: see
+     * docs/domain-model.md "Project skills are derived, not stored" for
+     * when this would actually get used.
+     *
      * @return BelongsToMany<Skill, $this>
      */
     public function skills(): BelongsToMany
@@ -70,6 +78,26 @@ class Project extends Model implements HasCareerProfileOwnership
     public function careerFacts(): MorphMany
     {
         return $this->morphMany(CareerFact::class, 'attributable');
+    }
+
+    /**
+     * The Project's Skills, derived from the Skills attached to
+     * CareerFacts attributed *directly* to this Project — never from
+     * project_skill, and never from Role-level facts. See
+     * docs/domain-model.md "Project skills are derived, not stored".
+     *
+     * Reads `careerFacts.skills` off already-loaded relations when
+     * eager-loaded by the caller (recommended for a list of Projects, to
+     * avoid N+1); falls back to lazy-loading them otherwise.
+     *
+     * @return Collection<int, Skill>
+     */
+    public function derivedSkills(): Collection
+    {
+        return $this->careerFacts
+            ->flatMap(fn (CareerFact $fact) => $fact->skills)
+            ->unique('id')
+            ->values();
     }
 
     /**

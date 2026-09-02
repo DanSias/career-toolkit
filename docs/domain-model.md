@@ -19,9 +19,11 @@ AI functionality, resume generation, or authentication behavior exists yet.
 | `Metric`        | `CareerFact` (optional, 1:1)                                   | Structured quantitative data for a fact                           |
 | `Skill`         | `CareerProfile`                                                | A build technology, platform integration, capability, or practice |
 | `Education`     | `CareerProfile`                                                | One academic credential — plain structured data, not a CareerFact |
+| `JobPosting`    | `CareerProfile`                                                | The verbatim source material for a target job                     |
 
-`CareerFact` ↔ `Skill` and `Project` ↔ `Skill` are many-to-many via plain
-pivot tables (`career_fact_skill`, `project_skill`).
+`CareerFact` ↔ `Skill` is many-to-many via a plain pivot table
+(`career_fact_skill`). `project_skill` also exists but is currently
+unused — see "Project skills are derived, not stored" below.
 
 ## Relationships
 
@@ -31,7 +33,7 @@ User
       ├── Employer (hasMany)
       │    └── Role (hasMany)
       │         └── Project (hasMany)
-      │              ↔ Skill (belongsToMany)
+      │              ↔ Skill (belongsToMany — unused; see "Project skills are derived, not stored")
       │
       ├── CareerFact (hasMany, direct ownership — always set)
       │    ├── attributable → CareerProfile | Employer | Role | Project (morphTo)
@@ -41,7 +43,9 @@ User
       │
       ├── Skill (hasMany)
       │
-      └── Education (hasMany)
+      ├── Education (hasMany)
+      │
+      └── JobPosting (hasMany)
 ```
 
 A `CareerFact` has **two relationships** to the rest of the graph: it
@@ -375,13 +379,13 @@ seen before.
 
 ## Deletion behavior
 
-| Deleting...         | ...cascades (DB-level `onDelete('cascade')`)                               |
-| ------------------- | -------------------------------------------------------------------------- |
-| `CareerProfile`     | `Employer`, `CareerFact`, `Skill`, `Education` (and everything under them) |
-| `Employer`          | `Role` → `Project`                                                         |
-| `Role`              | `Project`                                                                  |
-| `CareerFact`        | `Evidence`, `Metric`, `career_fact_skill` pivot rows                       |
-| `Skill` / `Project` | their pivot rows only, never the other side                                |
+| Deleting...         | ...cascades (DB-level `onDelete('cascade')`)                                             |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `CareerProfile`     | `Employer`, `CareerFact`, `Skill`, `Education`, `JobPosting` (and everything under them) |
+| `Employer`          | `Role` → `Project`                                                                       |
+| `Role`              | `Project`                                                                                |
+| `CareerFact`        | `Evidence`, `Metric`, `career_fact_skill` pivot rows                                     |
+| `Skill` / `Project` | their pivot rows only, never the other side                                              |
 
 `CareerProfile` is treated as the true aggregate root: deleting it deletes
 everything it owns, with no special handling needed.
@@ -498,6 +502,97 @@ See `tests/Feature/Domain/ImportCanonicalCareerDataTest.php` for first-run,
 idempotent-second-run, deterministic-update, and every failure case above,
 each exercised against a small fixture dataset built in the test itself —
 never against the real canonical data.
+
+## Current CareerProfile resolution
+
+The application is local-first, single-user, with no login and no
+profile-switching UI — but "which `CareerProfile` is the active one" was
+being decided ad hoc (`CareerProfile::query()->first()`) directly inside
+`CareerDataController`. That's centralized now in
+`App\Support\CurrentCareerProfile`, a small stateless resolver — not a
+tenancy/context framework, just one place that owns this one rule:
+
+```php
+CurrentCareerProfile::resolve(): CareerProfile      // throws NoCareerProfileException if none exists
+CurrentCareerProfile::tryResolve(): ?CareerProfile  // returns null instead
+```
+
+**Deterministic rule when more than one `CareerProfile` row exists**
+(nothing prevents this at the database level, even though the product
+only ever creates one): the oldest — lowest `id`, i.e. the first one this
+application ever owned (`CareerProfile::query()->oldest('id')->first()`).
+Not documented behavior that happened to fall out of insertion order —
+`tryResolve()` orders explicitly, so it's true regardless of how rows were
+created.
+
+**Two methods, not one, because two genuinely different needs exist:**
+`resolve()` throws `App\Exceptions\NoCareerProfileException` when nothing
+exists — used by `JobPostingController`, where a missing profile is a
+real failure (a `JobPosting` has nowhere to attach). `tryResolve()`
+returns `null` — used by `CareerDataController::index()`, which has a
+deliberate, already-tested empty state for "no profile yet" (a freshly
+migrated, not-yet-imported database). Silently returning `null` from
+`resolve()` and making every caller re-check would be exactly the
+"downstream code assumes a profile" failure mode this exists to prevent;
+splitting into two named methods makes each call site's assumption
+explicit instead.
+
+## Project skills are derived, not stored
+
+`project_skill` exists as a table but holds zero rows across the entire
+canonical dataset, and nothing populates it. Rather than force-populating
+it (which would mean asserting facts about a Project that no CareerFact
+actually backs) or leaving Project skill display simply blank, the
+decision for now is:
+
+> A Project's skills are the distinct Skills attached to CareerFacts
+> attributed **directly** to that Project — never inherited from its
+> Role, and never from `project_skill`.
+
+`Project::derivedSkills(): Illuminate\Support\Collection<int, Skill>`
+implements exactly this: `$this->careerFacts->flatMap(fn ($fact) =>
+$fact->skills)->unique('id')->values()`. It reads whatever's already
+eager-loaded (`careerFacts.skills`) rather than issuing its own query, so
+a page listing many Projects (the Career Data index) stays at a fixed,
+small query count instead of one extra query per project. `Project::skills()`
+— the actual `project_skill` relation — is unchanged and still present:
+kept, not removed, for the case a real need for **independent**,
+fact-unbacked Project-level skill assertions shows up later. Until then,
+maintaining two sources of truth for the same information would only let
+them drift apart, so the UI reads `derivedSkills()` exclusively.
+
+No caching or duplication was added: `derivedSkills()` is computed at
+read time from data that already exists, not persisted anywhere new.
+
+## JobPosting
+
+`JobPosting` belongs to `CareerProfile` (`career_profile_id`, cascade on
+delete — the same ownership pattern as `Employer`/`Skill`/`Education`; no
+separate `User`-level ownership was introduced since `CareerProfile`
+ownership is already sufficient). It holds only the verbatim source
+material for a target job: `company`, `title`, `source_url` (nullable),
+`location` (nullable), `description` (required, captured as-is). No
+`source_name`, analysis JSON, keywords, requirements, match score,
+selected-facts, or application-status field exists — none was justified
+by the current intake workflow, and adding one speculatively would be
+exactly the kind of premature design this document keeps warning against
+elsewhere.
+
+**`description` is deliberately never rewritten.** Laravel's default
+global `TrimStrings` middleware would otherwise trim its leading/trailing
+whitespace like any other input; `bootstrap/app.php` explicitly excludes
+it (`$middleware->trimStrings(except: ['description'])`) while leaving
+ordinary single-line fields trimmed normally. Nothing else in the intake
+path (validation, the controller, the model) touches its content. This
+matters because the eventual questions this field needs to answer —
+"what did we tailor this resume against," after the live posting has
+changed or vanished — depend on it being the actual submitted text, not
+a normalized approximation of it.
+
+`JobPosting` intentionally has no relationship to `CareerFact`,
+`Evidence`, or any other canonical-data entity yet. Structured job
+analysis, requirement extraction, and CareerFact matching are later
+milestones layered on top of this record — not fields on it.
 
 ## Deferred: future resume-artifact concepts
 
