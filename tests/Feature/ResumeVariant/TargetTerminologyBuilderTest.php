@@ -60,3 +60,139 @@ it('marks direct_evidence_exists false for a term the candidate only has transfe
 
     expect($entries[0]['direct_evidence_exists'])->toBeFalse();
 });
+
+/**
+ * Guards the Option A fix: TargetTerminologyBuilder now consults the
+ * structured `label` first, with a deliberately structural (not
+ * semantic) acceptance rule — exactly one underscore-delimited token,
+ * confirmed present verbatim in the finding's own `statement` — before
+ * falling back to the pre-existing atomic "{Term} is ..." statement
+ * parse. Cases mirror the real Pearly findings discovered during live
+ * evaluation: docs/resume-variant-generation.md "Live evaluation".
+ */
+it('extracts SQL from a clean single-token label paired with an imperative statement', function () {
+    ['profile' => $profile] = ResumeVariantFixtures::candidate();
+    ['analysis' => $analysis] = ResumeVariantFixtures::job();
+    $finding = JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $analysis->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => 'sql',
+        'statement' => 'Use SQL for production-grade development and backend/data systems.',
+    ]);
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
+
+    $entries = (new TargetTerminologyBuilder)->build($match);
+    $entry = collect($entries)->firstWhere('job_analysis_finding_id', $finding->id);
+
+    expect($entry['term'])->toBe('SQL');
+});
+
+it('extracts React from a clean single-token label paired with an imperative statement', function () {
+    ['profile' => $profile] = ResumeVariantFixtures::candidate();
+    ['analysis' => $analysis] = ResumeVariantFixtures::job();
+    $finding = JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $analysis->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => 'react',
+        'statement' => 'Be comfortable working in React.',
+    ]);
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
+
+    $entries = (new TargetTerminologyBuilder)->build($match);
+    $entry = collect($entries)->firstWhere('job_analysis_finding_id', $finding->id);
+
+    expect($entry['term'])->toBe('React');
+});
+
+it('rejects a label with a trailing qualifier rather than stripping it (typescript_production)', function () {
+    ['profile' => $profile] = ResumeVariantFixtures::candidate();
+    ['analysis' => $analysis] = ResumeVariantFixtures::job();
+    $finding = JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $analysis->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => 'typescript_production',
+        'statement' => 'Use TypeScript for production-grade development.',
+    ]);
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
+
+    $entries = (new TargetTerminologyBuilder)->build($match);
+
+    expect(collect($entries)->pluck('job_analysis_finding_id'))->not->toContain($finding->id);
+});
+
+it('rejects a disjunctive category label (major_cloud_provider)', function () {
+    ['profile' => $profile] = ResumeVariantFixtures::candidate();
+    ['analysis' => $analysis] = ResumeVariantFixtures::job();
+    $finding = JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $analysis->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => 'major_cloud_provider',
+        'statement' => 'Be familiar with a major cloud provider: GCP, AWS, or Azure.',
+    ]);
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
+
+    $entries = (new TargetTerminologyBuilder)->build($match);
+
+    expect(collect($entries)->pluck('job_analysis_finding_id'))->not->toContain($finding->id);
+});
+
+it('rejects a conjunctive compound label and never delimiter-splits it into several terms (cicd_github_actions_terraform)', function () {
+    ['profile' => $profile] = ResumeVariantFixtures::candidate();
+    ['analysis' => $analysis] = ResumeVariantFixtures::job();
+    $finding = JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $analysis->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => 'cicd_github_actions_terraform',
+        'statement' => 'Work with CI/CD, GitHub Actions, and Terraform as needed.',
+    ]);
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
+
+    $entries = (new TargetTerminologyBuilder)->build($match);
+
+    expect(collect($entries)->pluck('job_analysis_finding_id'))->not->toContain($finding->id)
+        ->and(collect($entries)->pluck('term'))
+        ->not->toContain('CI/CD')
+        ->not->toContain('GitHub Actions')
+        ->not->toContain('Terraform');
+});
+
+it('still falls back to the atomic "{Term} is ..." statement shape when label does not yield a term', function () {
+    ['profile' => $profile] = ResumeVariantFixtures::candidate();
+    ['analysis' => $analysis] = ResumeVariantFixtures::job();
+    $finding = JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $analysis->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => null,
+        'statement' => 'Python is a programming language relevant to the role.',
+    ]);
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
+
+    $entries = (new TargetTerminologyBuilder)->build($match);
+    $entry = collect($entries)->firstWhere('job_analysis_finding_id', $finding->id);
+
+    expect($entry['term'])->toBe('Python');
+});
+
+it('deterministically deduplicates the same term extracted from two different findings', function () {
+    ['profile' => $profile] = ResumeVariantFixtures::candidate();
+    ['analysis' => $analysis] = ResumeVariantFixtures::job();
+    $firstFinding = JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $analysis->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => 'sql',
+        'statement' => 'Use SQL for production-grade development.',
+    ]);
+    JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $analysis->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => null,
+        'statement' => 'SQL is required for reporting work.',
+    ]);
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
+
+    $entries = (new TargetTerminologyBuilder)->build($match);
+    $sqlEntries = collect($entries)->where('term', 'SQL');
+
+    expect($sqlEntries)->toHaveCount(1)
+        ->and($sqlEntries->first()['job_analysis_finding_id'])->toBe($firstFinding->id);
+});
