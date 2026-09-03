@@ -65,7 +65,8 @@ final class ResumeSelectionResponseValidator
         if ($validator->fails()) {
             throw new InvalidResumeVariantResponseException(
                 'Resume Selection provider response failed validation: '
-                .implode(' ', $validator->errors()->all())
+                .implode(' ', $validator->errors()->all()),
+                context: $structuredContent,
             );
         }
 

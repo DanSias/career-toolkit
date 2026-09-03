@@ -104,7 +104,8 @@ final class ResumeWordingResponseValidator
         if ($validator->fails()) {
             throw new InvalidResumeVariantResponseException(
                 'Resume Wording provider response failed validation: '
-                .implode(' ', $validator->errors()->all())
+                .implode(' ', $validator->errors()->all()),
+                context: $structuredContent,
             );
         }
 

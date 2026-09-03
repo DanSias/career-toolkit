@@ -44,6 +44,29 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        // A dedicated, persistent, file-backed database for opt-in
+        // paid live-model evaluation (see
+        // app/Console/Commands/LiveEval/RunResumeVariantLiveEvaluation.php
+        // and docs/resume-variant-generation.md "Live evaluation").
+        // Deliberately never 'default': nothing resolves this
+        // connection unless a command explicitly sets
+        // config(['database.default' => 'sqlite_live_eval']) for its
+        // own process lifetime. Normal app requests, `php artisan`
+        // commands, and the Pest suite (which hardcodes
+        // DB_DATABASE=:memory: in phpunit.xml) never touch it. The
+        // file itself is gitignored (matches the existing
+        // /database/*.sqlite pattern) and is never committed.
+        'sqlite_live_eval' => [
+            'driver' => 'sqlite',
+            'database' => env('LIVE_EVAL_DB_DATABASE', database_path('live-eval.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),

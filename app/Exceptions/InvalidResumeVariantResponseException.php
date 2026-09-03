@@ -11,6 +11,14 @@ use Throwable;
  * stages, since the orchestration method called (generateFull vs. a
  * future regenerateWording) is what differs between them, not the
  * exception taxonomy. Mirrors InvalidJobMatchResponseException.
+ *
+ * `$context` carries the raw, untrusted, already-rejected structured
+ * content both validators decoded before throwing — never logged
+ * automatically, never persisted by production code, available only
+ * for a caller that deliberately wants to inspect it (the live-eval
+ * harness does; see docs/resume-variant-generation.md "Live
+ * evaluation"). Populating this in no way changes what causes
+ * validation to fail — it is diagnostic context only.
  */
 final class InvalidResumeVariantResponseException extends RuntimeException
 {
