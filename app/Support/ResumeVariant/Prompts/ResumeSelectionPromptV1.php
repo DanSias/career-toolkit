@@ -10,10 +10,19 @@ use BackedEnum;
 /**
  * The first production Resume Selection prompt: system instructions,
  * the per-run input payload, and the structured-output schema those
- * instructions describe. Immutable and versioned by class name — a
- * wording revision becomes JobMatchPromptV2-style V2, never an edit to
- * this class in place. Versioned independently of JobAnalysis/JobMatch
- * and of ResumeWordingPromptV1. See docs/resume-variant-generation.md.
+ * instructions describe. Normally immutable and versioned by class
+ * name once real ResumeVariant history exists — a wording revision
+ * becomes JobMatchPromptV2-style V2, never an edit to this class in
+ * place. `version()` was bumped in place (not split into a V2 class)
+ * during this milestone's pre-merge live-evaluation stabilization,
+ * since zero ResumeVariant rows have ever been persisted under
+ * 'resume-selection-v1' — there is no existing history to protect from
+ * reinterpretation yet. `version()` return value tracks each revision
+ * from here; a future genuinely independent redesign after real
+ * history exists should still split into a new class per the normal
+ * convention. Versioned independently of JobAnalysis/JobMatch and of
+ * ResumeWordingPromptV1. See docs/resume-variant-generation.md "Live
+ * evaluation".
  *
  * Produces structure only — evidence selection, bullet grouping,
  * Skills/Education selection, and target-term claim posture. No
@@ -24,7 +33,7 @@ final readonly class ResumeSelectionPromptV1
 {
     public function version(): string
     {
-        return 'resume-selection-v1';
+        return 'resume-selection-v1.1';
     }
 
     public function schemaVersion(): string
@@ -86,15 +95,36 @@ final readonly class ResumeSelectionPromptV1
         entirely on which evidence deserves to be grouped together and
         in what internal order.
 
+        ## Role and project binding
+
+        Every `experience` entry is anchored to one real `role_id`.
+        Everything inside that entry must belong to that exact role:
+        its `display_title` must be valid for that same `role_id` (see
+        below), and every `project_id` in its bullet groups must be a
+        project that actually belongs to that same `role_id` — never a
+        title or project borrowed from a different role, even a
+        sibling role at the same employer. Two roles at the same
+        employer are still fully distinct: keep their ids, titles,
+        dates, CareerFacts, and projects separate, and never combine or
+        swap them.
+
+        Each CareerFact's `attribution` shows the exact `role_id` (and,
+        when applicable, `project_id`) it belongs to, directly beside
+        the human-readable role/project name. Always use that supplied
+        `role_id`/`project_id` value. Never infer an id from array
+        order, chronology, employer grouping, or similarity between
+        role titles.
+
         ## Display titles
 
         For each selected role, choose a `display_title`: either the
         role's full canonical title verbatim, or one of its exact
-        "/"-delimited segments verbatim (e.g. a canonical title "Data &
-        Analytics Lead Developer / Data Analyst" may be shown in full, or
-        as just "Data & Analytics Lead Developer", or as just "Data
-        Analyst" — never a new or reworded string). Choose whichever
-        framing best fits this specific job.
+        "/"-delimited segments verbatim — never a new or reworded
+        string. For example, a canonical title "Senior Engineer /
+        Technical Lead" may be shown in full, or as just "Senior
+        Engineer", or as just "Technical Lead" — never as an unrelated
+        string like "Lead Software Engineer". Choose whichever framing
+        best fits this specific job.
 
         ## Skills and Education
 

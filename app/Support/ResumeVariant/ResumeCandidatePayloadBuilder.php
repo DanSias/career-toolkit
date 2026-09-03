@@ -112,6 +112,7 @@ final class ResumeCandidatePayloadBuilder
     private function normalizeCareerFact(CareerFact $fact, array $jobMatchAnnotations): array
     {
         $attribution = CareerFactAttribution::resolve($fact);
+        $ids = $this->resolveRoleAndProjectIds($fact);
 
         return [
             'key' => $fact->key,
@@ -119,7 +120,9 @@ final class ResumeCandidatePayloadBuilder
             'fact_type' => $fact->fact_type->value,
             'attribution' => [
                 'employer' => $attribution->employer,
+                'role_id' => $ids['role_id'],
                 'role' => $attribution->role,
+                'project_id' => $ids['project_id'],
                 'project' => $attribution->project,
             ],
             'role_dates' => $attribution->roleStartYear === null ? null : [
@@ -143,6 +146,37 @@ final class ResumeCandidatePayloadBuilder
             ])->all(),
             'job_match_annotations' => $jobMatchAnnotations,
         ];
+    }
+
+    /**
+     * Grounds the model-facing `role_id`/`project_id` fields directly
+     * against the fact's real, loaded `attributable` — never derived
+     * from array position, chronology, name matching, or any other
+     * inference. Added after live evaluation showed Resume Selection
+     * repeatedly mis-binding two same-employer sibling roles' titles/
+     * projects: `role_id`/`project_id` are the only identifiers in
+     * this payload with no textual grounding anywhere the model can
+     * read them (unlike `career_fact_key`, which is a stable, already-
+     * correct, self-labeling string the model never got wrong across
+     * either failed attempt) — see docs/resume-variant-generation.md
+     * "Live evaluation". Local to this builder only; the shared
+     * CareerFactAttribution/JobMatch payload are untouched.
+     *
+     * @return array{role_id: int|null, project_id: int|null}
+     */
+    private function resolveRoleAndProjectIds(CareerFact $fact): array
+    {
+        $attributable = $fact->attributable;
+
+        if ($attributable instanceof Role) {
+            return ['role_id' => $attributable->id, 'project_id' => null];
+        }
+
+        if ($attributable instanceof Project) {
+            return ['role_id' => $attributable->role_id, 'project_id' => $attributable->id];
+        }
+
+        return ['role_id' => null, 'project_id' => null];
     }
 
     /**

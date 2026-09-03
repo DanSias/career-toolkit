@@ -122,7 +122,7 @@ it('persists the full graph from a valid two-stage response', function () {
         ->and($variant->targetTermUsages)->toHaveCount(1)
         ->and($variant->summary)->not->toBeNull()
         ->and($variant->schema_version)->toBe('1.0')
-        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1')
+        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1.1')
         ->and($variant->wording_prompt_version)->toBe('resume-wording-v1')
         ->and($variant->selection_generated_by)->toBe('openai:gpt-test')
         ->and($variant->wording_generated_by)->toBe('openai:gpt-test');
