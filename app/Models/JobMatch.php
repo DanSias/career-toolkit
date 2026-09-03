@@ -97,6 +97,19 @@ class JobMatch extends Model
     }
 
     /**
+     * Zero or more ResumeVariant generations built from this match —
+     * see docs/domain-model.md "ResumeVariant". restrictOnDelete on
+     * resume_variants.job_match_id protects this relationship: a
+     * JobMatch already used to generate a resume cannot be deleted.
+     *
+     * @return HasMany<ResumeVariant, $this>
+     */
+    public function resumeVariants(): HasMany
+    {
+        return $this->hasMany(ResumeVariant::class);
+    }
+
+    /**
      * A JobMatch is a frozen snapshot: once created, it is never
      * updated — a correction or re-run creates a new JobMatch row
      * instead. Only guards against updating an already-persisted row;

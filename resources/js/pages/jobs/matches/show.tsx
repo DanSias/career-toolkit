@@ -1,13 +1,94 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import AppShell from '@/layouts/app-shell';
 import { show as jobsShow } from '@/routes/jobs';
 import { show as analysesShow } from '@/routes/jobs/analyses';
+import {
+    show as resumeShow,
+    store as resumeStore,
+} from '@/routes/jobs/analyses/matches/resume';
 import type {
     CareerFactMatchDetail,
+    DiscoveryPreflightCandidate,
     EducationMatchDetail,
     JobMatchFindingDetail,
     JobMatchShowProps,
 } from '@/types/job-match';
+
+type PageErrors = { errors?: { resume_generation?: string } };
+
+function GenerateResumeAction({
+    jobId,
+    analysisId,
+    matchId,
+}: {
+    jobId: number;
+    analysisId: number;
+    matchId: number;
+}) {
+    const form = useForm({});
+    const { errors } = usePage<PageErrors>().props;
+
+    return (
+        <div>
+            <button
+                type="button"
+                disabled={form.processing}
+                onClick={() =>
+                    form.post(
+                        resumeStore.url({
+                            jobPosting: jobId,
+                            jobAnalysis: analysisId,
+                            jobMatch: matchId,
+                        }),
+                    )
+                }
+                className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+            >
+                {form.processing ? 'Generating…' : 'Generate Resume'}
+            </button>
+            {errors?.resume_generation && (
+                <p
+                    role="alert"
+                    className="mt-2 text-sm text-red-600 dark:text-red-400"
+                >
+                    {errors.resume_generation}
+                </p>
+            )}
+        </div>
+    );
+}
+
+function DiscoveryPreflightList({
+    candidates,
+}: {
+    candidates: DiscoveryPreflightCandidate[];
+}) {
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950">
+            <p className="text-xs font-medium tracking-wide text-amber-700 uppercase dark:text-amber-300">
+                Worth confirming before generating
+            </p>
+            <ul className="mt-2 space-y-1">
+                {candidates.map((candidate) => (
+                    <li
+                        key={candidate.job_analysis_finding_id}
+                        className="text-sm text-amber-800 dark:text-amber-200"
+                    >
+                        {candidate.prompt}
+                    </li>
+                ))}
+            </ul>
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                Purely informational — generating now uses your
+                documented evidence as-is.
+            </p>
+        </div>
+    );
+}
 
 function formatLabel(value: string | null): string | null {
     if (!value) {
@@ -284,6 +365,49 @@ export default function JobMatchesShow({
                         <dd>{match.schema_version}</dd>
                     </div>
                 </dl>
+            </div>
+
+            <div className="mt-6">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                        Tailored Resume
+                    </h2>
+                    <GenerateResumeAction
+                        jobId={job.id}
+                        analysisId={analysis.id}
+                        matchId={match.id}
+                    />
+                </div>
+
+                <DiscoveryPreflightList
+                    candidates={match.discovery_preflight}
+                />
+
+                {match.resume_variants.length === 0 ? (
+                    <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+                        No resume has been generated yet.
+                    </p>
+                ) : (
+                    <ul className="mt-2 divide-y divide-neutral-200 rounded-lg border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
+                        {match.resume_variants.map((variant) => (
+                            <li key={variant.id}>
+                                <Link
+                                    href={resumeShow.url({
+                                        jobPosting: job.id,
+                                        jobAnalysis: analysis.id,
+                                        jobMatch: match.id,
+                                        resumeVariant: variant.id,
+                                    })}
+                                    className="flex items-center justify-between px-4 py-3 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+                                >
+                                    <span className="text-neutral-700 dark:text-neutral-300">
+                                        {variant.generated_at ?? '—'}
+                                    </span>
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
 
             <div className="mt-6 space-y-8">

@@ -104,6 +104,17 @@ class CareerProfile extends Model implements HasCareerProfileOwnership
         return $this->hasMany(JobMatch::class);
     }
 
+    /**
+     * Zero or more ResumeVariant generations built for this profile.
+     * See docs/domain-model.md "ResumeVariant".
+     *
+     * @return HasMany<ResumeVariant, $this>
+     */
+    public function resumeVariants(): HasMany
+    {
+        return $this->hasMany(ResumeVariant::class);
+    }
+
     public function ownerCareerProfileId(): ?int
     {
         return $this->id;

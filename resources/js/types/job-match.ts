@@ -55,6 +55,18 @@ export type JobMatchCategoryGroup = {
     findings: JobMatchFindingDetail[];
 };
 
+export type ResumeVariantSummary = {
+    id: number;
+    generated_at: string | null;
+};
+
+export type DiscoveryPreflightCandidate = {
+    job_analysis_finding_id: number;
+    term: string;
+    prompt: string;
+    tier: number;
+};
+
 export type JobMatchDetail = {
     id: number;
     generated_at: string | null;
@@ -62,6 +74,8 @@ export type JobMatchDetail = {
     schema_version: string;
     prompt_version: string | null;
     categories: JobMatchCategoryGroup[];
+    resume_variants: ResumeVariantSummary[];
+    discovery_preflight: DiscoveryPreflightCandidate[];
 };
 
 export type JobMatchJobContext = {

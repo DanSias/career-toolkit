@@ -4,6 +4,7 @@ use App\Http\Controllers\CareerDataController;
 use App\Http\Controllers\JobAnalysisController;
 use App\Http\Controllers\JobMatchController;
 use App\Http\Controllers\JobPostingController;
+use App\Http\Controllers\ResumeVariantController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [CareerDataController::class, 'index'])->name('career-data.index');
@@ -19,3 +20,6 @@ Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}', [JobAnalysisController::
 
 Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches', [JobMatchController::class, 'store'])->name('jobs.analyses.matches.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}', [JobMatchController::class, 'show'])->name('jobs.analyses.matches.show');
+
+Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume', [ResumeVariantController::class, 'store'])->name('jobs.analyses.matches.resume.store');
+Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume/{resumeVariant}', [ResumeVariantController::class, 'show'])->name('jobs.analyses.matches.resume.show');

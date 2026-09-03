@@ -11,9 +11,11 @@ use App\Models\JobAnalysis;
 use App\Models\JobMatch;
 use App\Models\JobMatchFinding;
 use App\Models\JobPosting;
+use App\Models\ResumeVariant;
 use App\Support\CurrentCareerProfile;
 use App\Support\JobMatch\CareerFactAttribution;
 use App\Support\JobMatch\GenerateJobMatch;
+use App\Support\ResumeVariant\DiscoveryPreflight;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Log;
@@ -102,6 +104,27 @@ class JobMatchController extends Controller
             'schema_version' => $match->schema_version,
             'prompt_version' => $match->prompt_version,
             'categories' => $this->groupFindingsByCategory($match->findings),
+            'resume_variants' => $match->resumeVariants()
+                ->latest('generated_at')
+                ->get()
+                ->map($this->transformResumeVariantSummary(...))
+                ->all(),
+            // Deterministic, no-provider-call gap detection — always
+            // safe to compute and display; generating a resume never
+            // requires acting on it. See docs/domain-model.md
+            // "ResumeVariant".
+            'discovery_preflight' => (new DiscoveryPreflight)->run($match),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function transformResumeVariantSummary(ResumeVariant $variant): array
+    {
+        return [
+            'id' => $variant->id,
+            'generated_at' => $variant->generated_at->toDateTimeString(),
         ];
     }
 

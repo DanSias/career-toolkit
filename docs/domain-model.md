@@ -853,13 +853,349 @@ raw `Role`/`Project` date context may be shown in the UI, but uncertainty
 about actual duration is reflected through `coverage` (typically
 `partial`), never through invented arithmetic.
 
+## ResumeVariant
+
+`ResumeVariant` and its full relational tree
+(`ResumeVariantExperienceBullet`, `ResumeVariantBulletCitation`,
+`ResumeVariantSummaryEvidence`, `ResumeVariantSkillSelection`,
+`ResumeVariantEducationSelection`, `ResumeVariantTargetTermUsage`,
+`ResumeVariantTargetTermUsageEvidence`) is a **derived, AI-generated,
+job-tailored resume artifact built from one `JobMatch`'s candidate and
+job context** — not canonical data itself, and not a revision to any
+of the canonical data or `JobMatch` history it draws from. See
+`docs/resume-variant-contract.md` for the exact structured-output
+shapes this maps onto, and `docs/resume-variant-generation.md` for the
+two-stage generation pipeline, provider boundary, and prompt/schema
+version conventions. This satisfies the constraint an earlier revision
+of this document anticipated but had not yet built: a `ResumeVariant`
+snapshots the exact selected `CareerFact` lineage and generated wording
+at generation time, never merely referencing live rows in a way a later
+canonical edit could retroactively alter.
+
+**Each `ResumeVariant` row is a complete, versioned, immutable
+snapshot**, for the same reasons as `JobAnalysis`/`JobMatch`: a
+`JobMatch` can inform zero or more `ResumeVariant` generations over
+time, there is no `current_resume_variant_id` pointer, and once
+created none of a `ResumeVariant` row or any row in its tree is ever
+updated in place — a correction is a new `ResumeVariant` snapshot.
+Enforced the same way as `JobAnalysis`/`JobMatch`: an `updating` guard
+on all seven models, deliberately not blocking initial creation of a
+snapshot's own tree.
+
+### Pipeline
+
+```
+CareerProfile canonical data -> JobAnalysis -> JobMatch
+  -> deterministic discovery preflight (optional)
+  -> Resume Selection (structure/evidence/lineage/posture, no prose)
+  -> Resume Wording (prose only, bounded to the approved selection)
+  -> one immutable ResumeVariant snapshot
+```
+
+Two model stages, two separate purpose-specific provider contracts
+(`GeneratesResumeSelection`, `GeneratesResumeWording`), reusing only
+the existing shared OpenAI Responses transport
+(`App\Support\OpenAIResponsesApiClient`) — no generic multi-purpose AI
+infrastructure was introduced. See `docs/resume-variant-generation.md`
+for the full pipeline, including why the two stages are hard-separated
+(Wording's schema has no field capable of altering citations, evidence,
+posture, chronology, titles, Skills, or Education — not merely
+discouraged from doing so by prompt instruction).
+
+### Resume eligibility — the boundary between canonical data and either provider call
+
+`App\Support\ResumeVariant\ResumeEligibility` is the single,
+deterministic boundary applied once, upstream of both provider calls,
+never left to prompt instruction alone:
+
+- **Eligible**: `Visibility::Public` or `Visibility::Restricted`.
+- **Excluded**: `Visibility::Private`, always.
+- **Project-level backstop**: a `CareerFact` attributed to a `Project`
+  whose own `default_visibility` is `Private` is excluded even when the
+  fact's own visibility is more permissive — protecting the case
+  "Verification vs. visibility" above anticipated (a project whose
+  existence itself must stay non-exposed) but that, before this
+  milestone, no consumer actually enforced.
+- **`Education` carries no `visibility` field and is never gated
+  here** — consistent with the JobMatch section above: absence of a
+  restriction is not a grant of default inclusion. Whether a given
+  `Education` record appears in a given resume remains a separate
+  Resume Selection decision on its own merits.
+
+This is the layer the blocking visibility-curation review (commit
+`578caab`, reclassifying seven granular Transaction Remediation
+`CareerFact`s from `Restricted` to `Private`) exists to feed
+correctly — those seven facts are excluded from every `ResumeVariant`
+generation from that commit forward, while the conservative "32,000+"
+headline figure (`rocketgate-transaction-remediation-total-corrected`)
+remains `Restricted` and eligible.
+
+**`JobMatch` is annotation layered on top of each eligible fact, never
+a recall ceiling.** Resume Selection sees the full resume-eligible
+corpus — every `CareerFact`, `Education`, and attached `Skill` currently
+eligible, not only the ones a prior `JobMatch` diagnostic run happened
+to cite — with each `CareerFact` carrying zero or more
+`job_match_annotations` (which findings `JobMatch` linked it to, with
+what `coverage`/`relationship`) as useful signal, never a restriction.
+Selection may choose evidence `JobMatch` never cited for any finding.
+`JobMatchFinding.coverage_rationale`, `CareerFactMatch.rationale`, and
+`EducationMatch.rationale` never enter either provider payload at
+all — consistent with the JobMatch section's own rule that this
+commentary is internal-only and never a source of fact for
+candidate-facing output.
+
+### `ResumeClaimPosture` — direct, qualified, capability
+
+A target-term usage (`ResumeVariantTargetTermUsage`) belongs to one
+specific location (one bullet, or the summary) and declares exactly
+one of three postures (`App\Enums\ResumeClaimPosture`), deliberately
+distinct from `MatchRelationship` (`direct`/`transferable`/
+`contextual`) — a resume claim posture and a diagnostic match
+relationship answer different questions and are never conflated:
+
+- **`direct`** — states the target term as the candidate's own
+  experience. Requires computed authorization (see "Direct-evidence
+  authorization" below); a `direct` posture declared without it is
+  rejected outright, never trusted from the model's own say-so.
+- **`qualified`** — real evidence for a different, comparable
+  technology, explicitly positioned as adjacent/transferable to the
+  target term via a controlled clause (see "The qualified-clause
+  mechanism" below). At most one `qualified` usage is allowed per
+  bullet or summary location — a location may carry several
+  `direct`/`capability` usages, but never stack more than one
+  qualified comparison onto the same location.
+- **`capability`** — real evidence for the underlying pattern or
+  capability, without comparing to the specific target term by name at
+  all. Must be persisted explicitly as its own posture value — never
+  inferred from the mere absence of a `direct`/`qualified` usage for a
+  given term.
+
+A single bullet or summary may have multiple `direct`/`capability`
+usages backing different target terms, all governed by the same
+per-location qualified cap.
+
+### Direct-evidence authorization
+
+`App\Support\ResumeVariant\DirectEvidenceAuthorization::forFinding()`
+computes, for one `(JobMatch, JobAnalysisFinding, term)` combination,
+whether a `direct` posture claim is actually authorized — never lexical
+occurrence alone, and never trusted from either provider's own
+declaration; the same computation is run once (to build
+`target_terminology.direct_evidence_exists`) and re-checked
+independently inside `ResumeSelectionResponseValidator`. Two paths, in
+priority order:
+
+1. **Primary**: `JobMatch` already recorded a `direct`-relationship
+   `CareerFactMatch` for the exact finding, citing a `CareerFact`
+   attributed to real work history (`Employer`/`Role`/`Project` — not a
+   bare `CareerProfile`-level attribution). Reuses `JobMatch`'s own
+   already-vetted judgment rather than re-deriving it from scratch.
+2. **Fallback**, for facts `JobMatch` never cited (Selection sees the
+   full corpus, not just what `JobMatch` linked): any eligible,
+   attributed `CareerFact` with the term as an attached canonical
+   `Skill` (case-insensitive exact name match).
+
+**The fallback path is an explicitly bounded semantic limitation, not
+a redefinition of the `CareerFact`<->`Skill` pivot's global meaning**
+(see "Skills" above — a `Skill` tag records topical connection, not
+proof of hands-on use). This fallback does not close that gap; it is
+deliberately treated as a residual risk covered by canonical-data
+authoring discipline and live/human review — the same trust boundary
+every other canonical-data statement already rests on — rather than by
+inventing a new technology-evidence ontology or silently changing what
+the `CareerFact`<->`Skill` relationship means everywhere else in this
+schema. A bare `Skill` row with no supporting `CareerFact` never
+authorizes a direct claim under either path; neither does a `Private`
+`CareerFact`, since both paths query only through `ResumeEligibility`.
+
+### Target terminology — v1 scope
+
+`App\Support\ResumeVariant\TargetTerminologyBuilder` computes the set
+of target terms a given `JobMatch` run makes available for posture
+usages: exactly the `JobAnalysisFinding` rows with
+`category = technology` whose `statement` follows the atomic
+`"{Term} is ..."` shape a real `JobAnalysis` reliably produces for a
+single named technology (e.g. "Azure is a cloud platform relevant to
+the role."). A bundled finding naming several technologies in one
+statement never matches this shape and is silently excluded from
+v1 — a deliberate, documented scope limit, not a general ATS
+keyword/entity extraction system. No loose `actual_technologies`
+string is ever persisted anywhere in this subtree; a qualified claim's
+real supporting technologies are always derivable from its
+`resume_variant_target_term_usage_evidence` rows' `CareerFact`s, never
+duplicated as a separately declared string.
+
+### The qualified-clause mechanism
+
+Exact target terminology may appear in a resume **without** direct
+experience only through this one controlled mechanism — never through
+either provider's own free-generated prose, under any framing. Allowed
+phrases (`App\Enums\ResumeQualifiedPhrase`): `applicable_to`,
+`comparable_to`, `closely_related_to`, `transferable_to`. There is
+deliberately no "directly transferable to" phrase — considered and
+rejected as self-contradictory framing for a claim that is, by
+definition, not direct.
+
+Mechanically: Resume Wording is given a `denylist_terms` list — every
+target term **except** those with an approved `direct`-posture usage
+anywhere in the variant — and its free text (every bullet and the
+summary) is scanned for any denylisted term via a case-insensitive
+substring check; any hit rejects the entire Wording response. The
+qualifying clause itself is never written by either provider — a
+deterministic renderer appends it to Wording's own generated sentence
+at persistence time (`", {phrase} {term}."`), so the exact term only
+ever enters final output through code, never through model-generated
+text. Qualified positioning is allowed only in the Summary and
+Experience bullets, **never in Skills** — Skills selection has no
+posture/term/qualified fields anywhere in its schema at all (structural
+absence, not a runtime check) and is rendered directly from canonical
+`Skill` names/categories, direct-evidence-only.
+
+### Discovery preflight
+
+`App\Support\ResumeVariant\DiscoveryPreflight::run()` is a
+deterministic, no-provider-call, entirely optional step that may be
+run before generation to surface a small number of possibly-missing
+experiences worth confirming with the candidate. Gate: a
+`JobMatchFinding` with `coverage = no_evidence` whose underlying
+finding is `requirement_strength = required` (any emphasis) or
+`requirement_strength = preferred` with `emphasis = high` —
+`not_assessable` findings are always excluded, since they are outside
+this system's authorized domain entirely, not a coverage gap. Capped
+to a small fixed number, prioritized required+high, then
+required+normal, then preferred+high. Question text is generated
+deterministically from the finding's own `label`/`statement`, never
+model-generated.
+
+**Never persisted as workflow state, and never a direct evidence
+pathway.** v1 deliberately has no discovery-response table — this is
+cheap and safe to re-run, so there is nothing to keep in sync. A
+candidate's "yes, I have used X" answer must always enter the
+canonical `CareerFact` workflow first (as a real, verifiable,
+attributed fact) before it can ever become resume evidence — a
+discovery answer is never wired directly into a `ResumeVariant`,
+preventing an unverified claim from skipping the same
+verification/visibility discipline every other canonical fact goes
+through.
+
+### Titles, chronology, and attribution
+
+**Chronology is always deterministic, never model-decided.** Roles are
+ordered by their real, canonical `Role.start_year`/`start_month`, most
+recent first — the same date fields "Role date precision" above
+already establishes as canonical, never a duration Resume Selection or
+Wording computes or asserts itself.
+
+**`display_title` may only be the role's exact full canonical `Role.title`
+or one of its exact `"/"`-delimited trimmed segments** — never a
+rewritten, elevated, or invented string (e.g. a canonical title "Data &
+Analytics Lead Developer / Data Analyst" may be shown in full, or as
+just one of its two segments, never as some other framing). Enforced
+by deterministic application validation against a `role_id => [allowed
+titles]` map computed from live `Role` data at generation time — the
+JSON Schema itself cannot express a per-role enum constraint (no
+tuple/`prefixItems` complexity was introduced to attempt it), so this
+is schema-loose and validator-strict, consistent with this codebase's
+established "schema does coarse structure, the deterministic validator
+is the real authority" convention.
+
+**Employer/Role/Project attribution is exact and immutable**, restrict-
+protected the same way `career_fact_matches.career_fact_id` is: a
+bullet's `employer_id`/`role_id`/`project_id` cannot silently lose
+their reference if the live row is later deleted, and Resume Selection
+can never combine facts across different Employers/Roles/Projects in a
+way that implies the wrong one produced an outcome — each bullet's
+evidence already belongs to one real `Role` (and, when applicable,
+`Project`). This specifically preserves the RocketGate-GitLab vs.
+personal-GitHub distinction and every other named per-employer
+guardrail (see `docs/resume-variant-generation.md` and
+`ResumeWordingResponseValidator`'s own docblock for the complete list)
+— never silently blurred across employer boundaries by generated
+prose.
+
+### Deletion/FK behavior
+
+Mirrors the JobMatch section's own RESTRICT-vs-CASCADE reasoning
+closely, with one addition specific to this subtree's structure:
+
+- **`resume_variants.job_match_id` restricts, not cascades** — unlike
+  `JobAnalysis -> JobMatch` (where a `JobMatch` is meaningless without
+  its `JobAnalysis`), a single `JobMatch` may inform several
+  `ResumeVariant` generations over time (full regenerations, and a
+  future wording-only regeneration reusing the same underlying match).
+  `JobMatch` is a protected, reusable upstream resource here, the same
+  relationship `CareerFact` has to `CareerFactMatch` — you cannot
+  delete the diagnostic basis of a resume that was actually generated
+  from it.
+- **Every FK from this subtree into *live canonical data*
+  (`CareerFact`, `Skill`, `Education`, `Employer`, `Role`, `Project`)
+  restricts, not cascades** — a `ResumeVariant` is a historical,
+  immutable snapshot; if a live row it cited were later deleted and the
+  reference cascaded away silently, the snapshot would lose evidence
+  rows without anyone editing the `ResumeVariant` itself, violating the
+  same immutability guarantee the `updating` guard protects. An
+  unreferenced canonical row still deletes freely.
+- **`resume_variant_target_term_usages.bullet_id` is the one deliberate
+  cascade in this subtree** (nullable, cascades on its parent bullet's
+  deletion) — a term usage has no independent existence apart from the
+  bullet it annotates (or the variant itself, for a summary-location
+  usage), unlike every other FK here, which points at live canonical
+  data outside the snapshot's own tree.
+- Everything internal to one snapshot's own tree
+  (`resume_variant_experience_bullets`, `resume_variant_bullet_citations`,
+  `resume_variant_summary_evidence`, `resume_variant_skill_selections`,
+  `resume_variant_education_selections`,
+  `resume_variant_target_term_usages`,
+  `resume_variant_target_term_usage_evidence`) cascades normally when
+  the `ResumeVariant` itself (or its parent `CareerProfile`) is
+  deleted — only cross-references to live canonical data outside the
+  snapshot restrict. A whole-`CareerProfile` wipe that owns both a
+  `CareerFact` and the `ResumeVariant` citing it succeeds cleanly
+  (both cascade together via their shared `career_profile_id`
+  ownership path) — this is correct, coherent behavior for a
+  self-contained profile deletion, not a gap in the citation
+  protection above, which still fully applies to deleting a single
+  `CareerFact` in isolation while a `ResumeVariant` cites it.
+
+### `selection_input_snapshot` / `selection_raw_response` / `wording_input_snapshot` / `wording_raw_response`
+
+Frozen at generation time, exactly like `JobMatch`'s
+`input_snapshot`/`raw_response` pair — the exact normalized payload
+actually supplied to each provider, and the exact validated structured
+response each provider returned. A later edit to a live `CareerFact`/
+`Education`/`Skill` never retroactively changes what an
+already-persisted `ResumeVariant` is understood to have been based on.
+`selection_raw_response` is also the exact, reusable input a future
+wording-only regeneration would need (copy it verbatim into a new row,
+re-run only Stage 2) — not built in v1, but nothing in this schema
+blocks it.
+
+### Anti-redundancy is structural, not semantic
+
+There is no one-`CareerFact`-per-bullet rule anywhere in this
+subtree — the same fact may legitimately back a summary claim and one
+or more bullets, or back two different bullets that each draw a
+different conclusion from it. Only an *exact* duplicate bullet-group
+evidence set (the same set of `career_fact_keys`, order-independent,
+across two bullet groups) is rejected, along with obvious exact
+structural duplicates. There is no semantic-similarity/dedup NLP in
+v1 — deliberately, to avoid rejecting two bullets a human reviewer
+would recognize as legitimately distinct despite sharing evidence.
+
+### UI scope (v1)
+
+A read-only `ResumeVariant` detail page only — summary (with its
+evidence and any target-term usages), Experience grouped by canonical
+role in deterministic chronological order (with each bullet's
+citations/source `CareerFact`s and target-term usages/postures/
+qualified phrasing), Skills, Education, and (on the owning `JobMatch`
+page) any `DiscoveryPreflight` candidates. No document editor, no
+drag/drop reordering, no evidence pinning or swapping, and no PDF
+preview or rendering — deliberately deferred; see
+`docs/resume-variant-generation.md`.
+
 ## Deferred: future resume-artifact concepts
 
-`JobApplication`, `ResumeVariant`, and `ResumeFactSelection` are not
-implemented. One constraint they'll need to satisfy is captured here so it
-isn't lost: a generated/submitted `ResumeVariant` must snapshot the exact
-selected `CareerFact` content and wording _at generation time_, rather
-than merely reference live `CareerFact` rows by ID — so a later correction
-to a canonical fact can never retroactively alter a resume that was
-already submitted somewhere. Nothing in the schema above blocks this; it's
-simply not built yet.
+`JobApplication` and `ResumeFactSelection` are not implemented.
+`ResumeVariant` itself, previously deferred here, is now implemented
+— see "ResumeVariant" above.

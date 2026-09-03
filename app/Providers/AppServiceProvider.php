@@ -4,12 +4,16 @@ namespace App\Providers;
 
 use App\Contracts\GeneratesJobAnalysis;
 use App\Contracts\GeneratesJobMatch;
+use App\Contracts\GeneratesResumeSelection;
+use App\Contracts\GeneratesResumeWording;
 use App\Models\CareerProfile;
 use App\Models\Employer;
 use App\Models\Project;
 use App\Models\Role;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
 use App\Support\JobMatch\Providers\OpenAIJobMatchClient;
+use App\Support\ResumeVariant\Providers\OpenAIResumeSelectionClient;
+use App\Support\ResumeVariant\Providers\OpenAIResumeWordingClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
@@ -30,6 +34,16 @@ class AppServiceProvider extends ServiceProvider
         ));
 
         $this->app->bind(GeneratesJobMatch::class, fn () => new OpenAIJobMatchClient(
+            apiKey: (string) config('services.openai.key'),
+            model: (string) config('services.openai.model'),
+        ));
+
+        $this->app->bind(GeneratesResumeSelection::class, fn () => new OpenAIResumeSelectionClient(
+            apiKey: (string) config('services.openai.key'),
+            model: (string) config('services.openai.model'),
+        ));
+
+        $this->app->bind(GeneratesResumeWording::class, fn () => new OpenAIResumeWordingClient(
             apiKey: (string) config('services.openai.key'),
             model: (string) config('services.openai.model'),
         ));
