@@ -1231,7 +1231,7 @@
             "fact_type": "metric",
             "statement": "Phase 1 of the transaction remediation engagement corrected 24,589 transaction records, each subsequently verified.",
             "verification": "verified",
-            "visibility": "restricted",
+            "visibility": "private",
             "notes": null,
             "attributable": {
                 "type": "project",
@@ -1258,7 +1258,7 @@
             "fact_type": "bullet",
             "statement": "Phase 2's initial follow-up review identified approximately 390 transactions requiring correction; further investigation substantially expanded the required scope of work beyond that initial estimate.",
             "verification": "verified",
-            "visibility": "restricted",
+            "visibility": "private",
             "notes": "Captures the investigation-driven scope expansion; the actual completed scope is the 7,457-transaction figure below.",
             "attributable": {
                 "type": "project",
@@ -1285,7 +1285,7 @@
             "fact_type": "metric",
             "statement": "Phase 2 of the transaction remediation engagement corrected 7,457 transaction records, each subsequently verified.",
             "verification": "verified",
-            "visibility": "restricted",
+            "visibility": "private",
             "notes": null,
             "attributable": {
                 "type": "project",
@@ -1312,7 +1312,7 @@
             "fact_type": "metric",
             "statement": "Of Phase 2's corrections, 5,770 transaction records had previously missing UDF1 (location/tax-jurisdiction) values backfilled.",
             "verification": "verified",
-            "visibility": "restricted",
+            "visibility": "private",
             "notes": "Sub-breakdown of the Phase 2 total (7,457) — not additive with it.",
             "attributable": {
                 "type": "project",
@@ -1339,7 +1339,7 @@
             "fact_type": "metric",
             "statement": "Of Phase 2's corrections, 1,687 transaction records had conflicting UDF1 values overwritten according to explicit merchant instruction.",
             "verification": "verified",
-            "visibility": "restricted",
+            "visibility": "private",
             "notes": "Sub-breakdown of the Phase 2 total (7,457) — not additive with it. Demonstrates acting on explicit stakeholder/merchant direction for data-correction decisions, not an autonomous judgment call.",
             "attributable": {
                 "type": "project",
@@ -1393,7 +1393,7 @@
             "fact_type": "metric",
             "statement": "A final live audit analyzed all 43,348 of the merchant's currently existing transactions.",
             "verification": "verified",
-            "visibility": "restricted",
+            "visibility": "private",
             "notes": "This is the analyzed population of the final audit, distinct from the total corrected-records figure (32,000+) — do not conflate the two.",
             "attributable": {
                 "type": "project",
@@ -1420,7 +1420,7 @@
             "fact_type": "metric",
             "statement": "The final live audit found all 43,348 currently existing transactions in the approved, desired data state.",
             "verification": "verified",
-            "visibility": "restricted",
+            "visibility": "private",
             "notes": "Precise framing per explicit user guidance — this is an audit-outcome statement about the analyzed population at that point in time, not a general accuracy/success-rate claim.",
             "attributable": {
                 "type": "project",
