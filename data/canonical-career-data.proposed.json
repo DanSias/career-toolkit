@@ -3,7 +3,7 @@
         "status": "PROPOSED — NOT YET IMPORTED",
         "purpose": "Structured proposal for the first canonical Career Toolkit dataset, for human review before persistence. Maps to app/Models as of docs/domain-model.md.",
         "generated": "2026-09-02",
-        "updated": "2026-09-02",
+        "updated": "2026-09-08",
         "changelog": [
             "Role dates now use start_year/start_month/end_year/end_month integers (schema no longer uses SQL DATE for Role — see docs/domain-model.md 'Role date precision'). No fabricated day-of-month anywhere.",
             "Added an `educations` array (3 records) — Education is now a real model owned by CareerProfile.",
@@ -12,7 +12,9 @@
             "rocketgate-merchant-integration-enablement split into two atomic facts: rocketgate-merchant-integration-technical-contact (meeting merchants, assessing their stack, directing them to the right library/approach) and rocketgate-merchant-integration-testing-troubleshooting (testing payment flows, troubleshooting, answering technical questions).",
             "Removed rocketgate-transaction-remediation-phase1-approved-users and -phase2-approved-users as standalone CareerFacts. Their values (1,780 / 44 approved users) are preserved as scope context in the scope_note of the corresponding -phase1-transactions-corrected / -phase2-transactions-corrected metrics — not lost, just no longer independently reusable 'accomplishments' on their own.",
             "Removed profile-full-stack-engineer-summary — it restated the resume's marketing 'Professional Summary' paragraph (including evaluative language like 'comfortable...deliver reliable, maintainable software') with no information beyond what the Laravel/React/TypeScript Skills and their own project-level CareerFacts already establish with stronger evidence.",
-            "Net effect: 53 -> 51 CareerFacts (removed 3, split 1 into 2)."
+            "Net effect: 53 -> 51 CareerFacts (removed 3, split 1 into 2).",
+            "Marketing/MarTech/CRO/digital-experience/adoption enrichment pass (2026-09-08), per the approved canonical-data-and-tailoring audit: no new job-family schema, no separate marketing dataset — the existing full-corpus JobMatch/ResumeVariant pipeline already re-derives relevance per posting, so this pass only enriches canonical CareerFacts/Skills/Projects. Added 5 atomic facts enriching Pearson SEO Analyst (SEM, technical SEO/content strategy, experimentation/CRO, automated performance monitoring, vendor/agency coordination); 3 facts for the Pearson partner-program SEO & conversion relaunch (+40% organic traffic/6mo, conversion under 1% -> 2.5%, both scoped to that one relaunch only); 1 role-level marketing-analytics/MarTech connective fact on the Data & Analytics Lead role (does not duplicate Nexus or the Marketing Budget & Forecast Hub); 7 atomic capability facts on Liquid Gravity Engineering (experimentation/CRO/landing pages, paid acquisition, CMS/CRM/marketing-automation integrations, ecommerce/checkout/upsell, lead-generation systems, video marketing/editing, client-facing performance walkthroughs) — the existing single overlapping Founder/Marketing-Consultant Role and its 3 existing facts are unchanged; a new Brute Strength Training Project under Liquid Gravity (client engagement via Tech Guys Who Get Marketing, NOT a new Employer) with 4 facts including a guardrailed CPL metric (Metric.guardrail hard-blocks 'Daniel reduced CPL by 63%'-style sole-credit phrasing, enforced deterministically by ResumeWordingResponseValidator::assertGuardrails()); and 3 new RocketGate Developer Documentation & Onboarding facts (onboarding-effort ~10hrs -> ~3hrs, ~30% integration-support-ticket reduction, a non-quantified ticket-context-quality observation), plus an update to the existing rocketgate-developer-documentation-onboarding bullet to describe the documentation/knowledge-base content and its pairing with Verbatim's retrieval — Verbatim and Knowledge Exporter remain untouched, separate Projects. Added 16 new Skills (seo, sem, technical-seo, content-strategy, conversion-rate-optimization, ab-testing, paid-acquisition, landing-page-development, marketing-analytics, campaign-attribution, marketing-automation, ecommerce-integration, technology-adoption, technical-communication, lead-generation, developer-education). Explicit exclusions per user instruction: no Matthew Bruce testimonial, no Surefire Marketing case study, no other inferred Tech Guys client outcomes, and no federal/VA/healthcare/Section 508/SharePoint/LMS/responsible-AI-governance/advanced-multimedia claims anywhere — see docs/canonical-data-proposal.md 'Claim boundaries preserved by this dataset'. Net effect: 51 -> 74 CareerFacts (23 added, 1 updated in place, 0 removed).",
+            "Post-review follow-up (2026-09-08, same day): the Brute Strength Training Project (brute-strength-tech-guys-engagement) and its 4 CareerFacts changed from public to restricted — CareerFactAttribution::resolve() puts the Project's own name into attribution.project for every fact attributed to it, so all 4 facts expose the named real third-party client/agency relationship regardless of each fact's own statement wording; this is the only place in the dataset naming a specific real external client, and now gets the same restricted treatment already given to Transaction Remediation Tooling for the same 'real third party, disclosure not confirmed safe for indiscriminate exposure' reasoning. Visibility distribution: 55/12/7 -> 51 public / 16 restricted / 7 private. The other 19 newly added facts are unchanged. brute-strength-cost-per-lead-reduction's Metric.guardrail expanded from 4 to 14 single-quoted forbidden phrases after an empirical review found the original set missed obvious sole-credit rephrasings using '... from $1.21 to $0.45' or the verb 'cut' instead of 'reduced' — re-verified empirically against the live ResumeWordingResponseValidator::assertGuardrails() logic (10 must-block phrasings blocked, the preferred engagement-attributed example and 3 other legitimate sentences still allowed). Remains an exact-phrase bounded protection, not a complete attribution engine — see docs/canonical-data-proposal.md for the full writeup and known residual limitation."
         ],
         "field_notes": {
             "employer_key / role_key / project_key / skill_key": "JSON-only cross-reference identifiers for this proposal. They are NOT schema columns — Employer and Role have no stable `key` column in the current schema (see docs/domain-model.md 'Stable identifiers' for exactly how a future importer resolves Employer by (career_profile_id, name) and Role by (employer_id, title, start_year, start_month) instead). Project.key IS the real `slug` column value. Skill.key IS the real `slug` column value. CareerFact.key IS the real `key` column value.",
@@ -223,6 +225,14 @@
             "description": "Integrated the Nice inContact API with React/Node.js to surface recruitment agent activity and lead progression in one dashboard, giving managers same-day visibility instead of a weekly report.",
             "default_visibility": "public",
             "sort_order": 6
+        },
+        {
+            "key": "brute-strength-tech-guys-engagement",
+            "role_key": "liquid-gravity-founder",
+            "name": "Brute Strength Training — Client Engagement via Tech Guys Who Get Marketing",
+            "description": "A paid-acquisition and conversion-rate-optimization engagement for Brute Strength Training, delivered as part of Liquid Gravity Engineering's contracted work through Tech Guys Who Get Marketing. Daniel contributed as part of the engagement team; Tech Guys Who Get Marketing was the contracting intermediary, not Daniel's employer, and Brute Strength Training was the end client.",
+            "default_visibility": "restricted",
+            "sort_order": 0
         }
     ],
 
@@ -511,6 +521,96 @@
             "category": "capability",
             "description": "Planning and safely executing corrections to production data with verification, recovery, and audit built in."
         },
+        {
+            "key": "seo",
+            "name": "Search Engine Optimization (SEO)",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "sem",
+            "name": "Search Engine Marketing (SEM)",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "technical-seo",
+            "name": "Technical SEO",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "content-strategy",
+            "name": "Content strategy",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "conversion-rate-optimization",
+            "name": "Conversion rate optimization (CRO)",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "paid-acquisition",
+            "name": "Paid acquisition",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "landing-page-development",
+            "name": "Landing page development",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "marketing-analytics",
+            "name": "Marketing analytics",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "campaign-attribution",
+            "name": "Campaign attribution",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "marketing-automation",
+            "name": "Marketing automation",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "ecommerce-integration",
+            "name": "Ecommerce integration",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "technology-adoption",
+            "name": "Technology adoption",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "technical-communication",
+            "name": "Technical communication",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "lead-generation",
+            "name": "Lead generation",
+            "category": "capability",
+            "description": null
+        },
+        {
+            "key": "developer-education",
+            "name": "Developer education",
+            "category": "capability",
+            "description": null
+        },
 
         {
             "key": "git",
@@ -535,6 +635,12 @@
             "name": "Agile/Scrum",
             "category": "practice",
             "description": "Resume-asserted only; no project-level evidence found."
+        },
+        {
+            "key": "ab-testing",
+            "name": "A/B testing",
+            "category": "practice",
+            "description": null
         }
     ],
 
@@ -750,10 +856,10 @@
         {
             "key": "rocketgate-developer-documentation-onboarding",
             "fact_type": "bullet",
-            "statement": "Modernized developer documentation and support resources for merchant integration and internal onboarding, aimed at improving integration guidance and reducing time to get up to speed.",
+            "statement": "Built a centralized, searchable developer documentation and knowledge base for merchant payment-gateway integration and internal onboarding — including hands-on SDK examples and integration guidance — paired with Verbatim's grounded retrieval so developers and support staff can find relevant knowledge-base content directly, aimed at improving integration guidance, supporting self-service enablement, and reducing time to get up to speed.",
             "verification": "strongly_supported",
             "visibility": "public",
-            "notes": "Existence is supported by both resume and portfolio; no dedicated case study or architecture detail exists, and no quantitative outcome (e.g. ticket-time reduction) is confirmed, so none is claimed.",
+            "notes": "Existence and this level of description is supported by resume, portfolio, and direct user confirmation. Distinct from Verbatim and Knowledge Exporter — this fact covers the documentation/knowledge-base content and onboarding outcomes themselves; Verbatim's own facts (rocketgate-verbatim-what-it-is, rocketgate-verbatim-support-reply-reuse) cover the RAG-based retrieval system built on top of it. They function together as part of one broader developer-enablement ecosystem but remain separate systems — do not collapse them into a single project/system description. Quantitative outcomes are separate atomic CareerFacts — see rocketgate-onboarding-effort-reduction and rocketgate-integration-support-ticket-reduction. Do not characterize this work as federal workforce training, formal LMS administration, or Section 508 compliance work — none of that is evidenced.",
             "attributable": {
                 "type": "role",
                 "key": "rocketgate-developer-support-engineer"
@@ -769,10 +875,90 @@
                     "source": "portfolio",
                     "path": "danielsias-dev/src/app/experience/RocketGate.tsx",
                     "locator": "supportingSystems: Developer Documentation & Onboarding"
+                },
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: the documentation/knowledge base includes hands-on SDK examples and integration guidance, is paired with Verbatim's grounded retrieval for developer and support-staff use, and supports self-service onboarding — distinct from, but part of the same ecosystem as, Verbatim and Knowledge Exporter."
                 }
             ],
             "metric": null,
-            "skills": ["developer-tooling"]
+            "skills": ["developer-tooling", "developer-education", "technical-communication", "technology-adoption"]
+        },
+        {
+            "key": "rocketgate-onboarding-effort-reduction",
+            "fact_type": "metric",
+            "statement": "Reduced average new-merchant onboarding effort from approximately 10 active hours to approximately 3 active hours.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Attributed to the developer documentation/knowledge base and onboarding work described in rocketgate-developer-documentation-onboarding. Both figures are estimates, not precisely measured — do not present with false precision.",
+            "attributable": {
+                "type": "role",
+                "key": "rocketgate-developer-support-engineer"
+            },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: average new-merchant onboarding effort reduced from approximately 10 active hours to approximately 3 active hours."
+                }
+            ],
+            "metric": {
+                "value": 3,
+                "unit": "active_hours_per_onboarding",
+                "comparator": "approximately",
+                "scope_note": "Resulting average new-merchant onboarding effort; baseline prior to the documentation/knowledge-base work was approximately 10 active hours.",
+                "guardrail": "Both the ~10-hour baseline and the ~3-hour resulting figure are estimates, not precisely measured numbers — do not present either as an exact figure. Do not conflate with the separate ~30% integration-support ticket-volume reduction metric (rocketgate-integration-support-ticket-reduction)."
+            },
+            "skills": ["developer-education"]
+        },
+        {
+            "key": "rocketgate-integration-support-ticket-reduction",
+            "fact_type": "metric",
+            "statement": "Reduced integration-support ticket volume by approximately 30%.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Attributed to the developer documentation/knowledge base and onboarding work described in rocketgate-developer-documentation-onboarding. An estimate, not a precisely measured figure.",
+            "attributable": {
+                "type": "role",
+                "key": "rocketgate-developer-support-engineer"
+            },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: approximately 30% reduction in integration-support ticket volume."
+                }
+            ],
+            "metric": {
+                "value": 30,
+                "unit": "percent_reduction",
+                "comparator": "approximately",
+                "scope_note": "Reduction in RocketGate merchant integration-support ticket volume, attributed to the centralized developer documentation/knowledge base.",
+                "guardrail": "An estimate, not a precisely measured figure — do not present as exact. Do not conflate with the separate ~10-to-~3 active-hour onboarding-effort-reduction metric (rocketgate-onboarding-effort-reduction)."
+            },
+            "skills": ["developer-education"]
+        },
+        {
+            "key": "rocketgate-support-ticket-context-quality-improvement",
+            "fact_type": "bullet",
+            "statement": "Support tickets increasingly arrive with more relevant documentation and knowledge-base context already surfaced, reducing the effort typically required to resolve them.",
+            "verification": "strongly_supported",
+            "visibility": "public",
+            "notes": "Non-quantified supporting observation, distinct from the two quantitative metrics above — no percentage or count is claimed here.",
+            "attributable": {
+                "type": "role",
+                "key": "rocketgate-developer-support-engineer"
+            },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: support tickets arrive with more useful documentation/context surfaced, reducing resolution effort."
+                }
+            ],
+            "metric": null,
+            "skills": ["developer-education", "technical-communication"]
         },
 
         { "_section": "=== RocketGate — Workflow Intelligence (Project) ===" },
@@ -1495,6 +1681,162 @@
             },
             "skills": []
         },
+        {
+            "key": "pearson-seo-analyst-technical-seo-content-strategy",
+            "fact_type": "bullet",
+            "statement": "Combined technical SEO and content strategy work across the 34 university programs — including keyword targeting and content-structure recommendations — to improve organic search visibility and lead generation.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence enriching pearson-seo-analyst-what-they-did with independently-selectable atomic detail; does not restate its 34-university-programs framing as a separate accomplishment.",
+            "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: technical SEO and content strategy, including keyword targeting and content structure, were part of the SEO Analyst role's day-to-day work across the university programs portfolio."
+                }
+            ],
+            "metric": null,
+            "skills": ["seo", "technical-seo", "content-strategy"]
+        },
+        {
+            "key": "pearson-seo-analyst-sem-paid-search",
+            "fact_type": "bullet",
+            "statement": "Worked in search engine marketing (SEM) alongside organic SEO, as part of the SEO Analyst role's search-marketing scope.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence — user-confirmed only; no dedicated resume/portfolio detail beyond the role's general SEO framing.",
+            "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: SEM was part of the validated experience for this role, alongside organic SEO."
+                }
+            ],
+            "metric": null,
+            "skills": ["sem"]
+        },
+        {
+            "key": "pearson-seo-analyst-experimentation-conversion-optimization",
+            "fact_type": "bullet",
+            "statement": "Ran A/B testing and experimentation and worked on conversion-funnel optimization as part of the SEO Analyst role's data-driven initiatives.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence enriching the role's general 'experimentation' framing in pearson-seo-analyst-what-they-did with independently-selectable A/B-testing and CRO detail.",
+            "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: A/B testing/experimentation and conversion-funnel optimization were part of the SEO Analyst role's validated experience."
+                }
+            ],
+            "metric": null,
+            "skills": ["ab-testing", "conversion-rate-optimization"]
+        },
+        {
+            "key": "pearson-seo-analyst-automated-performance-monitoring",
+            "fact_type": "bullet",
+            "statement": "Built automated keyword and performance monitoring and used web analytics (Google Analytics) to analyze marketing performance across the university programs portfolio.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence enriching the role's general 'automation' framing in pearson-seo-analyst-what-they-did with independently-selectable analytics-monitoring detail.",
+            "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: automated keyword/performance monitoring and web-analytics-driven marketing performance analysis (Google Analytics) were part of the SEO Analyst role's validated experience."
+                }
+            ],
+            "metric": null,
+            "skills": ["marketing-analytics", "google-analytics"]
+        },
+        {
+            "key": "pearson-seo-analyst-vendor-agency-coordination",
+            "fact_type": "bullet",
+            "statement": "Worked with outside vendors and agencies on content and link-related work supporting the SEO Analyst role's university-programs portfolio.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence — user-confirmed only.",
+            "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: worked with vendors/agencies on content and link-related work as part of this role."
+                }
+            ],
+            "metric": null,
+            "skills": []
+        },
+        {
+            "key": "pearson-seo-analyst-partner-program-relaunch",
+            "fact_type": "bullet",
+            "statement": "Led an SEO-focused relaunch of a Pearson partner online degree program, covering content structure, keyword targeting, technical SEO, and on-page conversion optimization in partnership with the client.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence for a specific named partner-program engagement, distinct from the general 34-university-programs SEO work in pearson-seo-analyst-what-they-did. No specific partner/program name is established, so none is invented here. See pearson-seo-analyst-relaunch-organic-traffic-growth and pearson-seo-analyst-relaunch-conversion-improvement for its two confirmed outcome metrics.",
+            "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: led an SEO and conversion relaunch for a Pearson partner online degree program, in partnership with the client, covering content structure, keyword targeting, technical SEO, and on-page conversion optimization."
+                }
+            ],
+            "metric": null,
+            "skills": ["seo", "technical-seo", "content-strategy", "conversion-rate-optimization"]
+        },
+        {
+            "key": "pearson-seo-analyst-relaunch-organic-traffic-growth",
+            "fact_type": "metric",
+            "statement": "The partner program relaunch grew organic traffic by approximately 40% over six months.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Scoped to this specific partner-program relaunch and six-month window only — not a general Pearson-wide or SEO-Analyst-role-wide organic traffic figure.",
+            "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: +40% organic traffic over six months, specific to the partner program relaunch."
+                }
+            ],
+            "metric": {
+                "value": 40,
+                "unit": "percent_increase",
+                "comparator": "approximately",
+                "scope_note": "Organic traffic growth for the specific Pearson partner online degree program relaunch (pearson-seo-analyst-partner-program-relaunch), measured over a six-month period following relaunch — not a Pearson-wide or portfolio-wide figure.",
+                "guardrail": "Do not generalize beyond this specific partner-program relaunch and its six-month measurement window — do not present as overall Pearson organic traffic growth, as applying to other university programs, or as a different time period."
+            },
+            "skills": []
+        },
+        {
+            "key": "pearson-seo-analyst-relaunch-conversion-improvement",
+            "fact_type": "metric",
+            "statement": "The partner program relaunch improved on-page conversion from under 1% to 2.5%.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Baseline ('under 1%') is preserved in scope_note rather than as the Metric's primary value — 2.5% is the confirmed resulting figure this Metric records.",
+            "attributable": { "type": "role", "key": "pearson-seo-analyst" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: on-page conversion improved from under 1% to 2.5% as a result of the partner program relaunch."
+                }
+            ],
+            "metric": {
+                "value": 2.5,
+                "unit": "conversion_rate_percent",
+                "comparator": "exact",
+                "scope_note": "Resulting on-page conversion rate for the specific Pearson partner online degree program relaunch (pearson-seo-analyst-partner-program-relaunch); baseline conversion rate prior to the relaunch was under 1%.",
+                "guardrail": "Do not restate as a company-wide, portfolio-wide, or revenue/enrollment outcome — scoped to this specific partner-program relaunch's on-page conversion rate only."
+            },
+            "skills": []
+        },
 
         {
             "_section": "=== Pearson — Data & Analytics Lead Developer (Role-level) ==="
@@ -1521,6 +1863,27 @@
             ],
             "metric": null,
             "skills": []
+        },
+        {
+            "key": "pearson-data-analytics-lead-marketing-analytics-martech",
+            "fact_type": "narrative",
+            "statement": "Worked across marketing analytics and marketing-technology systems spanning campaign tracking, attribution, budget forecasting, and marketing automation — integrating Salesforce, BigQuery, Google Analytics, Salesforce Marketing Cloud, and advertising-platform data into unified reporting for marketing and business stakeholders.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Role-level connective fact citing the marketing-analytics/MarTech breadth spanning Nexus, the Marketing Budget & Forecast Hub, and the Email Marketing Performance Tracker, without restating any of their individual project-level facts — see those Projects' own facts for architecture-level detail. Does not create or duplicate a Nexus or Marketing Budget & Forecast Hub fact.",
+            "attributable": {
+                "type": "role",
+                "key": "pearson-data-analytics-lead"
+            },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: marketing analytics/MarTech work spanned campaign tracking, attribution, forecasting, budget planning, and marketing automation, integrating Salesforce, BigQuery, Google Analytics, Salesforce Marketing Cloud, and advertising-platform data."
+                }
+            ],
+            "metric": null,
+            "skills": ["marketing-analytics", "campaign-attribution", "marketing-automation", "salesforce", "bigquery", "google-analytics"]
         },
 
         { "_section": "=== Pearson — Nexus (Project) ===" },
@@ -1963,6 +2326,213 @@
                 "guardrail": null
             },
             "skills": []
+        },
+        {
+            "key": "liquid-gravity-experimentation-cro-landing-funnel",
+            "fact_type": "bullet",
+            "statement": "Set up experiments and built landing and funnel pages for client conversion-rate-optimization work, running ongoing A/B testing to improve performance.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence enriching liquid-gravity-what-they-did with independently-selectable CRO/experimentation detail; no specific client or project is attributed by either source, so none is invented here.",
+            "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: personally set up experiments, built landing/funnel pages, and ran ongoing A/B testing and CRO work for Liquid Gravity clients."
+                }
+            ],
+            "metric": null,
+            "skills": ["ab-testing", "conversion-rate-optimization", "landing-page-development"]
+        },
+        {
+            "key": "liquid-gravity-paid-acquisition-ad-targeting",
+            "fact_type": "bullet",
+            "statement": "Modified advertising targeting and monitored and optimized paid-acquisition campaigns for client marketing engagements.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence; no specific client, platform, or budget figure is established, so none is invented here.",
+            "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: modified ad targeting and monitored/optimized paid-acquisition campaigns for clients."
+                }
+            ],
+            "metric": null,
+            "skills": ["paid-acquisition"]
+        },
+        {
+            "key": "liquid-gravity-cms-crm-marketing-automation-integrations",
+            "fact_type": "bullet",
+            "statement": "Built CMS integrations, CRM integrations (including Salesforce), and marketing-automation tooling as part of client web-application and funnel work.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence enriching liquid-gravity-what-they-did's general 'CRM integrations, automation tools' framing with independently-selectable detail.",
+            "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: built CMS, CRM (including Salesforce), and marketing-automation integrations for client work."
+                }
+            ],
+            "metric": null,
+            "skills": ["salesforce", "marketing-automation"]
+        },
+        {
+            "key": "liquid-gravity-ecommerce-checkout-upsell",
+            "fact_type": "bullet",
+            "statement": "Implemented ecommerce functionality for clients, including shopping-cart integrations, checkout and payment flows, and one-click upsells.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence; no specific client, cart platform, or payment processor is established, so none is invented here.",
+            "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: implemented shopping-cart integrations, checkout/payment flows, and one-click upsells for clients."
+                }
+            ],
+            "metric": null,
+            "skills": ["ecommerce-integration"]
+        },
+        {
+            "key": "liquid-gravity-lead-generation-systems",
+            "fact_type": "bullet",
+            "statement": "Built lead-generation systems for clients, connecting landing/funnel pages, CRM integrations, and marketing automation into a working acquisition pipeline.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Describes the systems built, complementing (not restating) the existing liquid-gravity-lead-generation-growth Metric — no specific client is attributed by either source, so none is invented here.",
+            "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: built lead-generation systems for clients as part of Liquid Gravity's consultancy work."
+                }
+            ],
+            "metric": null,
+            "skills": ["lead-generation"]
+        },
+        {
+            "key": "liquid-gravity-video-marketing-production",
+            "fact_type": "bullet",
+            "statement": "Produced video sales letters and other video marketing content for clients, including video editing, as part of client campaign work.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence. Describes basic marketing video production/editing for client campaigns only — do not characterize as advanced graphic design, professional animation, or professional audio production, none of which is evidenced.",
+            "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: produced video sales letters and other video marketing content, including video editing, for clients."
+                }
+            ],
+            "metric": null,
+            "skills": []
+        },
+        {
+            "key": "liquid-gravity-client-facing-performance-walkthroughs",
+            "fact_type": "bullet",
+            "statement": "Coordinated required copy and design assets with clients and recorded client-facing video walkthroughs explaining campaign performance and recommended next tests.",
+            "verification": "verified",
+            "visibility": "public",
+            "notes": "Newly validated canonical evidence — communication/stakeholder-facing work, distinct from the technical CRO/experimentation execution in liquid-gravity-experimentation-cro-landing-funnel.",
+            "attributable": { "type": "role", "key": "liquid-gravity-founder" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: coordinated copy/design assets with clients and recorded client-facing video walkthroughs explaining performance and recommended next tests."
+                }
+            ],
+            "metric": null,
+            "skills": ["technical-communication"]
+        },
+
+        { "_section": "=== Liquid Gravity Engineering — Brute Strength Training (Project, client engagement via Tech Guys Who Get Marketing) ===" },
+
+        {
+            "key": "brute-strength-what-it-is",
+            "fact_type": "bullet",
+            "statement": "Contributed to a paid-acquisition and conversion-rate-optimization engagement for Brute Strength Training, delivered as part of Liquid Gravity Engineering's contracted work through Tech Guys Who Get Marketing.",
+            "verification": "verified",
+            "visibility": "restricted",
+            "notes": "Tech Guys Who Get Marketing was the contracting intermediary Daniel worked through as part of Liquid Gravity Engineering — not Daniel's employer. Brute Strength Training was the end client. Do not add the Matthew Bruce testimonial found on the Tech Guys site (cannot be established as referring to Daniel) or the Surefire Marketing 48-hour CRM rebuild case study (Daniel's participation is not established) — neither is canonical evidence. Do not infer any other Tech Guys client outcome from this engagement.",
+            "attributable": { "type": "project", "key": "brute-strength-tech-guys-engagement" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: contributed to a paid-acquisition/CRO engagement for Brute Strength Training, delivered through Tech Guys Who Get Marketing as part of Liquid Gravity Engineering's contracted work."
+                }
+            ],
+            "metric": null,
+            "skills": []
+        },
+        {
+            "key": "brute-strength-experimentation-and-cro-contribution",
+            "fact_type": "bullet",
+            "statement": "Contributed experiment setup, landing and funnel page implementation, advertising-targeting work, and ongoing A/B testing and CRO, and coordinated required copy and design assets, as part of the engagement team.",
+            "verification": "verified",
+            "visibility": "restricted",
+            "notes": "Team contribution, not sole ownership of the engagement — see brute-strength-what-it-is for the explicit Tech Guys Who Get Marketing attribution.",
+            "attributable": { "type": "project", "key": "brute-strength-tech-guys-engagement" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: contributed experiment setup, landing/funnel implementation, ad targeting, ongoing A/B testing/CRO, and copy/design asset coordination as part of the engagement team."
+                }
+            ],
+            "metric": null,
+            "skills": ["ab-testing", "conversion-rate-optimization", "landing-page-development", "paid-acquisition"]
+        },
+        {
+            "key": "brute-strength-client-facing-walkthroughs",
+            "fact_type": "bullet",
+            "statement": "Recorded client-facing video walkthroughs explaining campaign performance and recommended next tests as part of the engagement.",
+            "verification": "verified",
+            "visibility": "restricted",
+            "notes": "Team contribution, not sole ownership of the engagement — see brute-strength-what-it-is.",
+            "attributable": { "type": "project", "key": "brute-strength-tech-guys-engagement" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: recorded client-facing video walkthroughs explaining campaign performance and recommended next tests as part of the engagement."
+                }
+            ],
+            "metric": null,
+            "skills": ["technical-communication"]
+        },
+        {
+            "key": "brute-strength-cost-per-lead-reduction",
+            "fact_type": "metric",
+            "statement": "Contributed to a paid-acquisition and CRO engagement for Brute Strength Training in which cost per lead (CPL) fell from $1.21 to $0.45, a reduction of approximately 63%.",
+            "verification": "verified",
+            "visibility": "restricted",
+            "notes": "This is an engagement/team-level outcome, not a claim of Daniel's sole individual attribution — Daniel contributed experimentation, targeting, and CRO work as part of the Tech Guys Who Get Marketing engagement team (see brute-strength-experimentation-and-cro-contribution). The metric's guardrail exists specifically to stop this figure from being restated as an unqualified personal result. The guardrail is an exact-phrase check (App\\Support\\ResumeVariant\\ResumeWordingResponseValidator::assertGuardrails() — case-insensitive substring match on each single-quoted phrase) covering the most obvious sole-credit formulations across 'reduced'/'cut', 'CPL'/'cost per lead', and 'by 63%'/'from $1.21 to $0.45', with and without 'Daniel' as the stated subject. It is a bounded protection, not a complete attribution engine: a sufficiently different rephrasing (a new verb, an approximation symbol, restructured wording) could still slip past it undetected. Live/human review remains the actual backstop, consistent with every other guardrail in this dataset.",
+            "attributable": { "type": "project", "key": "brute-strength-tech-guys-engagement" },
+            "evidence": [
+                {
+                    "source": "user_confirmed",
+                    "confirmed_at": "2026-09-08",
+                    "note": "Confirmed directly by user: engagement-level cost-per-lead outcome for Brute Strength Training, delivered via Tech Guys Who Get Marketing — CPL fell from $1.21 to $0.45 (approximately 63%). Explicitly a team/engagement outcome, not solely Daniel's individual result."
+                }
+            ],
+            "metric": {
+                "value": 0.45,
+                "unit": "usd_cost_per_lead",
+                "comparator": "exact",
+                "scope_note": "Engagement-level outcome for the Brute Strength Training paid-acquisition/CRO engagement, delivered via Tech Guys Who Get Marketing. Starting CPL was $1.21; ending CPL was $0.45 — a reduction of approximately 63%. Reflects the engagement's result as a whole, not a figure Daniel individually owns or controls.",
+                "guardrail": "This is a team/engagement-level outcome, never a personal individual result. Never write 'Daniel reduced CPL by 63%', 'reduced CPL by 63%', 'Daniel reduced cost per lead by 63%', 'reduced cost per lead by 63%', 'Daniel reduced CPL from $1.21 to $0.45', 'reduced CPL from $1.21 to $0.45', 'Daniel cut CPL by 63%', 'cut CPL by 63%', 'Daniel cut CPL from $1.21 to $0.45', 'cut CPL from $1.21 to $0.45', 'Daniel cut cost per lead by 63%', 'cut cost per lead by 63%', 'Daniel cut cost per lead from $1.21 to $0.45', or 'cut cost per lead from $1.21 to $0.45' as an unqualified sole-credit claim. Always frame as a contribution to a team/engagement outcome, for example: Contributed to a paid-acquisition and CRO engagement in which CPL fell from $1.21 to $0.45 (~63%)."
+            },
+            "skills": ["paid-acquisition", "conversion-rate-optimization"]
         }
     ]
 }

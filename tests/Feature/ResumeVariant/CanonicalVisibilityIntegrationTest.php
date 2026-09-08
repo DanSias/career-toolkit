@@ -65,10 +65,26 @@ it('keeps the eleven technique/process Restricted facts eligible', function () {
     }
 });
 
-it('matches the exact expected visibility distribution: 32 public / 12 restricted / 7 private', function () {
+it('matches the exact expected visibility distribution: 51 public / 16 restricted / 7 private', function () {
     $counts = CareerFact::query()->selectRaw('visibility, count(*) as c')->groupBy('visibility')->pluck('c', 'visibility');
 
-    expect($counts['public'])->toBe(32)
-        ->and($counts['restricted'])->toBe(12)
+    expect($counts['public'])->toBe(51)
+        ->and($counts['restricted'])->toBe(16)
         ->and($counts['private'])->toBe(7);
+});
+
+it('excludes the four Brute Strength engagement facts from indiscriminate/public exposure but keeps them eligible for a targeted resume', function () {
+    $keys = [
+        'brute-strength-what-it-is',
+        'brute-strength-experimentation-and-cro-contribution',
+        'brute-strength-client-facing-walkthroughs',
+        'brute-strength-cost-per-lead-reduction',
+    ];
+
+    foreach ($keys as $key) {
+        $fact = CareerFact::where('key', $key)->firstOrFail();
+
+        expect($fact->visibility->value)->toBe('restricted')
+            ->and(ResumeEligibility::isEligible($fact))->toBeTrue();
+    }
 });
