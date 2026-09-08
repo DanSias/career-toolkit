@@ -48,7 +48,7 @@ function validSelectionContent(array $candidate, array $job): array
         'education_selection' => [['education_id' => $candidate['education']->id, 'order' => 1]],
         'experience' => [[
             'role_id' => $candidate['role']->id,
-            'display_title' => 'Senior Software Engineer',
+            'title_choice' => 'segment_1',
             'bullet_groups' => [
                 [
                     'project_id' => $candidate['project']->id,
@@ -121,8 +121,8 @@ it('persists the full graph from a valid two-stage response', function () {
         ->and($variant->summaryEvidence)->toHaveCount(1)
         ->and($variant->targetTermUsages)->toHaveCount(1)
         ->and($variant->summary)->not->toBeNull()
-        ->and($variant->schema_version)->toBe('1.0')
-        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1.1')
+        ->and($variant->schema_version)->toBe('1.1')
+        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1.2')
         ->and($variant->wording_prompt_version)->toBe('resume-wording-v1')
         ->and($variant->selection_generated_by)->toBe('openai:gpt-test')
         ->and($variant->wording_generated_by)->toBe('openai:gpt-test');
@@ -330,10 +330,34 @@ it('rejects a cross-profile CareerFact reference', function () {
     expect(ResumeVariant::count())->toBe(0);
 });
 
-it('rejects a fabricated display_title that is neither the canonical title nor an exact "/"-segment', function () {
+it('rejects a title_choice that is not legal for the selected role, with no fallback to full', function () {
     [$candidate, $job, $jobMatch] = fullFixtureSetup();
+
+    // A second role whose canonical title has no "/" — legally offers
+    // only 'full'. The model can no longer write free text at all
+    // (title_choice is a closed enum), so the equivalent of the old
+    // "fabricated title" risk is choosing a legal-looking key the
+    // selected role simply doesn't offer.
+    $otherRole = Role::factory()->create(['employer_id' => $candidate['employer']->id, 'title' => 'Solo Title No Slash']);
+    CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $otherRole->id,
+        'key' => 'fixture-other-role-fact',
+        'visibility' => Visibility::Public,
+    ]);
+
     $content = validSelectionContent($candidate, $job);
-    $content['experience'][0]['display_title'] = 'Chief Executive Officer'; // fabricated, more senior
+    $content['experience'][] = [
+        'role_id' => $otherRole->id,
+        'title_choice' => 'segment_1', // illegal — $otherRole has no "/" segments at all
+        'bullet_groups' => [[
+            'project_id' => -1,
+            'order' => 1,
+            'career_fact_keys' => ['fixture-other-role-fact'],
+            'job_analysis_finding_ids' => [],
+        ]],
+    ];
 
     [$selection, $wording] = bindFakeResumeProviders();
     $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
@@ -344,10 +368,10 @@ it('rejects a fabricated display_title that is neither the canonical title nor a
     expect(ResumeVariant::count())->toBe(0);
 });
 
-it('accepts a display_title that is an exact "/"-delimited segment of the canonical title', function () {
+it('resolves title_choice segment_2 to the exact canonical segment string, never model-written text', function () {
     [$candidate, $job, $jobMatch] = fullFixtureSetup();
     $content = validSelectionContent($candidate, $job);
-    $content['experience'][0]['display_title'] = 'Platform Lead'; // real segment of "Senior Software Engineer / Platform Lead"
+    $content['experience'][0]['title_choice'] = 'segment_2'; // real second segment of "Senior Software Engineer / Platform Lead"
 
     [$selection, $wording] = bindFakeResumeProviders();
     $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));

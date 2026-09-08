@@ -44,12 +44,23 @@ it('explicitly warns against mixing or swapping sibling roles at the same employ
         ->toContain('never combine or swap them');
 });
 
-it('uses a clearly synthetic example for the display-title rule', function () {
+it('uses a clearly synthetic example for the title_choice rule', function () {
     $systemPrompt = normalizedResumeSelectionSystemPrompt();
 
     expect($systemPrompt)
         ->toContain('Senior Engineer / Technical Lead')
-        ->toContain('Lead Software Engineer');
+        ->toContain('segment_1')
+        ->toContain('segment_2')
+        ->toContain('="Senior Engineer"')
+        ->toContain('="Technical Lead"');
+});
+
+it('tells the model to choose title_choice instead of writing title text', function () {
+    $systemPrompt = normalizedResumeSelectionSystemPrompt();
+
+    expect($systemPrompt)
+        ->toContain('You do not write or abbreviate a role\'s title')
+        ->toContain('there is no mechanism to supply new or reworded title text');
 });
 
 /**

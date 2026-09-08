@@ -235,7 +235,7 @@ class RunResumeVariantLiveEvaluation extends Command
      * throw), and never captures chain-of-thought: neither Selection's
      * nor Wording's structured-output schema has any free-text
      * reasoning field at all — `$context` is pure data (role_id,
-     * display_title, bullet_groups, project_id, career_fact_keys,
+     * title_choice, bullet_groups, project_id, career_fact_keys,
      * job_analysis_finding_ids, target_term_usages for Selection;
      * summary/bullet text only for Wording).
      *
@@ -408,8 +408,17 @@ class RunResumeVariantLiveEvaluation extends Command
         $private = (int) ($factCounts[Visibility::Private->value] ?? 0);
 
         $this->line("CareerFact visibility distribution: {$public} public / {$restricted} restricted / {$private} private");
-        $visibilityOk = $public === 32 && $restricted === 12 && $private === 7;
-        $this->line('Matches expected 32/12/7: '.($visibilityOk ? 'yes' : 'NO — MISMATCH'));
+        // Updated for the 2026-09-08 marketing/MarTech canonical-data
+        // enrichment pass (commit bc873be): 51 public / 16 restricted /
+        // 7 private, up from the original reconciliation's 32/12/7.
+        // Still a hardcoded aggregate check, not a derived invariant —
+        // brittle by the same nature as before this edit, and expected
+        // to go stale again the next time real canonical data grows.
+        // Deliberately not redesigned in this pass (e.g. into a ratio
+        // check or a live re-derivation) — that is separate harness
+        // cleanup, out of scope for this architecture-validation pass.
+        $visibilityOk = $public === 51 && $restricted === 16 && $private === 7;
+        $this->line('Matches expected 51/16/7: '.($visibilityOk ? 'yes' : 'NO — MISMATCH'));
         $ok = $ok && $visibilityOk;
 
         $eligibleKeys = ResumeEligibility::eligibleCareerFactsQuery($profile)->pluck('key')->all();

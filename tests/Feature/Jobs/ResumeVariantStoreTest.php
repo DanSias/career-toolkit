@@ -20,7 +20,7 @@ function resumeStoreValidSelection(array $candidate, array $job): array
         'education_selection' => [],
         'experience' => [[
             'role_id' => $candidate['role']->id,
-            'display_title' => $candidate['role']->title,
+            'title_choice' => 'full',
             'bullet_groups' => [[
                 'project_id' => -1,
                 'order' => 1,
@@ -99,7 +99,7 @@ it('redirects back with a safe error message and persists nothing on generation 
     $jobPosting = $match->jobAnalysis->jobPosting;
 
     $invalidSelection = resumeStoreValidSelection($candidate, $job);
-    $invalidSelection['experience'][0]['display_title'] = 'Fabricated Title Never Real'; // triggers real validator rejection
+    $invalidSelection['experience'][0]['title_choice'] = 'segment_5'; // illegal for this role (only full/segment_1/segment_2 exist) — triggers real validator rejection
 
     [$selection, $wording] = bindResumeFakes();
     $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $invalidSelection));
@@ -112,7 +112,7 @@ it('redirects back with a safe error message and persists nothing on generation 
     $response->assertSessionHasErrors('resume_generation');
 
     $message = session('errors')->get('resume_generation')[0];
-    expect($message)->not->toContain('display_title')
+    expect($message)->not->toContain('title_choice')
         ->and($message)->not->toContain('Illuminate\\')
         ->and($message)->not->toContain('App\\Exceptions');
     expect(ResumeVariant::count())->toBe(0);

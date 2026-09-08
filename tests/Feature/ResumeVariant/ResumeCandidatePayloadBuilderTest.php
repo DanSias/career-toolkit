@@ -197,3 +197,32 @@ it('grounds the real Pearson roles/projects correctly against the imported canon
     expect($nexusFact['attribution']['role_id'])->toBe($roleDataAnalyticsLead->id)
         ->and($nexusFact['attribution']['project_id'])->toBe($nexusProject->id);
 });
+
+/**
+ * Proves JobMatch is annotation layered on top of the corpus, never a
+ * recall ceiling — the exact question a real JobMatch generated before
+ * a later canonical-data enrichment pass (e.g. commit bc873be, which
+ * added 23 CareerFacts with zero CareerFactMatch rows in any
+ * already-existing JobMatch) depends on. A freshly-created JobMatch
+ * naturally has zero CareerFactMatch rows for anything — the same
+ * relationship an OLD JobMatch has to any CareerFact added after it
+ * was generated — so this exercises the real code path, not a
+ * simulation of "old" vs "new" data.
+ */
+it('still includes a currently-eligible CareerFact with zero CareerFactMatch rows in this JobMatch, annotation-free', function () {
+    Artisan::call('career:import');
+
+    $profile = CareerProfile::query()->oldest('id')->firstOrFail();
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id]);
+
+    $payload = (new ResumeCandidatePayloadBuilder)->build($match);
+    $factsByKey = collect($payload['career_facts'])->keyBy('key');
+
+    // A fact from the 2026-09-08 marketing/MarTech enrichment pass —
+    // this specific JobMatch has no CareerFactMatch row for it at all.
+    $newFact = $factsByKey->get('pearson-seo-analyst-sem-paid-search');
+
+    expect($newFact)->not->toBeNull()
+        ->and($newFact['job_match_annotations'])->toBe([])
+        ->and(collect($payload['career_facts'])->pluck('key'))->toContain('pearson-seo-analyst-sem-paid-search');
+});

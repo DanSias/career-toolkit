@@ -165,8 +165,10 @@ covers only the structural conventions.
 Stage 1: referential integrity (every id/key actually came from the
 supplied input), no-duplicate-selection, role/project consistency
 (a bullet group's `project_id` really belongs to its `role_id`;
-`display_title` really is the role's canonical title or an exact
-segment of it), exact-duplicate-bullet-group rejection, and the full
+`title_choice` really is one this exact selected role legally offers,
+per its own `role_id => {choice_key: title_string}` map — never a
+choice merely legal for some other role, and never a fallback to
+`full`), exact-duplicate-bullet-group rejection, and the full
 target-term-usage rule set (posture authorization, phrase/posture
 consistency, location/sentinel consistency, at-most-one-qualified-
 per-location).

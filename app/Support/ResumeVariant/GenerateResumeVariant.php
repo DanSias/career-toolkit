@@ -84,9 +84,11 @@ final class GenerateResumeVariant
             }
         }
 
-        $validTitleSegmentsByRole = $roles->mapWithKeys(
-            fn (Role $role) => [(string) $role->id => $this->titleSegments($role->title)]
+        $titleChoicesByRole = $roles->mapWithKeys(
+            fn (Role $role) => [(string) $role->id => $this->titleChoices($role->title)]
         )->all();
+
+        $validTitleChoiceKeys = $this->titleChoiceKeyEnum($titleChoicesByRole);
 
         // ---- Stage 1: Selection ----
         $selectionSchema = $this->selectionPrompt->jsonSchema(
@@ -97,6 +99,7 @@ final class GenerateResumeVariant
             $validSkillIds,
             $validFindingIds,
             $validTargetTerms,
+            $validTitleChoiceKeys,
         );
 
         $selectionResponse = $this->selectionProvider->generate(
@@ -113,11 +116,11 @@ final class GenerateResumeVariant
             $validSkillIds,
             $roleIdByProjectId,
             $validFindingIds,
-            $validTitleSegmentsByRole,
+            $titleChoicesByRole,
             $directEvidenceExistsByTerm,
         );
 
-        $selectionDraft = $this->toSelectionDraft($validatedSelection);
+        $selectionDraft = $this->toSelectionDraft($validatedSelection, $titleChoicesByRole);
 
         // ---- Build Stage 2 input from exactly what Selection approved ----
         $factsByKey = collect($candidatePayload['career_facts'])->keyBy('key');
@@ -280,19 +283,73 @@ final class GenerateResumeVariant
     }
 
     /**
-     * @return array<int, string>
+     * The single authoritative map of a Role's legal, model-facing
+     * title representations: `'full'` (the complete canonical title,
+     * verbatim) plus `'segment_N'` for each of its `"/"`-delimited,
+     * trimmed segments in order — present only when the title actually
+     * contains a `"/"`, so a role with none (e.g. "Developer Support
+     * Engineer") legally offers only `['full' => ...]`, never a
+     * `segment_1` key equal to the same string. Selection returns only
+     * the key; the real string is resolved from this exact map after
+     * validation — never re-derived, re-cased, or fuzzy-matched. See
+     * docs/resume-variant-generation.md "Live evaluation".
+     *
+     * @return array<string, string>
      */
-    private function titleSegments(string $title): array
+    private function titleChoices(string $title): array
     {
         $segments = array_map('trim', explode('/', $title));
 
-        return array_values(array_unique([$title, ...$segments]));
+        if (count($segments) === 1) {
+            return ['full' => $title];
+        }
+
+        $choices = ['full' => $title];
+
+        foreach ($segments as $index => $segment) {
+            $choices['segment_'.($index + 1)] = $segment;
+        }
+
+        return $choices;
+    }
+
+    /**
+     * The flat, global set of title_choice tokens the Selection schema
+     * offers — derived from the actual candidate roles for this run
+     * (never an arbitrary permanent cap): `full`, plus `segment_1`
+     * through the highest segment count any candidate role actually
+     * has. A role with fewer segments than the global maximum simply
+     * doesn't have the higher-numbered keys in its own
+     * $titleChoicesByRole entry — the validator (not the schema) is
+     * what rejects an out-of-range choice for a specific role, exactly
+     * as project_id's global enum already relies on the validator for
+     * per-role validity.
+     *
+     * @param  array<int, array<string, string>>  $titleChoicesByRole
+     * @return array<int, string>
+     */
+    private function titleChoiceKeyEnum(array $titleChoicesByRole): array
+    {
+        $maxSegments = 0;
+
+        foreach ($titleChoicesByRole as $choices) {
+            $maxSegments = max($maxSegments, count($choices) - 1);
+        }
+
+        $keys = ['full'];
+
+        for ($i = 1; $i <= $maxSegments; $i++) {
+            $keys[] = "segment_{$i}";
+        }
+
+        return $keys;
     }
 
     /**
      * @param  array<string, mixed>  $validated
+     * @param  array<int, array<string, string>>  $titleChoicesByRole
      */
-    private function toSelectionDraft(array $validated): ResumeSelectionDraft
+    private function toSelectionDraft(array $validated, array $titleChoicesByRole): ResumeSelectionDraft
     {
         /** @var array<int, string> $summaryEvidence */
         $summaryEvidence = $validated['summary_evidence'];
@@ -311,7 +368,12 @@ final class GenerateResumeVariant
             educationSelections: array_map(fn (array $e) => new EducationSelectionDraft($e['education_id'], $e['order']), $educationSelection),
             experience: array_map(fn (array $r) => new RoleSelectionDraft(
                 roleId: $r['role_id'],
-                displayTitle: $r['display_title'],
+                // Trusted, not re-checked: ResumeSelectionResponseValidator
+                // already confirmed this exact (role_id, title_choice) pair
+                // is legal before persistence ever runs — resolving here
+                // reads the real canonical string, never the model's own
+                // text (it never supplied any).
+                displayTitle: $titleChoicesByRole[$r['role_id']][$r['title_choice']],
                 bulletGroups: array_map(fn (array $g) => new BulletGroupDraft(
                     projectId: $g['project_id'] === -1 ? null : $g['project_id'],
                     order: $g['order'],

@@ -1086,18 +1086,42 @@ recent first — the same date fields "Role date precision" above
 already establishes as canonical, never a duration Resume Selection or
 Wording computes or asserts itself.
 
-**`display_title` may only be the role's exact full canonical `Role.title`
-or one of its exact `"/"`-delimited trimmed segments** — never a
-rewritten, elevated, or invented string (e.g. a canonical title "Data &
-Analytics Lead Developer / Data Analyst" may be shown in full, or as
-just one of its two segments, never as some other framing). Enforced
-by deterministic application validation against a `role_id => [allowed
-titles]` map computed from live `Role` data at generation time — the
-JSON Schema itself cannot express a per-role enum constraint (no
-tuple/`prefixItems` complexity was introduced to attempt it), so this
-is schema-loose and validator-strict, consistent with this codebase's
-established "schema does coarse structure, the deterministic validator
-is the real authority" convention.
+**Resume Selection never writes title text at all — it chooses a closed
+`title_choice` key** (`full`, `segment_1`, `segment_2`, ...), resolved to
+the real canonical string only after validation, never accepted as
+model-written text. This replaced an earlier `display_title: string`
+design that asked the model to reproduce the exact title/segment text
+itself; live evaluation against real candidate data found that
+schema-loose enough to invite drift, so the field was closed into an
+enum entirely. `title_choice` legally offers `full` (the role's exact
+full canonical `Role.title`) plus one `segment_N` per `"/"`-delimited,
+trimmed segment of that title, in left-to-right order — a title with no
+`"/"` (e.g. "Developer Support Engineer") legally offers only `full`. No
+fuzzy matching, normalization, abbreviation, or fallback to `full` for
+an unsupported choice exists anywhere in this path.
+
+The `title_choice` token itself **is** expressible as a flat JSON Schema
+string enum — unlike the free-text `display_title` it replaced — built
+per generation as `App\Support\ResumeVariant\GenerateResumeVariant::titleChoiceKeyEnum()`:
+`full` plus `segment_1` through the highest segment count any candidate
+Role for this run actually has, derived from live data rather than a
+fixed permanent cap. What the schema *cannot* express is that a given
+key is only legal for *some* roles (a title with one `"/"` has no
+`segment_2`) — that per-role legality is where deterministic validation
+remains the real authority, consistent with this codebase's established
+"schema does coarse structure, the deterministic validator is the real
+authority" convention: `App\Support\ResumeVariant\GenerateResumeVariant::titleChoices()`
+builds the authoritative `role_id => ['full' => ..., 'segment_N' => ...]`
+map from live `Role` data, and `ResumeSelectionResponseValidator::assertRoleAndProjectValidity()`
+rejects any `(role_id, title_choice)` pair not present in that exact
+role's own map — a choice legal for one role but not the selected one
+fails outright, never silently falls back to `full`. Only after that
+check passes does persistence resolve the validated key to its real
+string via the same map (`GenerateResumeVariant::toSelectionDraft()`) —
+the model never supplies, and this path never trusts, any title text
+directly. The persisted column remains `resume_variant_experience_bullets.display_title`,
+unchanged: this is a wire-contract change for the Selection provider
+only, not a schema change to the persisted artifact.
 
 **Employer/Role/Project attribution is exact and immutable**, restrict-
 protected the same way `career_fact_matches.career_fact_id` is: a

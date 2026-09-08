@@ -13,10 +13,10 @@ use Illuminate\Validation\Validator;
 /**
  * The single authoritative, deterministic check on the Resume Selection
  * provider's decoded response — structure, types, every enum value,
- * referential integrity, display-title legitimacy, target-term posture
- * authorization, and structural anti-redundancy. Runs before any
- * Eloquent model exists. Mirrors JobMatchResponseValidator. See
- * docs/resume-variant-generation.md.
+ * referential integrity, title_choice legitimacy per selected role,
+ * target-term posture authorization, and structural anti-redundancy.
+ * Runs before any Eloquent model exists. Mirrors
+ * JobMatchResponseValidator. See docs/resume-variant-generation.md.
  */
 final class ResumeSelectionResponseValidator
 {
@@ -28,7 +28,7 @@ final class ResumeSelectionResponseValidator
      * @param  array<int, int>  $validSkillIds
      * @param  array<int, int>  $roleIdByProjectId  project_id => the role_id it actually belongs to.
      * @param  array<int, int>  $validFindingIds
-     * @param  array<int, array<int, string>>  $validTitleSegmentsByRole  role_id => [full canonical title, "/"-segment, ...]
+     * @param  array<int, array<string, string>>  $titleChoicesByRole  role_id => ['full' => canonical title, 'segment_N' => trimmed "/"-segment, ...]
      * @param  array<string, bool>  $directEvidenceExistsByTerm
      * @return array<string, mixed>
      *
@@ -42,7 +42,7 @@ final class ResumeSelectionResponseValidator
         array $validSkillIds,
         array $roleIdByProjectId,
         array $validFindingIds,
-        array $validTitleSegmentsByRole,
+        array $titleChoicesByRole,
         array $directEvidenceExistsByTerm,
     ): array {
         $validator = ValidatorFacade::make($structuredContent, $this->rules());
@@ -50,14 +50,14 @@ final class ResumeSelectionResponseValidator
         $validator->after(function (Validator $validator) use (
             $structuredContent, $validRoleIds, $validFactKeys, $validEducationIds,
             $validSkillIds, $roleIdByProjectId, $validFindingIds,
-            $validTitleSegmentsByRole, $directEvidenceExistsByTerm,
+            $titleChoicesByRole, $directEvidenceExistsByTerm,
         ) {
             $experience = is_array($structuredContent['experience'] ?? null) ? $structuredContent['experience'] : [];
             $targetTermUsages = is_array($structuredContent['target_term_usages'] ?? null) ? $structuredContent['target_term_usages'] : [];
 
             $this->assertReferentialIntegrity($validator, $structuredContent, $validFactKeys, $validEducationIds, $validSkillIds, $validFindingIds);
             $this->assertNoDuplicateSelections($validator, $structuredContent, $experience);
-            $this->assertRoleAndProjectValidity($validator, $experience, $validRoleIds, $roleIdByProjectId, $validTitleSegmentsByRole);
+            $this->assertRoleAndProjectValidity($validator, $experience, $validRoleIds, $roleIdByProjectId, $titleChoicesByRole);
             $this->assertNoDuplicateBulletGroups($validator, $experience);
             $this->assertTargetTermUsages($validator, $targetTermUsages, $experience, $directEvidenceExistsByTerm);
         });
@@ -95,7 +95,7 @@ final class ResumeSelectionResponseValidator
 
             'experience' => ['present', 'array'],
             'experience.*.role_id' => ['required', 'integer'],
-            'experience.*.display_title' => ['required', 'string'],
+            'experience.*.title_choice' => ['required', 'string'],
             'experience.*.bullet_groups' => ['present', 'array'],
             'experience.*.bullet_groups.*.project_id' => ['required', 'integer'],
             'experience.*.bullet_groups.*.order' => ['required', 'integer'],
@@ -263,14 +263,14 @@ final class ResumeSelectionResponseValidator
      * @param  array<int, mixed>  $experience
      * @param  array<int, int>  $validRoleIds
      * @param  array<int, int>  $roleIdByProjectId
-     * @param  array<int, array<int, string>>  $validTitleSegmentsByRole
+     * @param  array<int, array<string, string>>  $titleChoicesByRole
      */
     private function assertRoleAndProjectValidity(
         Validator $validator,
         array $experience,
         array $validRoleIds,
         array $roleIdByProjectId,
-        array $validTitleSegmentsByRole,
+        array $titleChoicesByRole,
     ): void {
         foreach ($experience as $roleIndex => $role) {
             if (! is_array($role)) {
@@ -285,13 +285,17 @@ final class ResumeSelectionResponseValidator
                 continue;
             }
 
-            $title = $role['display_title'] ?? null;
-            $allowedTitles = is_int($roleId) ? ($validTitleSegmentsByRole[$roleId] ?? []) : [];
+            // A closed choice key, never model-written title text — the
+            // only check needed is whether this exact role legally
+            // offers this key at all. No fuzzy matching, no fallback to
+            // 'full' for an unsupported choice.
+            $titleChoice = $role['title_choice'] ?? null;
+            $allowedChoices = is_int($roleId) ? ($titleChoicesByRole[$roleId] ?? []) : [];
 
-            if (is_string($title) && ! in_array($title, $allowedTitles, true)) {
+            if (is_string($titleChoice) && ! array_key_exists($titleChoice, $allowedChoices)) {
                 $validator->errors()->add(
-                    "experience.{$roleIndex}.display_title",
-                    "display_title [{$title}] must be the role's exact canonical title or one of its exact \"/\"-delimited segments — it may never be a rewritten string."
+                    "experience.{$roleIndex}.title_choice",
+                    "title_choice [{$titleChoice}] is not a legal title representation for role_id [{$roleId}]."
                 );
             }
 

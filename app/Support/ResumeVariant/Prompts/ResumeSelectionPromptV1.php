@@ -11,18 +11,21 @@ use BackedEnum;
  * The first production Resume Selection prompt: system instructions,
  * the per-run input payload, and the structured-output schema those
  * instructions describe. Normally immutable and versioned by class
- * name once real ResumeVariant history exists — a wording revision
- * becomes JobMatchPromptV2-style V2, never an edit to this class in
- * place. `version()` was bumped in place (not split into a V2 class)
- * during this milestone's pre-merge live-evaluation stabilization,
- * since zero ResumeVariant rows have ever been persisted under
- * 'resume-selection-v1' — there is no existing history to protect from
- * reinterpretation yet. `version()` return value tracks each revision
- * from here; a future genuinely independent redesign after real
- * history exists should still split into a new class per the normal
- * convention. Versioned independently of JobAnalysis/JobMatch and of
- * ResumeWordingPromptV1. See docs/resume-variant-generation.md "Live
- * evaluation".
+ * name once this milestone merges — a wording revision becomes
+ * JobMatchPromptV2-style V2, never an edit to this class in place.
+ * `version()`/`schemaVersion()` are instead being bumped in place
+ * during this milestone's pre-merge live-evaluation stabilization: no
+ * `ResumeVariant` row generated under any prior version here has ever
+ * reached production — every one so far lives only in the isolated,
+ * disposable live-eval database (see
+ * app/Console/Commands/LiveEval/RunResumeVariantLiveEvaluation.php)
+ * — and each row remains individually valid and interpretable under
+ * whichever version string it actually persisted, on its own terms,
+ * regardless of later bumps here. A future genuinely independent
+ * redesign after this milestone merges should still split into a new
+ * class per the normal convention. Versioned independently of
+ * JobAnalysis/JobMatch and of ResumeWordingPromptV1. See
+ * docs/resume-variant-generation.md "Live evaluation".
  *
  * Produces structure only — evidence selection, bullet grouping,
  * Skills/Education selection, and target-term claim posture. No
@@ -33,12 +36,12 @@ final readonly class ResumeSelectionPromptV1
 {
     public function version(): string
     {
-        return 'resume-selection-v1.1';
+        return 'resume-selection-v1.2';
     }
 
     public function schemaVersion(): string
     {
-        return '1.0';
+        return '1.1';
     }
 
     public function systemPrompt(): string
@@ -99,14 +102,14 @@ final readonly class ResumeSelectionPromptV1
 
         Every `experience` entry is anchored to one real `role_id`.
         Everything inside that entry must belong to that exact role:
-        its `display_title` must be valid for that same `role_id` (see
-        below), and every `project_id` in its bullet groups must be a
-        project that actually belongs to that same `role_id` — never a
-        title or project borrowed from a different role, even a
-        sibling role at the same employer. Two roles at the same
-        employer are still fully distinct: keep their ids, titles,
-        dates, CareerFacts, and projects separate, and never combine or
-        swap them.
+        its `title_choice` must be one this exact role actually offers
+        (see below), and every `project_id` in its bullet groups must
+        be a project that actually belongs to that same `role_id` —
+        never a title choice or project borrowed from a different
+        role, even a sibling role at the same employer. Two roles at
+        the same employer are still fully distinct: keep their ids,
+        titles, dates, CareerFacts, and projects separate, and never
+        combine or swap them.
 
         Each CareerFact's `attribution` shows the exact `role_id` (and,
         when applicable, `project_id`) it belongs to, directly beside
@@ -115,16 +118,24 @@ final readonly class ResumeSelectionPromptV1
         order, chronology, employer grouping, or similarity between
         role titles.
 
-        ## Display titles
+        ## Title choice
 
-        For each selected role, choose a `display_title`: either the
-        role's full canonical title verbatim, or one of its exact
-        "/"-delimited segments verbatim — never a new or reworded
-        string. For example, a canonical title "Senior Engineer /
-        Technical Lead" may be shown in full, or as just "Senior
-        Engineer", or as just "Technical Lead" — never as an unrelated
-        string like "Lead Software Engineer". Choose whichever framing
-        best fits this specific job.
+        You do not write or abbreviate a role's title — you choose
+        among its deterministic canonical representations instead. For
+        each selected role, set `title_choice` to `full` (the complete
+        canonical title, exactly as it appears in that role's
+        CareerFacts' `attribution.role`) or to `segment_1`, `segment_2`,
+        etc.: the real, literal text before/between/after that title's
+        `"/"` characters, read strictly left to right (`segment_1` is
+        everything before the first `"/"`, `segment_2` is what follows
+        it, and so on). A title with no `"/"` has no segments at all —
+        `full` is the only legal choice for that role. For example, a
+        role titled "Senior Engineer / Technical Lead" legally offers
+        `full`, `segment_1` (="Senior Engineer"), and `segment_2`
+        (="Technical Lead") — pick whichever framing best fits this
+        specific job. A choice not actually legal for the selected role
+        is rejected; there is no mechanism to supply new or reworded
+        title text.
 
         ## Skills and Education
 
@@ -221,6 +232,7 @@ final readonly class ResumeSelectionPromptV1
      * @param  array<int, int>  $validSkillIds
      * @param  array<int, int>  $validFindingIds
      * @param  array<int, string>  $validTargetTerms
+     * @param  array<int, string>  $validTitleChoiceKeys  Global set of title_choice tokens offered by any candidate role ('full', plus 'segment_N' up to the highest segment count any role actually has) — per-role legality is re-checked deterministically by the validator, not expressible here.
      * @return array<string, mixed>
      */
     public function jsonSchema(
@@ -231,6 +243,7 @@ final readonly class ResumeSelectionPromptV1
         array $validSkillIds,
         array $validFindingIds,
         array $validTargetTerms,
+        array $validTitleChoiceKeys,
     ): array {
         $roleIdOrNoneEnum = $this->withNoneSentinel($validRoleIds);
         $projectIdOrNoneEnum = $this->withNoneSentinel($validProjectIds);
@@ -272,7 +285,7 @@ final readonly class ResumeSelectionPromptV1
                         'type' => 'object',
                         'properties' => [
                             'role_id' => ['type' => 'integer', 'enum' => $this->nonEmptyIntEnum($validRoleIds)],
-                            'display_title' => ['type' => 'string'],
+                            'title_choice' => ['type' => 'string', 'enum' => $this->nonEmptyStringEnum($validTitleChoiceKeys)],
                             'bullet_groups' => [
                                 'type' => 'array',
                                 'items' => [
@@ -295,7 +308,7 @@ final readonly class ResumeSelectionPromptV1
                                 ],
                             ],
                         ],
-                        'required' => ['role_id', 'display_title', 'bullet_groups'],
+                        'required' => ['role_id', 'title_choice', 'bullet_groups'],
                         'additionalProperties' => false,
                     ],
                 ],

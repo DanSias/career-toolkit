@@ -134,7 +134,7 @@ that skips the other.
   "experience": [
     {
       "role_id": 7,
-      "display_title": "Senior Software Engineer",
+      "title_choice": "full",
       "bullet_groups": [
         {
           "project_id": -1,
@@ -168,15 +168,31 @@ nullable+enum combinations are avoided throughout.
 
 ## Field notes — Resume Selection
 
-- **`display_title`** must be exactly the role's full canonical
-  `Role.title` or one of its exact `"/"`-delimited trimmed segments —
-  never a rewritten or new string. The JSON Schema leaves this
-  loose (`type: string`, no per-role enum — JSON Schema cannot vary an
-  `enum` per array position without tuple/`prefixItems` complexity);
-  correctness is enforced entirely by
+- **`title_choice`** is a closed key, never title text: `full` (the
+  role's exact full canonical `Role.title`) or `segment_1`,
+  `segment_2`, ... (that title's exact `"/"`-delimited, trimmed
+  segments, left to right) — a title with no `"/"` legally offers only
+  `full`. The JSON Schema constrains `title_choice` to the flat, global
+  set of tokens any candidate role in this run actually offers (`full`
+  plus `segment_1` through the highest segment count present —
+  `GenerateResumeVariant::titleChoiceKeyEnum()`), since JSON Schema
+  cannot vary an `enum` per array position without tuple/`prefixItems`
+  complexity; whether a specific token is legal for the *specific*
+  selected role is re-checked independently by
   `ResumeSelectionResponseValidator::assertRoleAndProjectValidity()`
-  against a `role_id => [allowed titles]` map computed deterministically
-  from `Role.title`.
+  against a `role_id => {choice_key: title_string}` map computed
+  deterministically from `Role.title`
+  (`GenerateResumeVariant::titleChoices()`). No fuzzy matching,
+  normalization, or fallback to `full` for an unsupported choice — an
+  illegal `(role_id, title_choice)` pair is rejected outright. Only
+  after validation does `GenerateResumeVariant::toSelectionDraft()`
+  resolve the validated key to its real canonical string via that same
+  map; the model never supplies, and this contract never accepts, any
+  title text directly. This replaced an earlier `display_title: string`
+  design (the model reproduced the exact title/segment text itself),
+  closed after live evaluation showed that shape schema-loose enough
+  to invite drift — see `docs/domain-model.md` "Titles, chronology, and
+  attribution".
 - **`bullet_groups[].project_id`**, when not `-1`, must belong to the
   same `role_id` as its parent entry — re-checked independently against
   a `project_id => role_id` map built deterministically from live
@@ -266,8 +282,9 @@ approved `direct`-posture usage anywhere in this variant. See
 ```
 
 `bullet_group_index` is deliberately **not** enum-constrained per role
-in the JSON Schema (the same tuple/`prefixItems` limitation as
-`display_title` above) — completeness is enforced entirely by
+in the JSON Schema (the same tuple/`prefixItems` limitation noted for
+`title_choice` above — JSON Schema cannot vary an `enum` per array
+position) — completeness is enforced entirely by
 `ResumeWordingResponseValidator::assertCompleteness()`, which requires
 every `(role_id, bullet_group_index)` pair Selection approved to
 appear in the response exactly once: no omissions, no duplicates, no
