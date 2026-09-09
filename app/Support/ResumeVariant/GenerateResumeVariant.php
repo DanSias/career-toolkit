@@ -10,6 +10,7 @@ use App\Enums\ResumeTermUsageLocation;
 use App\Models\CareerFact;
 use App\Models\Education;
 use App\Models\JobMatch;
+use App\Models\Project;
 use App\Models\ResumeVariant;
 use App\Models\Role;
 use App\Models\Skill;
@@ -77,6 +78,34 @@ final class GenerateResumeVariant
             ->values()
             ->all();
 
+        // career_fact_key => the project_id it's actually attributed to
+        // (independent or professional) — reused both to compute which
+        // independent Projects are legally selectable and, in the
+        // Selection validator, to confirm a selected_projects entry
+        // only cites facts truly attributed to that exact Project. See
+        // ResumeSelectionResponseValidator::assertSelectedProjects().
+        $projectIdByFactKey = collect($candidatePayload['career_facts'])
+            ->filter(fn (array $fact) => $fact['attribution']['project_id'] !== null)
+            ->mapWithKeys(fn (array $fact) => [$fact['key'] => $fact['attribution']['project_id']])
+            ->all();
+
+        // Independent (role_id-null) Projects for this profile, with
+        // real Public/Restricted-eligible evidence (the same visibility
+        // backstop ResumeEligibility already applies at the CareerFact
+        // level) — never a professional project's id. Selection may
+        // choose 0-3 of these; a professional Project can never be
+        // converted into a Selected Projects entry, since its id is
+        // structurally absent from this set. See docs/domain-model.md
+        // "ResumeVariant" -> "Selected Projects".
+        $eligibleProjectIdsFromFacts = array_unique(array_values($projectIdByFactKey));
+        $validIndependentProjectIds = Project::query()
+            ->where('career_profile_id', $profile->id)
+            ->whereNull('role_id')
+            ->where(fn ($query) => $query->whereNull('default_visibility')->orWhere('default_visibility', '!=', 'private'))
+            ->whereIn('id', $eligibleProjectIdsFromFacts)
+            ->pluck('id')
+            ->all();
+
         $roles = Role::query()
             ->whereHas('employer', fn ($query) => $query->where('career_profile_id', $profile->id))
             ->with('projects')
@@ -111,6 +140,7 @@ final class GenerateResumeVariant
             $validFindingIds,
             $validTargetTerms,
             $validTitleChoiceKeys,
+            $validIndependentProjectIds,
         );
 
         $selectionResponse = $this->selectionProvider->generate(
@@ -129,6 +159,8 @@ final class GenerateResumeVariant
             $titleChoicesByRole,
             $directEvidenceExistsByTerm,
             $resumeEligibleRoleIds,
+            $validIndependentProjectIds,
+            $projectIdByFactKey,
         );
 
         $selectionDraft = $this->toSelectionDraft($validatedSelection, $titleChoicesByRole);
@@ -146,9 +178,10 @@ final class GenerateResumeVariant
         $expectedBulletGroupIndexesByRole = $rolesNeedingWording->mapWithKeys(
             fn (RoleSelectionDraft $role) => [$role->roleId => array_keys($role->bulletGroups)]
         )->all();
+        $selectedProjectIds = collect($selectionDraft->selectedProjects)->pluck('projectId')->all();
 
         // ---- Stage 2: Wording ----
-        $wordingSchema = $this->wordingPrompt->jsonSchema($rolesInSelection);
+        $wordingSchema = $this->wordingPrompt->jsonSchema($rolesInSelection, $selectedProjectIds);
 
         $wordingResponse = $this->wordingProvider->generate(
             $this->wordingPrompt->systemPrompt(),
@@ -160,6 +193,7 @@ final class GenerateResumeVariant
             $wordingResponse->structuredContent,
             $rolesInSelection,
             $expectedBulletGroupIndexesByRole,
+            $selectedProjectIds,
             $denylistTerms,
             $careerFactKeysByLocation,
             $guardrailByFactKey,
@@ -173,6 +207,7 @@ final class GenerateResumeVariant
             $candidatePayload, $jobPayload, $targetTerminology,
             $selectionResponse, $wordingResponse,
             $validatedSelection, $validatedWording, $wordingInput,
+            $factsByKey,
         ) {
             $factIdsByKey = CareerFact::query()
                 ->where('career_profile_id', $profile->id)
@@ -187,6 +222,11 @@ final class GenerateResumeVariant
 
             $skillsById = Skill::query()
                 ->whereIn('id', collect($selectionDraft->skills)->pluck('skillId'))
+                ->get()
+                ->keyBy('id');
+
+            $selectedProjectsById = Project::query()
+                ->whereIn('id', collect($selectionDraft->selectedProjects)->pluck('projectId'))
                 ->get()
                 ->keyBy('id');
 
@@ -324,6 +364,59 @@ final class GenerateResumeVariant
                 ]);
             }
 
+            // Selection's own relevance order — never chronology;
+            // independent Projects carry no dates. See
+            // docs/domain-model.md "ResumeVariant" -> "Selected Projects".
+            $orderedSelectedProjects = collect($selectionDraft->selectedProjects)->sortBy('order')->values();
+
+            foreach ($orderedSelectedProjects as $projectDisplayOrder => $project) {
+                $projectModel = $selectedProjectsById->get($project->projectId);
+                $wordingProject = collect($wordingDraft->selectedProjects)->first(fn (ProjectWordingDraft $p) => $p->projectId === $project->projectId);
+
+                // Technology names are never model-authored (neither
+                // Selection nor Wording write them) — deterministically
+                // derived here from the cited facts' own attached
+                // Skills, in first-appearance order across the cited
+                // facts, deduplicated by name. See
+                // docs/domain-model.md "ResumeVariant" -> "Selected
+                // Projects".
+                $technologyNames = [];
+                foreach ($project->careerFactKeys as $key) {
+                    foreach ($factsByKey->get($key)['skills'] as $skill) {
+                        if (! in_array($skill['name'], $technologyNames, true)) {
+                            $technologyNames[] = $skill['name'];
+                        }
+                    }
+                }
+
+                $projectRow = $variant->projects()->create([
+                    'project_id' => $project->projectId,
+                    'name' => $projectModel->name,
+                    'technology_names' => $technologyNames,
+                    'live_url' => $projectModel->live_url,
+                    'repository_url' => $projectModel->repository_url,
+                    'display_order' => $projectDisplayOrder,
+                ]);
+
+                // Wording's own completeness check
+                // (assertSelectedProjectsCompleteness in
+                // ResumeWordingResponseValidator) already guarantees a
+                // matching entry exists for every approved project by
+                // the time persistence runs — trusted, not re-guarded
+                // here, mirroring how Experience bullets are trusted
+                // above.
+                foreach ($wordingProject->bullets as $bulletDisplayOrder => $text) {
+                    $projectBullet = $projectRow->bullets()->create([
+                        'display_order' => $bulletDisplayOrder,
+                        'text' => $text,
+                    ]);
+
+                    foreach ($project->careerFactKeys as $key) {
+                        $projectBullet->citations()->create(['career_fact_id' => $factIdsByKey[$key]]);
+                    }
+                }
+            }
+
             foreach ($selectionDraft->targetTermUsages as $usage) {
                 $bulletId = $usage->location === ResumeTermUsageLocation::Bullet
                     ? ($bulletIdsByLocation["{$usage->roleId}:{$usage->bulletGroupIndex}"] ?? null)
@@ -422,6 +515,8 @@ final class GenerateResumeVariant
         $skills = $validated['skills'];
         /** @var array<int, array<string, mixed>> $experience */
         $experience = $validated['experience'];
+        /** @var array<int, array<string, mixed>> $selectedProjects */
+        $selectedProjects = $validated['selected_projects'];
         /** @var array<int, array<string, mixed>> $targetTermUsages */
         $targetTermUsages = $validated['target_term_usages'];
 
@@ -443,6 +538,11 @@ final class GenerateResumeVariant
                     jobAnalysisFindingIds: $g['job_analysis_finding_ids'],
                 ), $r['bullet_groups']),
             ), $experience),
+            selectedProjects: array_map(fn (array $p) => new ProjectSelectionDraft(
+                projectId: $p['project_id'],
+                order: $p['order'],
+                careerFactKeys: $p['career_fact_keys'],
+            ), $selectedProjects),
             targetTermUsages: array_map(fn (array $u) => new TargetTermUsageDraft(
                 term: $u['term'],
                 jobAnalysisFindingId: $u['job_analysis_finding_id'],
@@ -463,6 +563,8 @@ final class GenerateResumeVariant
     {
         /** @var array<int, array<string, mixed>> $experience */
         $experience = $validated['experience'];
+        /** @var array<int, array<string, mixed>> $selectedProjects */
+        $selectedProjects = $validated['selected_projects'];
 
         return new ResumeWordingDraft(
             summary: $validated['summary'],
@@ -470,6 +572,10 @@ final class GenerateResumeVariant
                 roleId: $r['role_id'],
                 bullets: array_map(fn (array $b) => new BulletWordingDraft($b['bullet_group_index'], $b['text']), $r['bullets']),
             ), $experience),
+            selectedProjects: array_map(fn (array $p) => new ProjectWordingDraft(
+                projectId: $p['project_id'],
+                bullets: [$p['text']],
+            ), $selectedProjects),
         );
     }
 
@@ -493,6 +599,10 @@ final class GenerateResumeVariant
                     'career_facts' => collect($group->careerFactKeys)->map(fn (string $key) => $factsByKey->get($key))->values()->all(),
                 ])->values()->all(),
             ])->values()->all(),
+            'selected_projects' => collect($draft->selectedProjects)->map(fn (ProjectSelectionDraft $project) => [
+                'project_id' => $project->projectId,
+                'career_facts' => collect($project->careerFactKeys)->map(fn (string $key) => $factsByKey->get($key))->values()->all(),
+            ])->values()->all(),
         ];
     }
 
@@ -507,6 +617,10 @@ final class GenerateResumeVariant
             foreach ($role->bulletGroups as $index => $group) {
                 $byLocation["{$role->roleId}:{$index}"] = $group->careerFactKeys;
             }
+        }
+
+        foreach ($draft->selectedProjects as $project) {
+            $byLocation["project:{$project->projectId}"] = $project->careerFactKeys;
         }
 
         foreach ($draft->targetTermUsages as $usage) {

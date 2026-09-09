@@ -148,6 +148,7 @@ function singleRoleSelection(int $roleId, string $titleChoice, string $careerFac
             ],
             ...$fillerEntries,
         ],
+        'selected_projects' => [],
         'target_term_usages' => [],
     ];
 }
@@ -166,6 +167,7 @@ function singleRoleWording(int $roleId, array $fillerEntries): array
             ],
             ...$fillerEntries,
         ],
+        'selected_projects' => [],
     ];
 }
 

@@ -18,7 +18,7 @@ use Tests\Support\MigrationScratchConnection as Scratch;
 afterEach(fn () => Scratch::tearDown());
 
 it('backfills career_profile_id from each project\'s role -> employer -> career_profile ownership path', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $projectId = Scratch::seedProject($roleIds['rocketgate'], 'Workflow Intelligence', 'workflow-intelligence');
 
@@ -29,7 +29,7 @@ it('backfills career_profile_id from each project\'s role -> employer -> career_
 });
 
 it('backfills multiple projects under the same role to the same career_profile_id', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $projectAId = Scratch::seedProject($roleIds['rocketgate'], 'Workflow Intelligence', 'workflow-intelligence');
     $projectBId = Scratch::seedProject($roleIds['rocketgate'], 'Verbatim', 'verbatim');
@@ -44,7 +44,7 @@ it('backfills multiple projects under the same role to the same career_profile_i
 });
 
 it('preserves every existing project\'s id, name, slug, role_id, and sort_order exactly across the migration', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     ['role_ids' => $roleIds] = Scratch::seedCandidate();
     $db = Scratch::db();
     $projectId = $db->table('projects')->insertGetId([
@@ -62,7 +62,7 @@ it('preserves every existing project\'s id, name, slug, role_id, and sort_order 
 });
 
 it('resolves two projects under two different CareerProfiles to their own distinct, correct profile — never mixed up', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     $db = Scratch::db();
 
     ['profile_id' => $profileA, 'role_ids' => $rolesA] = Scratch::seedCandidate();
@@ -86,7 +86,7 @@ it('resolves two projects under two different CareerProfiles to their own distin
 });
 
 it('makes career_profile_id required and role_id nullable after migration', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     Scratch::seedProject($roleIds['rocketgate'], 'Workflow Intelligence', 'workflow-intelligence');
 
@@ -108,7 +108,7 @@ it('makes career_profile_id required and role_id nullable after migration', func
 });
 
 it('leaves no historical project unresolved — every project gets a non-null career_profile_id', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     ['role_ids' => $roleIds] = Scratch::seedCandidate();
     Scratch::seedProject($roleIds['rocketgate'], 'Project 1', 'project-1');
     Scratch::seedProject($roleIds['pearson'], 'Project 2', 'project-2');
@@ -119,7 +119,7 @@ it('leaves no historical project unresolved — every project gets a non-null ca
 });
 
 it('aborts rather than silently dropping data when a project cannot be reconstructed, and never destroys the old columns', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     Scratch::seedCandidate();
     // A ghost role_id, structurally impossible in real data (the old
     // schema's own FK already prevents it) — constructed only to
@@ -152,7 +152,7 @@ it('aborts rather than silently dropping data when a project cannot be reconstru
 });
 
 it('recovers cleanly on a retry after the unreconstructable data is fixed, with no leftover duplicate-column failure', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     ['role_ids' => $roleIds] = Scratch::seedCandidate();
     $badProjectId = Scratch::withoutForeignKeys(
         fn () => Scratch::seedProject(999999, 'Unreconstructable Project', 'unreconstructable')
@@ -171,7 +171,7 @@ it('recovers cleanly on a retry after the unreconstructable data is fixed, with 
 });
 
 it('never finalizes a NOT NULL career_profile_id while any row is still unresolved, verified via the real Project model post-migration', function () {
-    Scratch::setUp(2);
+    Scratch::setUp(5);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     Scratch::seedProject($roleIds['pearson'], 'Nexus', 'nexus');
 

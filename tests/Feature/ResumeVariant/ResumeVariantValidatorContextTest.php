@@ -18,7 +18,7 @@ it('carries the raw structured content in $context when Resume Selection validat
     $invalid = ['summary_evidence' => [], 'skills' => [], 'education_selection' => [], 'experience' => [], 'target_term_usages' => 'not-an-array'];
 
     try {
-        (new ResumeSelectionResponseValidator)->validate($invalid, [], [], [], [], [], [], [], []);
+        (new ResumeSelectionResponseValidator)->validate($invalid, [], [], [], [], [], [], [], [], [], []);
         $this->fail('Expected InvalidResumeVariantResponseException to be thrown.');
     } catch (InvalidResumeVariantResponseException $e) {
         expect($e->context)->toBe($invalid);
@@ -29,7 +29,7 @@ it('carries the raw structured content in $context when Resume Wording validatio
     $invalid = ['summary' => 'Some summary.', 'experience' => 'not-an-array'];
 
     try {
-        (new ResumeWordingResponseValidator)->validate($invalid, [], [], [], [], []);
+        (new ResumeWordingResponseValidator)->validate($invalid, [], [], [], [], [], []);
         $this->fail('Expected InvalidResumeVariantResponseException to be thrown.');
     } catch (InvalidResumeVariantResponseException $e) {
         expect($e->context)->toBe($invalid);

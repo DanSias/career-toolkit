@@ -12,21 +12,24 @@ namespace App\Support\ResumeVariant\Prompts;
  * Receives ONLY what Selection already approved — the exact bullet
  * groups, their real canonical evidence, and the deny list of target
  * terms that must never appear in free-generated text. Produces prose
- * only: a summary and, for each approved bullet group, its text. It
- * has no path to alter citation lineage, selected evidence, claim
- * posture, chronology, titles, Skills, or Education — those fields
- * simply do not exist in this stage's schema.
+ * only: a summary, for each approved bullet group its text, and for
+ * each approved Selected Project exactly one bullet's text. It has no
+ * path to alter citation lineage, selected evidence, claim posture,
+ * chronology, titles, Skills, Education, which Projects are selected,
+ * technology names, or URLs — those fields simply do not exist in
+ * this stage's schema. See docs/domain-model.md "ResumeVariant" ->
+ * "Selected Projects".
  */
 final readonly class ResumeWordingPromptV1
 {
     public function version(): string
     {
-        return 'resume-wording-v1';
+        return 'resume-wording-v1.1';
     }
 
     public function schemaVersion(): string
     {
-        return '1.0';
+        return '1.1';
     }
 
     public function systemPrompt(): string
@@ -45,7 +48,15 @@ final readonly class ResumeWordingPromptV1
         CareerFact statements/metrics supplied for that specific group.
         Write one professional summary synthesizing the candidate's
         strongest fit for this job, grounded only in the summary
-        evidence supplied.
+        evidence supplied. For each supplied Selected Project, write
+        exactly one concise bullet sentence describing what it
+        demonstrates, grounded only in that project's own supplied
+        CareerFacts — never technologies, users, scale, or outcomes
+        beyond what those specific facts state. Do not name specific
+        technologies in a Selected Project bullet unless a supplied
+        CareerFact statement itself names them; the technology list
+        shown alongside your bullet is generated separately and
+        deterministically, not by you.
 
         Write with confidence. State plainly and specifically what the
         evidence supports — do not hedge, qualify, or under-sell a real
@@ -78,18 +89,20 @@ final readonly class ResumeWordingPromptV1
 
         You are given a `denylist_terms` list. None of these exact terms
         (or an obvious variant of one) may appear anywhere in your free
-        text — not in a bullet, not in the summary — under any framing,
-        including a qualifying or comparative one. These terms may only
-        ever enter the final resume through a separate, deterministic
-        mechanism outside your control. Writing a denylisted term
-        yourself, even to say the candidate does NOT have it, is a
-        violation — simply do not mention it at all.
+        text — not in a bullet, not in the summary, not in a Selected
+        Project bullet — under any framing, including a qualifying or
+        comparative one. These terms may only ever enter the final
+        resume through a separate, deterministic mechanism outside your
+        control. Writing a denylisted term yourself, even to say the
+        candidate does NOT have it, is a violation — simply do not
+        mention it at all.
 
         ## Structure
 
-        Respond with exactly one summary and one bullet entry per
-        supplied bullet group (identified by role and index), in any
-        order, with no omissions and no duplicates.
+        Respond with exactly one summary, one bullet entry per supplied
+        bullet group (identified by role and index), and one bullet
+        entry per supplied Selected Project (identified by project id),
+        in any order, with no omissions and no duplicates.
         PROMPT;
     }
 
@@ -112,9 +125,10 @@ final readonly class ResumeWordingPromptV1
 
     /**
      * @param  array<int, int>  $validRoleIds  The roles Selection actually included.
+     * @param  array<int, int>  $validSelectedProjectIds  The independent Projects Selection actually included.
      * @return array<string, mixed>
      */
-    public function jsonSchema(array $validRoleIds): array
+    public function jsonSchema(array $validRoleIds, array $validSelectedProjectIds): array
     {
         return [
             'type' => 'object',
@@ -143,8 +157,26 @@ final readonly class ResumeWordingPromptV1
                         'additionalProperties' => false,
                     ],
                 ],
+                'selected_projects' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'project_id' => ['type' => 'integer', 'enum' => $validSelectedProjectIds === [] ? [-1] : $validSelectedProjectIds],
+                            // Exactly one bullet's text per Selected Project in
+                            // v1 — a single string, not a bullets[] array, so
+                            // there is nothing to sub-group or index. See
+                            // docs/domain-model.md "ResumeVariant" -> "Selected
+                            // Projects" for why this stays extensible without
+                            // becoming a JSON blob if the cap is ever raised.
+                            'text' => ['type' => 'string'],
+                        ],
+                        'required' => ['project_id', 'text'],
+                        'additionalProperties' => false,
+                    ],
+                ],
             ],
-            'required' => ['summary', 'experience'],
+            'required' => ['summary', 'experience', 'selected_projects'],
             'additionalProperties' => false,
         ];
     }

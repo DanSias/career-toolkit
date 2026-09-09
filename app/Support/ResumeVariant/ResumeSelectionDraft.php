@@ -14,6 +14,13 @@ namespace App\Support\ResumeVariant;
  * same technique already used to keep Skills posture-free): every
  * resume-eligible Education record is included deterministically at
  * persistence time instead. See GenerateResumeVariant::generateFull().
+ *
+ * `selectedProjects` is independent-Project-only (0-3) — see
+ * docs/domain-model.md "ResumeVariant" -> "Selected Projects". A
+ * professional Project can never appear here; it is structurally
+ * absent from this field's legal id space (see
+ * ResumeSelectionPromptV1::jsonSchema()), never merely discouraged by
+ * prompt wording.
  */
 final readonly class ResumeSelectionDraft
 {
@@ -21,12 +28,14 @@ final readonly class ResumeSelectionDraft
      * @param  array<int, string>  $summaryEvidenceFactKeys
      * @param  array<int, SkillSelectionDraft>  $skills
      * @param  array<int, RoleSelectionDraft>  $experience
+     * @param  array<int, ProjectSelectionDraft>  $selectedProjects
      * @param  array<int, TargetTermUsageDraft>  $targetTermUsages
      */
     public function __construct(
         public array $summaryEvidenceFactKeys,
         public array $skills,
         public array $experience,
+        public array $selectedProjects,
         public array $targetTermUsages,
     ) {}
 }

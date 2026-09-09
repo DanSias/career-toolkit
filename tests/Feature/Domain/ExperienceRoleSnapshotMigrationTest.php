@@ -22,7 +22,7 @@ use Tests\Support\MigrationScratchConnection as Scratch;
 afterEach(fn () => Scratch::tearDown());
 
 it('reconstructs multiple bullets under one role into a single experience-role snapshot', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     Scratch::seedBullet($variantId, 1, $roleIds['rocketgate'], 'Developer Support Engineer', 1, 'Bullet one.');
@@ -36,7 +36,7 @@ it('reconstructs multiple bullets under one role into a single experience-role s
 });
 
 it('keeps multiple roles within one variant distinct', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     Scratch::seedBullet($variantId, 1, $roleIds['rocketgate'], 'Developer Support Engineer', 1, 'RocketGate bullet.');
@@ -51,7 +51,7 @@ it('keeps multiple roles within one variant distinct', function () {
 });
 
 it('keeps two different ResumeVariants citing the same role in two separate snapshots', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variant1 = Scratch::seedResumeVariant($profileId, 'Variant 1');
     $variant2 = Scratch::seedResumeVariant($profileId, 'Variant 2');
@@ -67,7 +67,7 @@ it('keeps two different ResumeVariants citing the same role in two separate snap
 });
 
 it('preserves each bullet\'s exact historical display_title on the new snapshot', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     Scratch::seedBullet($variantId, 2, $roleIds['pearson'], 'Data & Analytics Lead Developer', 1, 'A bullet.');
@@ -80,7 +80,7 @@ it('preserves each bullet\'s exact historical display_title on the new snapshot'
 });
 
 it('preserves bullet display_order within a role exactly', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     Scratch::seedBullet($variantId, 1, $roleIds['rocketgate'], 'Developer Support Engineer', 3, 'Third.');
@@ -95,7 +95,7 @@ it('preserves bullet display_order within a role exactly', function () {
 });
 
 it('ranks role snapshots deterministically, reverse-chronological, current role first', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     // Insert Pearson (older, ended 2024) BEFORE RocketGate (current) to
@@ -113,7 +113,7 @@ it('ranks role snapshots deterministically, reverse-chronological, current role 
 });
 
 it('leaves no historical bullet orphaned — every bullet gets a non-null resume_variant_experience_role_id', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     Scratch::seedBullet($variantId, 1, $roleIds['rocketgate'], 'Developer Support Engineer', 1, 'A.');
@@ -125,7 +125,7 @@ it('leaves no historical bullet orphaned — every bullet gets a non-null resume
 });
 
 it('aborts rather than silently dropping data when a bullet cannot be reconstructed, and never destroys the old columns', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     // A real role_id (the old schema's own FK already makes a
@@ -149,7 +149,7 @@ it('aborts rather than silently dropping data when a bullet cannot be reconstruc
 });
 
 it('recovers cleanly on a retry after the unreconstructable data is fixed, with no leftover duplicate-column failure', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $badBulletId = Scratch::seedBullet($variantId, 1, $roleIds['rocketgate'], '', 1, 'Unreconstructable bullet.');
@@ -167,7 +167,7 @@ it('recovers cleanly on a retry after the unreconstructable data is fixed, with 
 });
 
 it('renders identically, for every field that existed before migration, via the real GenerateResumeDocument pipeline', function () {
-    Scratch::setUp(6);
+    Scratch::setUp(9);
     ['profile_id' => $profileId, 'role_ids' => $roleIds] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId, 'A targeted historical summary.');
     Scratch::seedBullet($variantId, 1, $roleIds['rocketgate'], 'Developer Support Engineer', 1, 'Built things.');

@@ -1,11 +1,13 @@
 <?php
 
+use App\Models\Project;
 use App\Models\ResumeVariant;
 use App\Support\ResumeDocument\GenerateResumeDocument;
 use App\Support\ResumeDocument\ResumeDocument;
 use App\Support\ResumeDocument\ResumeEducationEntry;
 use App\Support\ResumeDocument\ResumeExperienceRole;
 use App\Support\ResumeDocument\ResumeLink;
+use App\Support\ResumeDocument\ResumeSelectedProject;
 use Illuminate\Database\QueryException;
 use Tests\Support\PearlyResumeVariantFixture;
 use Tests\Support\ResumeVariantFixtures;
@@ -76,6 +78,26 @@ function minimalResumeVariant(): array
     return [$candidate, $variant->fresh()];
 }
 
+function minimalResumeVariantWithSelectedProject(): array
+{
+    [$candidate, $variant] = minimalResumeVariant();
+
+    $projectRow = $variant->projects()->create([
+        'project_id' => $candidate['independentProject']->id,
+        'name' => 'Well Prompted',
+        'technology_names' => ['Prisma', 'Supabase'],
+        'live_url' => 'https://wellprompted.example.dev',
+        'repository_url' => 'https://github.com/example/well-prompted',
+        'display_order' => 1,
+    ]);
+    $projectRow->bullets()->create([
+        'display_order' => 1,
+        'text' => 'Built a structured prompt library for reusable AI-assisted development workflows.',
+    ]);
+
+    return [$candidate, $variant->fresh()];
+}
+
 it('assembles a ResumeDocument entirely from frozen snapshot fields', function () {
     [$candidate, $variant] = minimalResumeVariant();
 
@@ -98,6 +120,7 @@ it('assembles a ResumeDocument entirely from frozen snapshot fields', function (
         ->and($document->experience[0]->bullets)->toBe(['Built cloud-hosted deployment workflows on AWS.'])
         ->and($document->skills)->toHaveCount(1)
         ->and($document->skills[0]->skills)->toBe([$candidate['awsSkill']->name])
+        ->and($document->selectedProjects)->toBe([])
         ->and($document->education)->toHaveCount(1)
         ->and($document->education[0])->toBeInstanceOf(ResumeEducationEntry::class)
         ->and($document->education[0]->institution)->toBe($candidate['education']->institution);
@@ -130,6 +153,68 @@ it('never renders a project label in v1 — bullets are plain strings', function
     expect($document->experience[0]->bullets[0])->toBeString();
 });
 
+// --- Selected Projects -------------------------------------------------
+
+it('assembles a ResumeSelectedProject entirely from frozen snapshot fields, ordered and with both links', function () {
+    [, $variant] = minimalResumeVariantWithSelectedProject();
+
+    $document = (new GenerateResumeDocument)->generate($variant);
+
+    expect($document->selectedProjects)->toHaveCount(1)
+        ->and($document->selectedProjects[0])->toBeInstanceOf(ResumeSelectedProject::class)
+        ->and($document->selectedProjects[0]->name)->toBe('Well Prompted')
+        ->and($document->selectedProjects[0]->technologies)->toBe(['Prisma', 'Supabase'])
+        ->and($document->selectedProjects[0]->bullet)->toBe('Built a structured prompt library for reusable AI-assisted development workflows.')
+        ->and($document->selectedProjects[0]->liveDemo)->toBeInstanceOf(ResumeLink::class)
+        ->and($document->selectedProjects[0]->liveDemo->url)->toBe('https://wellprompted.example.dev')
+        ->and($document->selectedProjects[0]->repository->url)->toBe('https://github.com/example/well-prompted');
+});
+
+it('omits a null live_url or repository_url independently on a ResumeSelectedProject', function () {
+    [$candidate, $variant] = minimalResumeVariant();
+    $projectRow = $variant->projects()->create([
+        'project_id' => $candidate['independentProject']->id,
+        'name' => 'Well Prompted',
+        'technology_names' => [],
+        'live_url' => null,
+        'repository_url' => 'https://github.com/example/well-prompted',
+        'display_order' => 1,
+    ]);
+    $projectRow->bullets()->create(['display_order' => 1, 'text' => 'Built something.']);
+
+    $document = (new GenerateResumeDocument)->generate($variant->fresh());
+
+    expect($document->selectedProjects[0]->liveDemo)->toBeNull()
+        ->and($document->selectedProjects[0]->repository)->not->toBeNull()
+        ->and($document->selectedProjects[0]->technologies)->toBe([]);
+});
+
+it('preserves display_order across multiple ResumeVariantProject rows', function () {
+    [$candidate, $variant] = minimalResumeVariant();
+
+    $second = Project::factory()->create([
+        'role_id' => null,
+        'career_profile_id' => $candidate['profile']->id,
+        'name' => 'PromptWorks',
+    ]);
+
+    $first = $variant->projects()->create([
+        'project_id' => $second->id, 'name' => 'Second (order 1)', 'technology_names' => [], 'display_order' => 1,
+    ]);
+    $first->bullets()->create(['display_order' => 1, 'text' => 'Second bullet.']);
+
+    $zero = $variant->projects()->create([
+        'project_id' => $candidate['independentProject']->id, 'name' => 'First (order 0)', 'technology_names' => [], 'display_order' => 0,
+    ]);
+    $zero->bullets()->create(['display_order' => 1, 'text' => 'First bullet.']);
+
+    $document = (new GenerateResumeDocument)->generate($variant->fresh());
+
+    expect($document->selectedProjects)->toHaveCount(2)
+        ->and($document->selectedProjects[0]->name)->toBe('First (order 0)')
+        ->and($document->selectedProjects[1]->name)->toBe('Second (order 1)');
+});
+
 // --- Historical reproducibility -------------------------------------------
 
 it('does not change its output when the underlying Employer, Role, Skill, or Education rows are mutated after generation', function () {
@@ -155,6 +240,25 @@ it('does not change its output when the underlying Employer, Role, Skill, or Edu
         ->and($after->experience[0]->employerName)->not->toBe('Renamed Employer Inc.')
         ->and($after->skills[0]->skills)->not->toContain('Renamed Skill')
         ->and($after->education[0]->institution)->not->toBe('Renamed University');
+});
+
+it('does not change its Selected Projects output when the underlying Project/Skill rows are mutated after generation', function () {
+    [$candidate, $variant] = minimalResumeVariantWithSelectedProject();
+
+    $before = (new GenerateResumeDocument)->generate($variant);
+
+    $candidate['independentProject']->update(['name' => 'Renamed Project', 'live_url' => 'https://renamed.example.dev']);
+    $candidate['independentProjectSkill']->update(['name' => 'Renamed Skill']);
+
+    $after = (new GenerateResumeDocument)->generate($variant->fresh([
+        'careerProfile', 'experienceRoles.bullets', 'skillSelections', 'projects.bullets', 'educationSelections',
+    ]));
+
+    expect($after)->toEqual($before)
+        ->and($after->selectedProjects[0]->name)->toBe('Well Prompted')
+        ->and($after->selectedProjects[0]->name)->not->toBe('Renamed Project')
+        ->and($after->selectedProjects[0]->liveDemo->url)->toBe('https://wellprompted.example.dev')
+        ->and($after->selectedProjects[0]->technologies)->not->toContain('Renamed Skill');
 });
 
 it('does not change its output when the Employer/Role/Skill/Education rows are deleted after generation, since the FKs are lineage-only', function () {
@@ -201,5 +305,9 @@ it('assembles a complete, real ResumeDocument from the Pearly fixture', function
         ->and($document->skills[2]->skills)->toBe(['API integration & design', 'Data pipelines', 'High-risk data remediation engineering', 'Security-conscious engineering', 'Analytics systems'])
         ->and($document->skills[3]->label)->toBe('Practices')
         ->and($document->skills[3]->skills)->toBe(['CI/CD'])
+        // This fixture reconstructs a real generation from before
+        // Selected Projects existed (schema_version 1.1) — correctly
+        // empty, not fabricated data. See PearlyResumeVariantFixture.
+        ->and($document->selectedProjects)->toBe([])
         ->and($document->education)->toHaveCount(2);
 });

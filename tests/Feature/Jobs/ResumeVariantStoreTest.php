@@ -27,6 +27,7 @@ function resumeStoreValidSelection(array $candidate, array $job): array
                 'job_analysis_finding_ids' => [$job['ownershipFinding']->id],
             ]],
         ]],
+        'selected_projects' => [],
         'target_term_usages' => [],
     ];
 }
@@ -42,6 +43,7 @@ function resumeStoreValidWording(array $candidate): array
             'role_id' => $candidate['role']->id,
             'bullets' => [['bullet_group_index' => 0, 'text' => 'Independently implemented the technical solution from team-provided requirements.']],
         ]],
+        'selected_projects' => [],
     ];
 }
 

@@ -23,7 +23,7 @@ afterEach(fn () => Scratch::tearDown());
 // are still old-schema (no name/category/institution/etc.), exactly
 // isolating what these two migrations need to prove.
 it('migrates populated skill selections successfully', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $skillId = Scratch::seedSkill($profileId, 'React', 'react', 'build_technology');
@@ -37,7 +37,7 @@ it('migrates populated skill selections successfully', function () {
 });
 
 it('migrates populated education selections successfully', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $educationId = Scratch::seedEducation($profileId, 'Test University', 'Bachelor of Science', 'Computer Science', 2006, 2010);
@@ -54,7 +54,7 @@ it('migrates populated education selections successfully', function () {
 });
 
 it('preserves a genuinely null field_of_study/start_year as real data, not incomplete data', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     // No field_of_study, no start_year — a real, legitimate Education
@@ -73,7 +73,7 @@ it('preserves a genuinely null field_of_study/start_year as real data, not incom
 });
 
 it('keeps multiple ResumeVariants\' skill/education selections isolated from each other', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variant1 = Scratch::seedResumeVariant($profileId, 'Variant 1');
     $variant2 = Scratch::seedResumeVariant($profileId, 'Variant 2');
@@ -90,7 +90,7 @@ it('keeps multiple ResumeVariants\' skill/education selections isolated from eac
 });
 
 it('preserves selection row counts and display_order exactly', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $skillIds = [
@@ -110,7 +110,7 @@ it('preserves selection row counts and display_order exactly', function () {
 });
 
 it('freezes values that exactly match the referenced Skill/Education at migration time', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $skillId = Scratch::seedSkill($profileId, 'Vue.js', 'vue-js', 'build_technology');
@@ -135,7 +135,7 @@ it('freezes values that exactly match the referenced Skill/Education at migratio
 });
 
 it('leaves no skill or education selection orphaned/incomplete after migration', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $skillId = Scratch::seedSkill($profileId, 'React', 'react', 'build_technology');
@@ -151,7 +151,7 @@ it('leaves no skill or education selection orphaned/incomplete after migration',
 });
 
 it('aborts the skill-selection migration rather than fabricating a value, and leaves pre-existing data intact', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     // A skill_id that does not resolve to a live Skill — structurally
@@ -170,7 +170,7 @@ it('aborts the skill-selection migration rather than fabricating a value, and le
 });
 
 it('aborts the education-selection migration rather than fabricating a value, and leaves pre-existing data intact', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $badSelectionId = Scratch::withoutForeignKeys(fn () => Scratch::seedEducationSelection($variantId, 999999, 1));
@@ -185,7 +185,7 @@ it('aborts the education-selection migration rather than fabricating a value, an
 });
 
 it('recovers cleanly on a retry after correcting the bad skill_id, with no leftover duplicate-column failure', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $badSelectionId = Scratch::withoutForeignKeys(fn () => Scratch::seedSkillSelection($variantId, 999999, 1));
@@ -203,7 +203,7 @@ it('recovers cleanly on a retry after correcting the bad skill_id, with no lefto
 });
 
 it('recovers cleanly on a retry after correcting the bad education_id, with no leftover duplicate-column failure', function () {
-    Scratch::setUp(5);
+    Scratch::setUp(8);
     ['profile_id' => $profileId] = Scratch::seedCandidate();
     $variantId = Scratch::seedResumeVariant($profileId);
     $badSelectionId = Scratch::withoutForeignKeys(fn () => Scratch::seedEducationSelection($variantId, 999999, 1));

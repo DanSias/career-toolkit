@@ -49,8 +49,9 @@ final class ResumeWordingResponseValidator
      * @param  array<string, mixed>  $structuredContent  Untrusted, decoded provider output.
      * @param  array<int, int>  $validRoleIds
      * @param  array<int, array<int, int>>  $expectedBulletGroupIndexesByRole  role_id => bullet-group indexes Selection approved for it.
+     * @param  array<int, int>  $validSelectedProjectIds  The independent Projects Selection actually approved.
      * @param  array<int, string>  $denylistTerms
-     * @param  array<string, array<int, string>>  $careerFactKeysByLocation  "role_id:index" or "summary" => career_fact_key[] backing that location.
+     * @param  array<string, array<int, string>>  $careerFactKeysByLocation  "role_id:index", "project:project_id", or "summary" => career_fact_key[] backing that location.
      * @param  array<string, string|null>  $guardrailByFactKey
      * @return array<string, mixed>
      *
@@ -60,6 +61,7 @@ final class ResumeWordingResponseValidator
         array $structuredContent,
         array $validRoleIds,
         array $expectedBulletGroupIndexesByRole,
+        array $validSelectedProjectIds,
         array $denylistTerms,
         array $careerFactKeysByLocation,
         array $guardrailByFactKey,
@@ -67,13 +69,15 @@ final class ResumeWordingResponseValidator
         $validator = ValidatorFacade::make($structuredContent, $this->rules());
 
         $validator->after(function (Validator $validator) use (
-            $structuredContent, $validRoleIds, $expectedBulletGroupIndexesByRole,
+            $structuredContent, $validRoleIds, $expectedBulletGroupIndexesByRole, $validSelectedProjectIds,
             $denylistTerms, $careerFactKeysByLocation, $guardrailByFactKey,
         ) {
             $experience = is_array($structuredContent['experience'] ?? null) ? $structuredContent['experience'] : [];
+            $selectedProjects = is_array($structuredContent['selected_projects'] ?? null) ? $structuredContent['selected_projects'] : [];
             $summary = is_string($structuredContent['summary'] ?? null) ? $structuredContent['summary'] : '';
 
             $this->assertCompleteness($validator, $experience, $validRoleIds, $expectedBulletGroupIndexesByRole);
+            $this->assertSelectedProjectsCompleteness($validator, $selectedProjects, $validSelectedProjectIds);
             $this->assertDenylistRespected($validator, 'summary', $summary, $denylistTerms);
             $this->assertGuardrails($validator, 'summary', $summary, $careerFactKeysByLocation['summary'] ?? [], $guardrailByFactKey);
 
@@ -98,6 +102,20 @@ final class ResumeWordingResponseValidator
                     $this->assertDenylistRespected($validator, $field, $text, $denylistTerms);
                     $this->assertGuardrails($validator, $field, $text, $careerFactKeysByLocation[$locationKey] ?? [], $guardrailByFactKey);
                 }
+            }
+
+            foreach ($selectedProjects as $projectIndex => $project) {
+                if (! is_array($project)) {
+                    continue;
+                }
+
+                $projectId = $project['project_id'] ?? null;
+                $text = is_string($project['text'] ?? null) ? $project['text'] : '';
+                $locationKey = "project:{$projectId}";
+                $field = "selected_projects.{$projectIndex}.text";
+
+                $this->assertDenylistRespected($validator, $field, $text, $denylistTerms);
+                $this->assertGuardrails($validator, $field, $text, $careerFactKeysByLocation[$locationKey] ?? [], $guardrailByFactKey);
             }
         });
 
@@ -127,6 +145,9 @@ final class ResumeWordingResponseValidator
             'experience.*.bullets' => ['present', 'array'],
             'experience.*.bullets.*.bullet_group_index' => ['required', 'integer'],
             'experience.*.bullets.*.text' => ['required', 'string'],
+            'selected_projects' => ['present', 'array'],
+            'selected_projects.*.project_id' => ['required', 'integer'],
+            'selected_projects.*.text' => ['required', 'string'],
         ];
     }
 
@@ -190,6 +211,49 @@ final class ResumeWordingResponseValidator
         $unexpected = array_diff($seen, $expected);
         if ($unexpected !== []) {
             $validator->errors()->add('experience', 'Response includes wording for bullet(s) never approved by Selection: '.implode(', ', $unexpected).'.');
+        }
+    }
+
+    /**
+     * Every project_id Selection approved must appear in
+     * `selected_projects` exactly once — no missing, no duplicates, no
+     * invented ones (including an outright professional project id,
+     * which is impossible to legitimately approve in the first place).
+     * Mirrors assertCompleteness() exactly, scoped to project ids
+     * instead of (role_id, bullet_group_index) pairs since v1 carries
+     * exactly one bullet per Selected Project.
+     *
+     * @param  array<int, mixed>  $selectedProjects
+     * @param  array<int, int>  $validSelectedProjectIds
+     */
+    private function assertSelectedProjectsCompleteness(Validator $validator, array $selectedProjects, array $validSelectedProjectIds): void
+    {
+        $seen = [];
+
+        foreach ($selectedProjects as $project) {
+            $id = is_array($project) ? ($project['project_id'] ?? null) : null;
+
+            if (! is_int($id)) {
+                continue;
+            }
+
+            if (in_array($id, $seen, true)) {
+                $validator->errors()->add('selected_projects', "project_id [{$id}] appears more than once.");
+
+                continue;
+            }
+
+            $seen[] = $id;
+        }
+
+        $missing = array_diff($validSelectedProjectIds, $seen);
+        if ($missing !== []) {
+            $validator->errors()->add('selected_projects', 'Response is missing wording for approved Selected Project(s): '.implode(', ', $missing).'.');
+        }
+
+        $unexpected = array_diff($seen, $validSelectedProjectIds);
+        if ($unexpected !== []) {
+            $validator->errors()->add('selected_projects', 'Response includes wording for Selected Project(s) never approved by Selection: '.implode(', ', $unexpected).'.');
         }
     }
 

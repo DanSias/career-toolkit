@@ -66,6 +66,7 @@ function validSelectionContent(array $candidate, array $job): array
                 ],
             ],
         ]],
+        'selected_projects' => [],
         'target_term_usages' => [[
             'term' => 'Azure',
             'job_analysis_finding_id' => $job['azureFinding']->id,
@@ -93,6 +94,7 @@ function validWordingContent(array $candidate): array
                 ['bullet_group_index' => 1, 'text' => 'Independently implemented the technical solution from team-provided requirements.'],
             ],
         ]],
+        'selected_projects' => [],
     ];
 }
 
@@ -123,9 +125,9 @@ it('persists the full graph from a valid two-stage response', function () {
         ->and($variant->summaryEvidence)->toHaveCount(1)
         ->and($variant->targetTermUsages)->toHaveCount(1)
         ->and($variant->summary)->not->toBeNull()
-        ->and($variant->schema_version)->toBe('1.2')
-        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1.3')
-        ->and($variant->wording_prompt_version)->toBe('resume-wording-v1')
+        ->and($variant->schema_version)->toBe('1.3')
+        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1.4')
+        ->and($variant->wording_prompt_version)->toBe('resume-wording-v1.1')
         ->and($variant->selection_generated_by)->toBe('openai:gpt-test')
         ->and($variant->wording_generated_by)->toBe('openai:gpt-test');
 });

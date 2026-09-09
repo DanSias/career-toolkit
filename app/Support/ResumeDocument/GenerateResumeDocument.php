@@ -5,6 +5,7 @@ namespace App\Support\ResumeDocument;
 use App\Enums\SkillCategory;
 use App\Models\ResumeVariant;
 use App\Models\ResumeVariantExperienceRole;
+use App\Models\ResumeVariantProject;
 use App\Support\CareerData\RoleDateFormatter;
 
 /**
@@ -18,8 +19,9 @@ use App\Support\CareerData\RoleDateFormatter;
  * ResumeContact's own docblock for why that asymmetry is correct
  * rather than an oversight.
  *
- * Section order (Summary -> Experience -> Skills -> Education) is
- * fixed by ResumeDocument's own field order — not computed here.
+ * Section order (Summary -> Experience -> Skills -> Selected Projects
+ * -> Education) is fixed by ResumeDocument's own field order — not
+ * computed here.
  */
 final class GenerateResumeDocument
 {
@@ -42,6 +44,7 @@ final class GenerateResumeDocument
             'careerProfile',
             'experienceRoles.bullets',
             'skillSelections',
+            'projects.bullets',
             'educationSelections',
         ]);
 
@@ -63,6 +66,11 @@ final class GenerateResumeDocument
                 ->values()
                 ->all(),
             skills: $this->buildSkillGroups($variant),
+            selectedProjects: $variant->projects
+                ->sortBy('display_order')
+                ->map($this->transformSelectedProject(...))
+                ->values()
+                ->all(),
             education: $variant->educationSelections
                 ->sortBy('display_order')
                 ->map(fn ($selection) => new ResumeEducationEntry(
@@ -110,6 +118,28 @@ final class GenerateResumeDocument
             dateRangeLabel: $dates['label'],
             isCurrent: $dates['is_current'],
             bullets: $role->bullets->sortBy('display_order')->pluck('text')->all(),
+        );
+    }
+
+    /**
+     * v1 carries exactly one bullet per ResumeVariantProject — see
+     * docs/domain-model.md "ResumeVariant" -> "Selected Projects" —
+     * read from the frozen snapshot, never from a live Project/Skill.
+     *
+     * Link labels are fixed, purpose-describing text ("Live Demo",
+     * "Repository") rather than the URL-derived label `link()`/
+     * ResumeLinkFormatter produce for the contact header — the
+     * surrounding context here already makes each link's purpose
+     * obvious, so a repeated domain name would be redundant.
+     */
+    private function transformSelectedProject(ResumeVariantProject $project): ResumeSelectedProject
+    {
+        return new ResumeSelectedProject(
+            name: $project->name,
+            technologies: $project->technology_names,
+            bullet: $project->bullets->sortBy('display_order')->first()->text,
+            liveDemo: $project->live_url === null ? null : new ResumeLink($project->live_url, 'Live Demo'),
+            repository: $project->repository_url === null ? null : new ResumeLink($project->repository_url, 'Repository'),
         );
     }
 

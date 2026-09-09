@@ -28,12 +28,16 @@ use BackedEnum;
  * docs/resume-variant-generation.md "Live evaluation".
  *
  * Produces structure only — evidence selection, bullet grouping,
- * Skills selection, and target-term claim posture. No employer-facing
- * prose is ever asked for or accepted here; that is exclusively
- * ResumeWordingPromptV1's job. Education is deliberately absent from
- * this schema entirely (structural absence, not a runtime check) —
- * every resume-eligible Education record is included deterministically
- * at persistence time instead of being a Selection decision. See
+ * Skills selection, Selected-Projects selection, and target-term claim
+ * posture. No employer-facing prose is ever asked for or accepted
+ * here; that is exclusively ResumeWordingPromptV1's job. Education is
+ * deliberately absent from this schema entirely (structural absence,
+ * not a runtime check) — every resume-eligible Education record is
+ * included deterministically at persistence time instead of being a
+ * Selection decision. `selected_projects` is independent-Project-only
+ * (0-3) — the legal `project_id` enum for that field never contains a
+ * professional project's id, so the model cannot convert one into a
+ * Selected Projects entry even in principle. See
  * GenerateResumeVariant::generateFull() and docs/domain-model.md
  * "ResumeVariant".
  */
@@ -41,12 +45,12 @@ final readonly class ResumeSelectionPromptV1
 {
     public function version(): string
     {
-        return 'resume-selection-v1.3';
+        return 'resume-selection-v1.4';
     }
 
     public function schemaVersion(): string
     {
-        return '1.2';
+        return '1.3';
     }
 
     public function systemPrompt(): string
@@ -172,6 +176,38 @@ final readonly class ResumeSelectionPromptV1
         Education record is always included in the final resume,
         deterministically, outside this response.
 
+        ## Selected Projects — independent projects only
+
+        You are also given evidence for the candidate's independent/
+        personal projects — work done outside any employer, never
+        attached to a Role. Each such CareerFact's `attribution` shows
+        `project` with no `employer`/`role`. You may choose 0 to 3 of
+        these independent projects to feature in a separate Selected
+        Projects section, each with the CareerFact(s) that justify
+        including it.
+
+        Choose based on genuine relevance and strength of evidence for
+        this specific job — never to fill space. Omitting all of them
+        is a completely normal, correct outcome when none meaningfully
+        strengthens the case for this job. A project with only thin,
+        generic evidence is not worth a slot merely because it exists.
+
+        This mechanism is for independent projects ONLY. A project that
+        belongs to a Role (one whose CareerFacts show a real `employer`/
+        `role` in their `attribution`) is professional work and must
+        never appear here — it is already represented, correctly, as
+        Experience bullets under its owning role. The `project_id`
+        values legally offered to you in this section are independent
+        projects exclusively; a professional project's id is not a
+        legal choice here at all.
+
+        You choose evidence only — not wording, not which technologies
+        to mention, not whether a live demo or repository link
+        appears. Exactly one bullet will be generated per selected
+        project from the evidence you cite, and any technology names
+        shown are derived deterministically from that evidence's own
+        attached Skills, not written by you.
+
         ## Target-term usages — claim posture
 
         You are given a list of `target_terminology`: specific named
@@ -256,6 +292,7 @@ final readonly class ResumeSelectionPromptV1
      * @param  array<int, int>  $validFindingIds
      * @param  array<int, string>  $validTargetTerms
      * @param  array<int, string>  $validTitleChoiceKeys  Global set of title_choice tokens offered by any candidate role ('full', plus 'segment_N' up to the highest segment count any role actually has) — per-role legality is re-checked deterministically by the validator, not expressible here.
+     * @param  array<int, int>  $validIndependentProjectIds  Independent (role_id-null) Projects only — never contains a professional project's id. See docs/domain-model.md "ResumeVariant" -> "Selected Projects".
      * @return array<string, mixed>
      */
     public function jsonSchema(
@@ -266,6 +303,7 @@ final readonly class ResumeSelectionPromptV1
         array $validFindingIds,
         array $validTargetTerms,
         array $validTitleChoiceKeys,
+        array $validIndependentProjectIds,
     ): array {
         $roleIdOrNoneEnum = $this->withNoneSentinel($validRoleIds);
         $projectIdOrNoneEnum = $this->withNoneSentinel($validProjectIds);
@@ -322,6 +360,23 @@ final readonly class ResumeSelectionPromptV1
                         'additionalProperties' => false,
                     ],
                 ],
+                'selected_projects' => [
+                    'type' => 'array',
+                    'maxItems' => 3,
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'project_id' => ['type' => 'integer', 'enum' => $this->nonEmptyIntEnum($validIndependentProjectIds)],
+                            'order' => ['type' => 'integer'],
+                            'career_fact_keys' => [
+                                'type' => 'array',
+                                'items' => ['type' => 'string', 'enum' => $this->nonEmptyStringEnum($validFactKeys)],
+                            ],
+                        ],
+                        'required' => ['project_id', 'order', 'career_fact_keys'],
+                        'additionalProperties' => false,
+                    ],
+                ],
                 'target_term_usages' => [
                     'type' => 'array',
                     'items' => [
@@ -345,7 +400,7 @@ final readonly class ResumeSelectionPromptV1
                     ],
                 ],
             ],
-            'required' => ['summary_evidence', 'skills', 'experience', 'target_term_usages'],
+            'required' => ['summary_evidence', 'skills', 'experience', 'selected_projects', 'target_term_usages'],
             'additionalProperties' => false,
         ];
     }

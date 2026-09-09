@@ -6,8 +6,10 @@
     App\Support\ResumeDocument\ResumeDocument value-object tree built
     by GenerateResumeDocument — never an Eloquent model, never raw
     domain data. Content order here is exactly ResumeDocument's own
-    field order (Summary -> Experience -> Skills -> Education);
-    nothing is regrouped or reordered in this template.
+    field order (Summary -> Experience -> Skills -> Selected Projects
+    -> Education); nothing is regrouped or reordered in this template.
+    The Selected Projects section is omitted entirely when empty — no
+    page-fitting or hardcoded page break exists anywhere in this file.
 
     ATS v1 rendering contract: US Letter, single-column, ordinary
     top-to-bottom DOM order (never CSS `order`, floats, or absolute
@@ -160,6 +162,42 @@
             font-weight: 700;
         }
 
+        .selected-project {
+            margin-bottom: 0.16in;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .selected-project:last-child {
+            margin-bottom: 0;
+        }
+
+        .selected-project-header {
+            margin: 0 0 0.06in;
+        }
+
+        .selected-project-name {
+            font-weight: 700;
+        }
+
+        .selected-project-technologies {
+            color: #444444;
+        }
+
+        .selected-project-links {
+            margin: 0.04in 0 0;
+            font-size: 10pt;
+        }
+
+        .selected-project-links a {
+            color: #1a4d8f;
+            text-decoration: none;
+        }
+
+        .selected-project-links a:hover {
+            text-decoration: underline;
+        }
+
         .education-entry {
             margin-bottom: 0.12in;
             page-break-inside: avoid;
@@ -248,6 +286,36 @@
                 </p>
             @endforeach
         </section>
+
+        @if (count($document->selectedProjects) > 0)
+            <section class="selected-projects">
+                <h2>Selected Projects</h2>
+                @foreach ($document->selectedProjects as $project)
+                    <div class="selected-project">
+                        <p class="selected-project-header">
+                            <span class="selected-project-name">{{ $project->name }}</span>
+                            @if (count($project->technologies) > 0)
+                                <span class="selected-project-technologies"> | {{ implode(', ', $project->technologies) }}</span>
+                            @endif
+                        </p>
+                        <ul class="bullets">
+                            <li>{{ $project->bullet }}</li>
+                        </ul>
+                        @if ($project->liveDemo || $project->repository)
+                            <p class="selected-project-links">
+                                @if ($project->liveDemo)
+                                    <a href="{{ $project->liveDemo->url }}">{{ $project->liveDemo->label }}</a>
+                                @endif
+                                @if ($project->liveDemo && $project->repository) · @endif
+                                @if ($project->repository)
+                                    <a href="{{ $project->repository->url }}">{{ $project->repository->label }}</a>
+                                @endif
+                            </p>
+                        @endif
+                    </div>
+                @endforeach
+            </section>
+        @endif
 
         <section class="education">
             <h2>Education</h2>

@@ -30,6 +30,8 @@ final class ResumeSelectionResponseValidator
      * @param  array<int, array<string, string>>  $titleChoicesByRole  role_id => ['full' => canonical title, 'segment_N' => trimmed "/"-segment, ...]
      * @param  array<string, bool>  $directEvidenceExistsByTerm
      * @param  array<int, int>  $resumeEligibleRoleIds  Every role_id with at least one resume-eligible CareerFact attributed to it directly or via a Project — must each appear in `experience` with at least one bullet group. See assertRoleCompleteness().
+     * @param  array<int, int>  $validIndependentProjectIds  Independent (role_id-null) Projects only — never a professional project's id. See assertSelectedProjects().
+     * @param  array<string, int>  $projectIdByFactKey  career_fact_key => the project_id it is actually attributed to (only present for project-attributed facts).
      * @return array<string, mixed>
      *
      * @throws InvalidResumeVariantResponseException
@@ -44,6 +46,8 @@ final class ResumeSelectionResponseValidator
         array $titleChoicesByRole,
         array $directEvidenceExistsByTerm,
         array $resumeEligibleRoleIds,
+        array $validIndependentProjectIds,
+        array $projectIdByFactKey,
     ): array {
         $validator = ValidatorFacade::make($structuredContent, $this->rules());
 
@@ -51,8 +55,10 @@ final class ResumeSelectionResponseValidator
             $structuredContent, $validRoleIds, $validFactKeys,
             $validSkillIds, $roleIdByProjectId, $validFindingIds,
             $titleChoicesByRole, $directEvidenceExistsByTerm, $resumeEligibleRoleIds,
+            $validIndependentProjectIds, $projectIdByFactKey,
         ) {
             $experience = is_array($structuredContent['experience'] ?? null) ? $structuredContent['experience'] : [];
+            $selectedProjects = is_array($structuredContent['selected_projects'] ?? null) ? $structuredContent['selected_projects'] : [];
             $targetTermUsages = is_array($structuredContent['target_term_usages'] ?? null) ? $structuredContent['target_term_usages'] : [];
 
             $this->assertReferentialIntegrity($validator, $structuredContent, $validFactKeys, $validSkillIds, $validFindingIds);
@@ -60,6 +66,7 @@ final class ResumeSelectionResponseValidator
             $this->assertRoleAndProjectValidity($validator, $experience, $validRoleIds, $roleIdByProjectId, $titleChoicesByRole);
             $this->assertRoleCompleteness($validator, $experience, $resumeEligibleRoleIds);
             $this->assertNoDuplicateBulletGroups($validator, $experience);
+            $this->assertSelectedProjects($validator, $selectedProjects, $validFactKeys, $validIndependentProjectIds, $projectIdByFactKey);
             $this->assertTargetTermUsages($validator, $targetTermUsages, $experience, $directEvidenceExistsByTerm);
         });
 
@@ -101,6 +108,12 @@ final class ResumeSelectionResponseValidator
             'experience.*.bullet_groups.*.job_analysis_finding_ids' => ['present', 'array'],
             'experience.*.bullet_groups.*.job_analysis_finding_ids.*' => ['integer'],
 
+            'selected_projects' => ['present', 'array', 'max:3'],
+            'selected_projects.*.project_id' => ['required', 'integer'],
+            'selected_projects.*.order' => ['required', 'integer'],
+            'selected_projects.*.career_fact_keys' => ['present', 'array'],
+            'selected_projects.*.career_fact_keys.*' => ['string'],
+
             'target_term_usages' => ['present', 'array'],
             'target_term_usages.*.term' => ['required', 'string'],
             'target_term_usages.*.job_analysis_finding_id' => ['required', 'integer'],
@@ -137,6 +150,14 @@ final class ResumeSelectionResponseValidator
             $id = is_array($skill) ? ($skill['skill_id'] ?? null) : null;
             if (is_int($id) && ! in_array($id, $validSkillIds, true)) {
                 $validator->errors()->add("skills.{$i}.skill_id", "skill_id [{$id}] was not supplied in the provider input.");
+            }
+        }
+
+        foreach ((is_array($structuredContent['selected_projects'] ?? null) ? $structuredContent['selected_projects'] : []) as $i => $item) {
+            foreach ((is_array($item) && is_array($item['career_fact_keys'] ?? null) ? $item['career_fact_keys'] : []) as $j => $key) {
+                if (is_string($key) && ! in_array($key, $validFactKeys, true)) {
+                    $validator->errors()->add("selected_projects.{$i}.career_fact_keys.{$j}", "career_fact_key [{$key}] was not supplied in the provider input.");
+                }
             }
         }
 
@@ -232,6 +253,17 @@ final class ResumeSelectionResponseValidator
                     $validator->errors()->add("experience.{$i}.role_id", "role_id [{$id}] appears more than once.");
                 }
                 $roleIds[] = $id;
+            }
+        }
+
+        $selectedProjectIds = [];
+        foreach ((is_array($structuredContent['selected_projects'] ?? null) ? $structuredContent['selected_projects'] : []) as $i => $item) {
+            $id = is_array($item) ? ($item['project_id'] ?? null) : null;
+            if (is_int($id)) {
+                if (in_array($id, $selectedProjectIds, true)) {
+                    $validator->errors()->add("selected_projects.{$i}.project_id", "project_id [{$id}] is selected more than once.");
+                }
+                $selectedProjectIds[] = $id;
             }
         }
     }
@@ -334,6 +366,70 @@ final class ResumeSelectionResponseValidator
                 .implode(', ', $missingRoleIds)
                 .' — every resume-eligible Role must appear with at least one bullet group.'
             );
+        }
+    }
+
+    /**
+     * Every selected_projects entry must be: a real, independent
+     * (role_id-null) Project belonging to this profile — never a
+     * professional one, structurally impossible via the schema's own
+     * enum, but re-checked here in PHP anyway (never trust the schema
+     * alone — the same doctrine as every other id check in this
+     * class); non-empty on evidence; and every cited CareerFact must
+     * actually be attributed to that exact Project, not merely
+     * eligible in general. See docs/domain-model.md "ResumeVariant" ->
+     * "Selected Projects".
+     *
+     * @param  array<int, mixed>  $selectedProjects
+     * @param  array<int, string>  $validFactKeys
+     * @param  array<int, int>  $validIndependentProjectIds
+     * @param  array<string, int>  $projectIdByFactKey
+     */
+    private function assertSelectedProjects(
+        Validator $validator,
+        array $selectedProjects,
+        array $validFactKeys,
+        array $validIndependentProjectIds,
+        array $projectIdByFactKey,
+    ): void {
+        if (count($selectedProjects) > 3) {
+            $validator->errors()->add('selected_projects', 'At most 3 Selected Projects are allowed.');
+        }
+
+        foreach ($selectedProjects as $i => $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $projectId = $item['project_id'] ?? null;
+
+            if (is_int($projectId) && ! in_array($projectId, $validIndependentProjectIds, true)) {
+                $validator->errors()->add(
+                    "selected_projects.{$i}.project_id",
+                    "project_id [{$projectId}] is not a valid independent Project for Selected Projects."
+                );
+            }
+
+            $keys = is_array($item['career_fact_keys'] ?? null) ? $item['career_fact_keys'] : [];
+
+            if (count($keys) === 0) {
+                $validator->errors()->add("selected_projects.{$i}.career_fact_keys", 'A selected Project must cite at least one CareerFact.');
+            }
+
+            foreach ($keys as $j => $key) {
+                if (! is_string($key) || ! in_array($key, $validFactKeys, true)) {
+                    continue; // Already reported by assertReferentialIntegrity().
+                }
+
+                $factProjectId = $projectIdByFactKey[$key] ?? null;
+
+                if ($factProjectId !== $projectId) {
+                    $validator->errors()->add(
+                        "selected_projects.{$i}.career_fact_keys.{$j}",
+                        "career_fact_key [{$key}] is not attributed to project_id [{$projectId}]."
+                    );
+                }
+            }
         }
     }
 

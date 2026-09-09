@@ -31,7 +31,7 @@ use App\Models\Skill;
 final class ResumeVariantFixtures
 {
     /**
-     * @return array{profile: CareerProfile, employer: Employer, role: Role, project: Project, factAws: CareerFact, awsSkill: Skill, factIndependent: CareerFact, factPrivate: CareerFact, education: Education}
+     * @return array{profile: CareerProfile, employer: Employer, role: Role, project: Project, factAws: CareerFact, awsSkill: Skill, factIndependent: CareerFact, factPrivate: CareerFact, education: Education, independentProject: Project, independentProjectSkill: Skill, factIndependentProject: CareerFact}
      */
     public static function candidate(): array
     {
@@ -83,7 +83,32 @@ final class ResumeVariantFixtures
             'field_of_study' => 'Computer Science',
         ]);
 
-        return compact('profile', 'employer', 'role', 'project', 'factAws', 'awsSkill', 'factIndependent', 'factPrivate', 'education');
+        // An independent/personal project — no Employer, no Role,
+        // owned directly by $profile — for Selected Projects tests.
+        // See docs/domain-model.md "ResumeVariant" -> "Selected
+        // Projects".
+        $independentProject = Project::factory()->create([
+            'role_id' => null,
+            'career_profile_id' => $profile->id,
+            'name' => 'Well Prompted',
+            'live_url' => 'https://wellprompted.example.dev',
+            'repository_url' => 'https://github.com/example/well-prompted',
+        ]);
+        $independentProjectSkill = Skill::factory()->create(['career_profile_id' => $profile->id, 'name' => 'Prisma']);
+        $factIndependentProject = CareerFact::factory()->create([
+            'career_profile_id' => $profile->id,
+            'key' => 'fixture-well-prompted-what-it-is',
+            'statement' => 'Built a structured prompt library for reusable AI-assisted development workflows.',
+            'attributable_type' => (new Project)->getMorphClass(),
+            'attributable_id' => $independentProject->id,
+            'visibility' => Visibility::Public,
+        ]);
+        $factIndependentProject->skills()->attach($independentProjectSkill);
+
+        return compact(
+            'profile', 'employer', 'role', 'project', 'factAws', 'awsSkill', 'factIndependent', 'factPrivate', 'education',
+            'independentProject', 'independentProjectSkill', 'factIndependentProject',
+        );
     }
 
     /**

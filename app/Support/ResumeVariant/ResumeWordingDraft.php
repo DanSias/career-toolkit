@@ -11,9 +11,11 @@ final readonly class ResumeWordingDraft
 {
     /**
      * @param  array<int, RoleWordingDraft>  $experience
+     * @param  array<int, ProjectWordingDraft>  $selectedProjects
      */
     public function __construct(
         public string $summary,
         public array $experience,
+        public array $selectedProjects,
     ) {}
 }

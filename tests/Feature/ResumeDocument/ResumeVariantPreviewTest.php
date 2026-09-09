@@ -70,6 +70,26 @@ function previewCandidateVariant(): array
     return [$candidate, $variant->fresh()];
 }
 
+function previewCandidateVariantWithSelectedProject(): array
+{
+    [$candidate, $variant] = previewCandidateVariant();
+
+    $projectRow = $variant->projects()->create([
+        'project_id' => $candidate['independentProject']->id,
+        'name' => 'Well Prompted',
+        'technology_names' => ['Prisma', 'Supabase'],
+        'live_url' => 'https://wellprompted.example.dev',
+        'repository_url' => 'https://github.com/example/well-prompted',
+        'display_order' => 1,
+    ]);
+    $projectRow->bullets()->create([
+        'display_order' => 1,
+        'text' => 'Built a structured prompt library for reusable AI-assisted development workflows.',
+    ]);
+
+    return [$candidate, $variant->fresh()];
+}
+
 it('returns HTML for a valid ResumeVariant', function () {
     [, $variant] = previewCandidateVariant();
 
@@ -162,6 +182,64 @@ it('renders sections in ResumeDocument order: Summary, then Experience, then Ski
         ->and($summaryPos)->toBeLessThan($experiencePos)
         ->and($experiencePos)->toBeLessThan($skillsPos)
         ->and($skillsPos)->toBeLessThan($educationPos);
+});
+
+it('omits the entire Selected Projects section — no heading at all — when no Project was selected', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+
+    $response->assertOk();
+    expect($response->getContent())->not->toContain('Selected Projects');
+});
+
+it('renders the Selected Projects name, technologies, bullet, and both links when present', function () {
+    [, $variant] = previewCandidateVariantWithSelectedProject();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+
+    $response->assertOk()
+        ->assertSee('Selected Projects')
+        ->assertSee('Well Prompted')
+        ->assertSee('Prisma, Supabase', false)
+        ->assertSee('Built a structured prompt library for reusable AI-assisted development workflows.');
+
+    $html = $response->getContent();
+    expect($html)->toContain('<a href="https://wellprompted.example.dev">Live Demo</a>')
+        ->and($html)->toContain('<a href="https://github.com/example/well-prompted">Repository</a>');
+});
+
+it('renders sections in order: Summary, Experience, Skills, Selected Projects, Education, when a Project is selected', function () {
+    [, $variant] = previewCandidateVariantWithSelectedProject();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $response->assertOk();
+    $html = $response->getContent();
+
+    $skillsPos = strpos($html, '>Skills<');
+    $selectedProjectsPos = strpos($html, '>Selected Projects<');
+    $educationPos = strpos($html, '>Education<');
+
+    expect($skillsPos)->not->toBeFalse()
+        ->and($selectedProjectsPos)->not->toBeFalse()
+        ->and($educationPos)->not->toBeFalse()
+        ->and($skillsPos)->toBeLessThan($selectedProjectsPos)
+        ->and($selectedProjectsPos)->toBeLessThan($educationPos);
+});
+
+it('renders the frozen Selected Projects content, not live Project/Skill data, when they are mutated after generation', function () {
+    [$candidate, $variant] = previewCandidateVariantWithSelectedProject();
+
+    $candidate['independentProject']->update(['name' => 'Renamed Project']);
+    $candidate['independentProjectSkill']->update(['name' => 'Renamed Skill']);
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+
+    $response->assertOk();
+    $html = $response->getContent();
+    expect($html)->not->toContain('Renamed Project')
+        ->and($html)->not->toContain('Renamed Skill')
+        ->and($html)->toContain('Well Prompted');
 });
 
 it('makes no outbound HTTP/provider calls while rendering the preview', function () {

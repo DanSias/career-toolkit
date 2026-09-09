@@ -145,6 +145,18 @@ class ResumeVariant extends Model
     }
 
     /**
+     * Zero to three frozen Selected-Projects entries (independent
+     * Projects only — see docs/domain-model.md "ResumeVariant" ->
+     * "Selected Projects"), ordered by Selection's own relevance order.
+     *
+     * @return HasMany<ResumeVariantProject, $this>
+     */
+    public function projects(): HasMany
+    {
+        return $this->hasMany(ResumeVariantProject::class);
+    }
+
+    /**
      * @return HasMany<ResumeVariantTargetTermUsage, $this>
      */
     public function targetTermUsages(): HasMany
