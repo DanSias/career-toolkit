@@ -408,17 +408,19 @@ class RunResumeVariantLiveEvaluation extends Command
         $private = (int) ($factCounts[Visibility::Private->value] ?? 0);
 
         $this->line("CareerFact visibility distribution: {$public} public / {$restricted} restricted / {$private} private");
-        // Updated for the 2026-09-08 marketing/MarTech canonical-data
-        // enrichment pass (commit bc873be): 51 public / 16 restricted /
-        // 7 private, up from the original reconciliation's 32/12/7.
+        // Updated for the 2026-09-09 independent-projects canonical-data
+        // pass (Well Prompted / PromptWorks / Well Applied, 3 new public
+        // facts): 54 public / 16 restricted / 7 private, up from the
+        // 2026-09-08 marketing/MarTech enrichment pass's 51/16/7 (itself
+        // up from the original reconciliation's 32/12/7).
         // Still a hardcoded aggregate check, not a derived invariant —
         // brittle by the same nature as before this edit, and expected
         // to go stale again the next time real canonical data grows.
         // Deliberately not redesigned in this pass (e.g. into a ratio
         // check or a live re-derivation) — that is separate harness
         // cleanup, out of scope for this architecture-validation pass.
-        $visibilityOk = $public === 51 && $restricted === 16 && $private === 7;
-        $this->line('Matches expected 51/16/7: '.($visibilityOk ? 'yes' : 'NO — MISMATCH'));
+        $visibilityOk = $public === 54 && $restricted === 16 && $private === 7;
+        $this->line('Matches expected 54/16/7: '.($visibilityOk ? 'yes' : 'NO — MISMATCH'));
         $ok = $ok && $visibilityOk;
 
         $eligibleKeys = ResumeEligibility::eligibleCareerFactsQuery($profile)->pluck('key')->all();
