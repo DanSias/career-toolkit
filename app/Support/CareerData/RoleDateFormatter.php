@@ -17,6 +17,18 @@ final class RoleDateFormatter
     ];
 
     /**
+     * Three-letter abbreviations, "Sep" not "Sept" — used only by the
+     * resume renderer (GenerateResumeDocument); every other consumer
+     * (e.g. the Career Data admin UI) keeps the full month name via
+     * format()/formatRange() above, unaffected by this.
+     */
+    private const ABBREVIATED_MONTHS = [
+        1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr',
+        5 => 'May', 6 => 'Jun', 7 => 'Jul', 8 => 'Aug',
+        9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec',
+    ];
+
+    /**
      * @return array{label: string, is_current: bool}
      */
     public static function format(Role $role): array
@@ -53,5 +65,35 @@ final class RoleDateFormatter
         }
 
         return $month !== null ? self::MONTHS[$month].' '.$year : (string) $year;
+    }
+
+    /**
+     * Same shape and rules as formatRange() — never invents a day or a
+     * month that wasn't evidenced — but with three-letter month
+     * abbreviations for the resume's more compact date treatment. A
+     * deterministic formatting choice only; never model-authored text.
+     *
+     * @return array{label: string, is_current: bool}
+     */
+    public static function formatRangeAbbreviated(?int $startYear, ?int $startMonth, ?int $endYear, ?int $endMonth): array
+    {
+        $isCurrent = $endYear === null;
+
+        $start = self::pointAbbreviated($startYear, $startMonth);
+        $end = $isCurrent ? 'Present' : self::pointAbbreviated($endYear, $endMonth);
+
+        return [
+            'label' => "{$start} – {$end}",
+            'is_current' => $isCurrent,
+        ];
+    }
+
+    private static function pointAbbreviated(?int $year, ?int $month): string
+    {
+        if ($year === null) {
+            return '';
+        }
+
+        return $month !== null ? self::ABBREVIATED_MONTHS[$month].' '.$year : (string) $year;
     }
 }

@@ -135,6 +135,34 @@ it('formats a role date range using RoleDateFormatter, current role rendered as 
         ->and($document->experience[0]->dateRangeLabel)->toContain('–');
 });
 
+it('formats the role date range with three-letter month abbreviations, not the full month name', function () {
+    [$candidate, $variant] = minimalResumeVariant();
+
+    // ResumeVariantExperienceRole rows are immutable once created (see
+    // App\Models\ResumeVariantExperienceRole), so a fresh snapshot with
+    // its own dates is built directly here rather than updating the
+    // one minimalResumeVariant() already created.
+    $secondVariant = ResumeVariant::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'job_match_id' => $variant->job_match_id,
+        'summary' => 'A targeted summary.',
+    ]);
+    $secondVariant->experienceRoles()->create([
+        'role_id' => $candidate['role']->id,
+        'employer_name' => $candidate['employer']->name,
+        'display_title' => 'Senior Software Engineer',
+        'start_year' => 2015, 'start_month' => 9, 'end_year' => 2024, 'end_month' => 7,
+        'display_order' => 1,
+    ]);
+
+    $document = (new GenerateResumeDocument)->generate($secondVariant->fresh([
+        'careerProfile', 'experienceRoles.bullets', 'skillSelections', 'educationSelections',
+    ]));
+
+    expect($document->experience[0]->dateRangeLabel)->toBe('Sep 2015 – Jul 2024')
+        ->and($document->experience[0]->dateRangeLabel)->not->toContain('September');
+});
+
 it('renders no contact link when the URL is null', function () {
     [$candidate, $variant] = minimalResumeVariant();
     $candidate['profile']->update(['portfolio_url' => null, 'github_url' => null]);
@@ -291,10 +319,12 @@ it('assembles a complete, real ResumeDocument from the Pearly fixture', function
         ->and($document->experience[0]->employerName)->toBe('RocketGate')
         ->and($document->experience[0]->displayTitle)->toBe('Developer Support Engineer')
         ->and($document->experience[0]->isCurrent)->toBeTrue()
+        ->and($document->experience[0]->dateRangeLabel)->toBe('May 2025 – Present')
         ->and($document->experience[0]->bullets)->toHaveCount(5)
         ->and($document->experience[1]->employerName)->toBe('Pearson Online Learning Services')
         ->and($document->experience[1]->displayTitle)->toBe('Data & Analytics Lead Developer')
         ->and($document->experience[1]->isCurrent)->toBeFalse()
+        ->and($document->experience[1]->dateRangeLabel)->toBe('Sep 2015 – Jul 2024')
         ->and($document->experience[1]->bullets)->toHaveCount(5)
         ->and($document->skills)->toHaveCount(4)
         ->and($document->skills[0]->label)->toBe('Technologies')

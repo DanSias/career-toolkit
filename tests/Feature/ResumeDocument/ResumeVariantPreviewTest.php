@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ResumeVariant;
+use App\Models\Skill;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\ResumeVariantFixtures;
 
@@ -250,6 +251,86 @@ it('makes no outbound HTTP/provider calls while rendering the preview', function
 
     $response->assertOk();
     Http::assertNothingSent();
+});
+
+// --- Employment header structure --------------------------------------------
+
+it('renders the Role title on its own primary line, and the employer/dates on a separate secondary line', function () {
+    [$candidate, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = $response->getContent();
+
+    expect($html)->toContain('<p class="role-title-line">')
+        ->and($html)->toContain('<span class="role-title">Senior Software Engineer</span>')
+        ->and($html)->toContain('<p class="role-meta-line">')
+        ->and($html)->toContain('<span class="role-employer">'.$candidate['employer']->name.'</span>');
+
+    $titleLinePos = strpos($html, 'role-title-line');
+    $metaLinePos = strpos($html, 'role-meta-line');
+
+    expect($titleLinePos)->not->toBeFalse()
+        ->and($metaLinePos)->not->toBeFalse()
+        ->and($titleLinePos)->toBeLessThan($metaLinePos);
+});
+
+it('renders the Role date range with abbreviated three-letter months', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+
+    $response->assertOk()->assertSee('Jan 2021 – Present');
+});
+
+it('renders the Education degree on its own primary line, and institution/dates on a separate secondary line', function () {
+    [$candidate, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = $response->getContent();
+
+    expect($html)->toContain('<p class="education-degree-line">')
+        ->and($html)->toContain('<p class="education-meta-line">')
+        ->and($html)->toContain('<span class="education-institution">'.e($candidate['education']->institution).'</span>');
+
+    $degreeLinePos = strpos($html, 'education-degree-line');
+    $metaLinePos = strpos($html, 'education-meta-line');
+
+    expect($degreeLinePos)->not->toBeFalse()
+        ->and($metaLinePos)->not->toBeFalse()
+        ->and($degreeLinePos)->toBeLessThan($metaLinePos);
+});
+
+// --- Skills DOM/text ordering ------------------------------------------------
+
+it('renders each Skills group label on its own line, immediately above a line of its skills', function () {
+    [$candidate, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = $response->getContent();
+
+    expect($html)->toContain('<p class="skill-group-items">'.$candidate['awsSkill']->name.'</p>');
+
+    // The label line and items line for the same group appear back to
+    // back — no intervening markup — proving the two-line structure
+    // rather than the old one-line "Label: skills" paragraph.
+    expect($html)->toMatch('/<p class="skill-group-label">[^<]+<\/p>\s*<p class="skill-group-items">'.preg_quote($candidate['awsSkill']->name, '/').'<\/p>/');
+});
+
+it('joins multiple skills within a group with a middle dot, not a comma', function () {
+    [$candidate, $variant] = previewCandidateVariant();
+    $terraform = Skill::factory()->create([
+        'career_profile_id' => $candidate['profile']->id, 'name' => 'Terraform', 'category' => $candidate['awsSkill']->category->value,
+    ]);
+    $variant->skillSelections()->create([
+        'skill_id' => $terraform->id,
+        'name' => 'Terraform',
+        'category' => $terraform->category->value,
+        'display_order' => 2,
+    ]);
+
+    $response = $this->get(route('resume-variants.preview', $variant->fresh()));
+
+    $response->assertOk()->assertSee('AWS · Terraform', false);
 });
 
 // --- Print pagination CSS rules --------------------------------------------

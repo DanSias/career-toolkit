@@ -110,7 +110,7 @@ final class GenerateResumeDocument
 
     private function transformExperienceRole(ResumeVariantExperienceRole $role): ResumeExperienceRole
     {
-        $dates = RoleDateFormatter::formatRange($role->start_year, $role->start_month, $role->end_year, $role->end_month);
+        $dates = RoleDateFormatter::formatRangeAbbreviated($role->start_year, $role->start_month, $role->end_year, $role->end_month);
 
         return new ResumeExperienceRole(
             employerName: $role->employer_name,

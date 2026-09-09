@@ -33,6 +33,16 @@
     constraint. CSS deliberately avoids flex/grid in favor of plain
     block/inline layout, since this same markup is expected to render
     through dompdf later, which has limited flexbox/grid support.
+
+    Visual design: one restrained dark accent color (--accent, a single
+    CSS custom property below) is used for section-heading text/rules
+    and links only — never scattered as separate hex literals. Role
+    and Education entries use a two-level header (primary line, then a
+    secondary metadata line) rather than one run-on line; Skills groups
+    put their label and skill list on separate lines. None of this
+    introduces tables, grid, flexbox, columns, icons, or absolute
+    positioning — every change here is typography, spacing, and the one
+    accent color, on the same ordinary block/inline elements as before.
 --}}
 <!DOCTYPE html>
 <html lang="en">
@@ -40,6 +50,14 @@
     <meta charset="utf-8">
     <title>{{ $document->contact->name }} — Resume</title>
     <style>
+        :root {
+            /* The one accent color this document uses — section
+               headings, section rules, and links. Every other use of
+               this color below is var(--accent), never a repeated hex
+               literal. */
+            --accent: #1a4d8f;
+        }
+
         * {
             box-sizing: border-box;
         }
@@ -83,21 +101,30 @@
             }
         }
 
+        header {
+            margin: 0 0 0.12in;
+            padding-bottom: 0.06in;
+            /* The one rule beneath the name/contact block — a subtle
+               anchor for the document, not a decorative graphic. */
+            border-bottom: 1pt solid var(--accent);
+        }
+
         h1 {
             margin: 0 0 0.08in;
-            font-size: 21pt;
+            font-size: 22pt;
             font-weight: 700;
+            letter-spacing: 0.01em;
             color: #1a1a1a;
         }
 
         .contact-line {
-            margin: 0 0 0.3in;
+            margin: 0;
             font-size: 10pt;
             color: #444444;
         }
 
         .contact-line a {
-            color: #1a4d8f;
+            color: var(--accent);
             text-decoration: none;
         }
 
@@ -106,13 +133,13 @@
         }
 
         h2 {
-            margin: 0.26in 0 0.12in;
+            margin: 0.16in 0 0.08in;
             font-size: 12pt;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: #1a1a1a;
-            border-bottom: 1pt solid #cccccc;
+            letter-spacing: 0.07em;
+            color: var(--accent);
+            border-bottom: 1pt solid var(--accent);
             padding-bottom: 3pt;
             /* A section heading must never be the last thing on a page —
                applies uniformly to every section's own heading, never a
@@ -135,7 +162,7 @@
         }
 
         .role {
-            margin-bottom: 0.2in;
+            margin-bottom: 0.18in;
             /* Deliberately NOT page-break-inside/break-inside: avoid here
                — a Role with several bullets is explicitly allowed to span
                pages (see .role-header and ul.bullets li below for the
@@ -160,12 +187,26 @@
             break-inside: avoid;
         }
 
+        .role-title-line {
+            margin: 0 0 0.02in;
+            line-height: 1.25;
+        }
+
         .role-title {
+            font-size: 11.5pt;
             font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .role-meta-line {
+            margin: 0;
+            font-size: 10pt;
+            line-height: 1.25;
         }
 
         .role-employer {
             font-weight: 400;
+            color: #444444;
         }
 
         .role-dates {
@@ -192,7 +233,7 @@
         }
 
         .skill-group {
-            margin-bottom: 0.08in;
+            margin-bottom: 0.05in;
             page-break-inside: avoid;
             break-inside: avoid;
         }
@@ -202,11 +243,22 @@
         }
 
         .skill-group-label {
+            margin: 0 0 0.01in;
+            font-size: 9.5pt;
             font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            line-height: 1.25;
+            color: #1a1a1a;
+        }
+
+        .skill-group-items {
+            margin: 0;
+            line-height: 1.3;
         }
 
         .selected-project {
-            margin-bottom: 0.16in;
+            margin-bottom: 0.18in;
             /* Unlike .role, a selected-project entry is always small and
                intentionally compact (name/technology line/one bullet/
                links) — kept fully atomic, never split across pages. */
@@ -218,15 +270,20 @@
             margin-bottom: 0;
         }
 
-        .selected-project-header {
-            margin: 0 0 0.06in;
+        .selected-project-name-line {
+            margin: 0 0 0.02in;
+            line-height: 1.25;
         }
 
         .selected-project-name {
             font-weight: 700;
+            color: #1a1a1a;
         }
 
-        .selected-project-technologies {
+        .selected-project-meta-line {
+            margin: 0 0 0.05in;
+            font-size: 10pt;
+            line-height: 1.25;
             color: #444444;
         }
 
@@ -236,7 +293,7 @@
         }
 
         .selected-project-links a {
-            color: #1a4d8f;
+            color: var(--accent);
             text-decoration: none;
         }
 
@@ -245,7 +302,7 @@
         }
 
         .education-entry {
-            margin-bottom: 0.12in;
+            margin-bottom: 0.08in;
             /* Each entry stays whole, but entries are never grouped
                together as a block — a later entry may start a new page
                on its own while an earlier one stays on the previous
@@ -260,12 +317,25 @@
             margin-bottom: 0;
         }
 
+        .education-degree-line {
+            margin: 0 0 0.02in;
+            line-height: 1.25;
+        }
+
         .education-degree {
             font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .education-meta-line {
+            margin: 0;
+            font-size: 10pt;
+            line-height: 1.25;
         }
 
         .education-institution {
             font-weight: 400;
+            color: #444444;
         }
 
         .education-dates {
@@ -315,11 +385,15 @@
             <h2>Experience</h2>
             @foreach ($document->experience as $role)
                 <div class="role">
-                    <p class="role-header">
-                        <span class="role-title">{{ $role->displayTitle }}</span>
-                        — <span class="role-employer">{{ $role->employerName }}</span>
-                        (<span class="role-dates">{{ $role->dateRangeLabel }}</span>)
-                    </p>
+                    <div class="role-header">
+                        <p class="role-title-line">
+                            <span class="role-title">{{ $role->displayTitle }}</span>
+                        </p>
+                        <p class="role-meta-line">
+                            <span class="role-employer">{{ $role->employerName }}</span>
+                            · <span class="role-dates">{{ $role->dateRangeLabel }}</span>
+                        </p>
+                    </div>
                     <ul class="bullets">
                         @foreach ($role->bullets as $bullet)
                             <li>{{ $bullet }}</li>
@@ -332,10 +406,10 @@
         <section class="skills">
             <h2>Skills</h2>
             @foreach ($document->skills as $group)
-                <p class="skill-group">
-                    <span class="skill-group-label">{{ $group->label }}:</span>
-                    {{ implode(', ', $group->skills) }}
-                </p>
+                <div class="skill-group">
+                    <p class="skill-group-label">{{ $group->label }}</p>
+                    <p class="skill-group-items">{{ implode(' · ', $group->skills) }}</p>
+                </div>
             @endforeach
         </section>
 
@@ -344,12 +418,12 @@
                 <h2>Selected Projects</h2>
                 @foreach ($document->selectedProjects as $project)
                     <div class="selected-project">
-                        <p class="selected-project-header">
+                        <p class="selected-project-name-line">
                             <span class="selected-project-name">{{ $project->name }}</span>
-                            @if (count($project->technologies) > 0)
-                                <span class="selected-project-technologies"> | {{ implode(', ', $project->technologies) }}</span>
-                            @endif
                         </p>
+                        @if (count($project->technologies) > 0)
+                            <p class="selected-project-meta-line">{{ implode(', ', $project->technologies) }}</p>
+                        @endif
                         <ul class="bullets">
                             <li>{{ $project->bullet }}</li>
                         </ul>
@@ -373,9 +447,13 @@
             <h2>Education</h2>
             @foreach ($document->education as $entry)
                 <div class="education-entry">
-                    <span class="education-degree">{{ $entry->degree }}{{ $entry->fieldOfStudy ? ', '.$entry->fieldOfStudy : '' }}</span>
-                    — <span class="education-institution">{{ $entry->institution }}</span>
-                    (<span class="education-dates">{{ $entry->dateRangeLabel }}</span>)
+                    <p class="education-degree-line">
+                        <span class="education-degree">{{ $entry->degree }}{{ $entry->fieldOfStudy ? ', '.$entry->fieldOfStudy : '' }}</span>
+                    </p>
+                    <p class="education-meta-line">
+                        <span class="education-institution">{{ $entry->institution }}</span>
+                        · <span class="education-dates">{{ $entry->dateRangeLabel }}</span>
+                    </p>
                 </div>
             @endforeach
         </section>
