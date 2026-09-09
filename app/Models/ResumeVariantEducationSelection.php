@@ -12,17 +12,24 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * One Education record selected for the Education section — rendered
- * directly from canonical institution/degree/field/date fields, with no
- * generated wording at all. Education is not subject to
- * CareerFact.visibility (no such field exists on it), and its absence
- * of that restriction is not a grant of default inclusion — selection
- * is still a deliberate Stage-1 decision on its own merits. See
- * docs/domain-model.md "ResumeVariant".
+ * One Education record selected for the Education section —
+ * institution/degree/field/dates are frozen from the real canonical
+ * Education row at generation time, never re-resolved from it on
+ * render, with no generated wording at all. The `education_id` FK
+ * (restrictOnDelete) remains for lineage/audit only. Education is not
+ * subject to CareerFact.visibility (no such field exists on it), and
+ * its absence of that restriction is not a grant of default inclusion
+ * — selection is still a deliberate Stage-1 decision on its own
+ * merits. See docs/domain-model.md "ResumeVariant".
  *
  * @property int $id
  * @property int $resume_variant_id
  * @property int $education_id
+ * @property string $institution
+ * @property string $degree
+ * @property string|null $field_of_study
+ * @property int|null $start_year
+ * @property int|null $end_year
  * @property int $display_order
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -30,6 +37,11 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'resume_variant_id',
     'education_id',
+    'institution',
+    'degree',
+    'field_of_study',
+    'start_year',
+    'end_year',
     'display_order',
 ])]
 class ResumeVariantEducationSelection extends Model

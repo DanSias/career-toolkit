@@ -16,13 +16,26 @@ use Illuminate\Support\Carbon;
  * A person's canonical career dataset: the ownership root for their
  * Employers, CareerFacts, and Skills.
  *
+ * `email`/`phone`/`location`/`portfolio_url`/`github_url` are
+ * resume-facing contact fields — deliberately separate from
+ * `User.email` (the login credential; see `App\Models\User`). All are
+ * nullable and populated only via the canonical import source
+ * (`data/canonical-career-data.proposed.json`'s `career_profile`
+ * object), never by ad-hoc seeding — see
+ * `docs/canonical-data-proposal.md`.
+ *
  * @property int $id
  * @property int $user_id
  * @property string $name
+ * @property string|null $email
+ * @property string|null $phone
+ * @property string|null $location
+ * @property string|null $portfolio_url
+ * @property string|null $github_url
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['user_id', 'name'])]
+#[Fillable(['user_id', 'name', 'email', 'phone', 'location', 'portfolio_url', 'github_url'])]
 class CareerProfile extends Model implements HasCareerProfileOwnership
 {
     /** @use HasFactory<CareerProfileFactory> */

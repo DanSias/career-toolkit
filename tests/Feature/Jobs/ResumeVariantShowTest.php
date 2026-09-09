@@ -25,11 +25,19 @@ function persistedResumeVariant(): array
         'job_match_id' => $match->id,
     ]);
 
-    $bullet = $variant->experienceBullets()->create([
-        'employer_id' => $candidate['employer']->id,
+    $experienceRole = $variant->experienceRoles()->create([
         'role_id' => $candidate['role']->id,
-        'project_id' => $candidate['project']->id,
+        'employer_name' => $candidate['employer']->name,
         'display_title' => 'Senior Software Engineer',
+        'start_year' => $candidate['role']->start_year,
+        'start_month' => $candidate['role']->start_month,
+        'end_year' => $candidate['role']->end_year,
+        'end_month' => $candidate['role']->end_month,
+        'display_order' => 1,
+    ]);
+    $bullet = $experienceRole->bullets()->create([
+        'resume_variant_id' => $variant->id,
+        'project_id' => $candidate['project']->id,
         'display_order' => 1,
         'text' => 'Built cloud-hosted deployment workflows on AWS, with approaches applicable to Azure.',
     ]);
@@ -45,8 +53,21 @@ function persistedResumeVariant(): array
     $usage->evidence()->create(['career_fact_id' => $candidate['factAws']->id]);
 
     $variant->summaryEvidence()->create(['career_fact_id' => $candidate['factIndependent']->id]);
-    $variant->skillSelections()->create(['skill_id' => $candidate['awsSkill']->id, 'display_order' => 1]);
-    $variant->educationSelections()->create(['education_id' => $candidate['education']->id, 'display_order' => 1]);
+    $variant->skillSelections()->create([
+        'skill_id' => $candidate['awsSkill']->id,
+        'name' => $candidate['awsSkill']->name,
+        'category' => $candidate['awsSkill']->category->value,
+        'display_order' => 1,
+    ]);
+    $variant->educationSelections()->create([
+        'education_id' => $candidate['education']->id,
+        'institution' => $candidate['education']->institution,
+        'degree' => $candidate['education']->degree,
+        'field_of_study' => $candidate['education']->field_of_study,
+        'start_year' => $candidate['education']->start_year,
+        'end_year' => $candidate['education']->end_year,
+        'display_order' => 1,
+    ]);
 
     return [$candidate, $job, $match, $variant->fresh()];
 }

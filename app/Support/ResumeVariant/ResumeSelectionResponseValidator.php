@@ -24,12 +24,12 @@ final class ResumeSelectionResponseValidator
      * @param  array<string, mixed>  $structuredContent  Untrusted, decoded provider output.
      * @param  array<int, int>  $validRoleIds
      * @param  array<int, string>  $validFactKeys
-     * @param  array<int, int>  $validEducationIds
      * @param  array<int, int>  $validSkillIds
      * @param  array<int, int>  $roleIdByProjectId  project_id => the role_id it actually belongs to.
      * @param  array<int, int>  $validFindingIds
      * @param  array<int, array<string, string>>  $titleChoicesByRole  role_id => ['full' => canonical title, 'segment_N' => trimmed "/"-segment, ...]
      * @param  array<string, bool>  $directEvidenceExistsByTerm
+     * @param  array<int, int>  $resumeEligibleRoleIds  Every role_id with at least one resume-eligible CareerFact attributed to it directly or via a Project — must each appear in `experience` with at least one bullet group. See assertRoleCompleteness().
      * @return array<string, mixed>
      *
      * @throws InvalidResumeVariantResponseException
@@ -38,26 +38,27 @@ final class ResumeSelectionResponseValidator
         array $structuredContent,
         array $validRoleIds,
         array $validFactKeys,
-        array $validEducationIds,
         array $validSkillIds,
         array $roleIdByProjectId,
         array $validFindingIds,
         array $titleChoicesByRole,
         array $directEvidenceExistsByTerm,
+        array $resumeEligibleRoleIds,
     ): array {
         $validator = ValidatorFacade::make($structuredContent, $this->rules());
 
         $validator->after(function (Validator $validator) use (
-            $structuredContent, $validRoleIds, $validFactKeys, $validEducationIds,
+            $structuredContent, $validRoleIds, $validFactKeys,
             $validSkillIds, $roleIdByProjectId, $validFindingIds,
-            $titleChoicesByRole, $directEvidenceExistsByTerm,
+            $titleChoicesByRole, $directEvidenceExistsByTerm, $resumeEligibleRoleIds,
         ) {
             $experience = is_array($structuredContent['experience'] ?? null) ? $structuredContent['experience'] : [];
             $targetTermUsages = is_array($structuredContent['target_term_usages'] ?? null) ? $structuredContent['target_term_usages'] : [];
 
-            $this->assertReferentialIntegrity($validator, $structuredContent, $validFactKeys, $validEducationIds, $validSkillIds, $validFindingIds);
+            $this->assertReferentialIntegrity($validator, $structuredContent, $validFactKeys, $validSkillIds, $validFindingIds);
             $this->assertNoDuplicateSelections($validator, $structuredContent, $experience);
             $this->assertRoleAndProjectValidity($validator, $experience, $validRoleIds, $roleIdByProjectId, $titleChoicesByRole);
+            $this->assertRoleCompleteness($validator, $experience, $resumeEligibleRoleIds);
             $this->assertNoDuplicateBulletGroups($validator, $experience);
             $this->assertTargetTermUsages($validator, $targetTermUsages, $experience, $directEvidenceExistsByTerm);
         });
@@ -89,10 +90,6 @@ final class ResumeSelectionResponseValidator
             'skills.*.skill_id' => ['required', 'integer'],
             'skills.*.order' => ['required', 'integer'],
 
-            'education_selection' => ['present', 'array'],
-            'education_selection.*.education_id' => ['required', 'integer'],
-            'education_selection.*.order' => ['required', 'integer'],
-
             'experience' => ['present', 'array'],
             'experience.*.role_id' => ['required', 'integer'],
             'experience.*.title_choice' => ['required', 'string'],
@@ -120,7 +117,6 @@ final class ResumeSelectionResponseValidator
     /**
      * @param  array<string, mixed>  $structuredContent
      * @param  array<int, string>  $validFactKeys
-     * @param  array<int, int>  $validEducationIds
      * @param  array<int, int>  $validSkillIds
      * @param  array<int, int>  $validFindingIds
      */
@@ -128,7 +124,6 @@ final class ResumeSelectionResponseValidator
         Validator $validator,
         array $structuredContent,
         array $validFactKeys,
-        array $validEducationIds,
         array $validSkillIds,
         array $validFindingIds,
     ): void {
@@ -142,13 +137,6 @@ final class ResumeSelectionResponseValidator
             $id = is_array($skill) ? ($skill['skill_id'] ?? null) : null;
             if (is_int($id) && ! in_array($id, $validSkillIds, true)) {
                 $validator->errors()->add("skills.{$i}.skill_id", "skill_id [{$id}] was not supplied in the provider input.");
-            }
-        }
-
-        foreach ((is_array($structuredContent['education_selection'] ?? null) ? $structuredContent['education_selection'] : []) as $i => $item) {
-            $id = is_array($item) ? ($item['education_id'] ?? null) : null;
-            if (is_int($id) && ! in_array($id, $validEducationIds, true)) {
-                $validator->errors()->add("education_selection.{$i}.education_id", "education_id [{$id}] was not supplied in the provider input.");
             }
         }
 
@@ -236,17 +224,6 @@ final class ResumeSelectionResponseValidator
             }
         }
 
-        $educationIds = [];
-        foreach ((is_array($structuredContent['education_selection'] ?? null) ? $structuredContent['education_selection'] : []) as $i => $item) {
-            $id = is_array($item) ? ($item['education_id'] ?? null) : null;
-            if (is_int($id)) {
-                if (in_array($id, $educationIds, true)) {
-                    $validator->errors()->add("education_selection.{$i}.education_id", "education_id [{$id}] is selected more than once.");
-                }
-                $educationIds[] = $id;
-            }
-        }
-
         $roleIds = [];
         foreach ($experience as $i => $role) {
             $id = is_array($role) ? ($role['role_id'] ?? null) : null;
@@ -316,6 +293,47 @@ final class ResumeSelectionResponseValidator
                     );
                 }
             }
+        }
+    }
+
+    /**
+     * Relevance controls emphasis, never basic employment-history
+     * presence: every resume-eligible role (one with at least one
+     * resume-eligible CareerFact attributed to it or to one of its
+     * projects) must appear in `experience` with at least one bullet
+     * group, even if that group is a single, modest bullet. A response
+     * that silently drops a resume-eligible role is rejected outright
+     * rather than accepted with a gap in the candidate's history.
+     *
+     * @param  array<int, mixed>  $experience
+     * @param  array<int, int>  $resumeEligibleRoleIds
+     */
+    private function assertRoleCompleteness(Validator $validator, array $experience, array $resumeEligibleRoleIds): void
+    {
+        $representedRoleIds = [];
+
+        foreach ($experience as $role) {
+            if (! is_array($role)) {
+                continue;
+            }
+
+            $roleId = $role['role_id'] ?? null;
+            $bulletGroups = is_array($role['bullet_groups'] ?? null) ? $role['bullet_groups'] : [];
+
+            if (is_int($roleId) && count($bulletGroups) > 0) {
+                $representedRoleIds[] = $roleId;
+            }
+        }
+
+        $missingRoleIds = array_values(array_diff($resumeEligibleRoleIds, $representedRoleIds));
+
+        if ($missingRoleIds !== []) {
+            $validator->errors()->add(
+                'experience',
+                'Response is missing required representation for resume-eligible role(s): '
+                .implode(', ', $missingRoleIds)
+                .' — every resume-eligible Role must appear with at least one bullet group.'
+            );
         }
     }
 

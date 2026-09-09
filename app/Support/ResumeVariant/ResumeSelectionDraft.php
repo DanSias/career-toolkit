@@ -8,20 +8,24 @@ namespace App\Support\ResumeVariant;
  * employer-facing prose anywhere. This is what Stage 2 (Wording) is
  * built from, and what gets persisted into ResumeVariant's relational
  * tree once Wording also succeeds.
+ *
+ * Deliberately carries no education selection — Education is no
+ * longer a Selection-stage decision at all (structural absence, the
+ * same technique already used to keep Skills posture-free): every
+ * resume-eligible Education record is included deterministically at
+ * persistence time instead. See GenerateResumeVariant::generateFull().
  */
 final readonly class ResumeSelectionDraft
 {
     /**
      * @param  array<int, string>  $summaryEvidenceFactKeys
      * @param  array<int, SkillSelectionDraft>  $skills
-     * @param  array<int, EducationSelectionDraft>  $educationSelections
      * @param  array<int, RoleSelectionDraft>  $experience
      * @param  array<int, TargetTermUsageDraft>  $targetTermUsages
      */
     public function __construct(
         public array $summaryEvidenceFactKeys,
         public array $skills,
-        public array $educationSelections,
         public array $experience,
         public array $targetTermUsages,
     ) {}

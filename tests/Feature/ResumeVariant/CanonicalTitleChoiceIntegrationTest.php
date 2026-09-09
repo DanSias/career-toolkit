@@ -10,6 +10,7 @@ use App\Models\JobPosting;
 use App\Models\ResumeVariant;
 use App\Models\Role;
 use App\Support\ResumeVariant\GenerateResumeVariant;
+use App\Support\ResumeVariant\ResumeCandidatePayloadBuilder;
 use App\Support\ResumeVariant\ResumeSelectionProviderResponse;
 use App\Support\ResumeVariant\ResumeWordingProviderResponse;
 use Illuminate\Support\Facades\Artisan;
@@ -53,24 +54,100 @@ function bindCanonicalResumeFakes(): array
 }
 
 /**
+ * One (role_id => career_fact_key) pair per real, resume-eligible
+ * canonical role — used to fill in every OTHER role with a minimal,
+ * modest bullet group so role-completeness (every resume-eligible role
+ * must appear) never gets in the way of what this file actually tests:
+ * per-role title_choice legality. Mirrors GenerateResumeVariant's own
+ * attribution.role_id resolution — one real ResumeCandidatePayloadBuilder
+ * call, never hand-derived.
+ *
+ * @return array<int, string>
+ */
+function oneFactKeyPerCanonicalRole(JobMatch $match): array
+{
+    $payload = app(ResumeCandidatePayloadBuilder::class)->build($match);
+
+    $keyByRoleId = [];
+    foreach ($payload['career_facts'] as $fact) {
+        $roleId = $fact['attribution']['role_id'];
+        if ($roleId !== null && ! isset($keyByRoleId[$roleId])) {
+            $keyByRoleId[$roleId] = $fact['key'];
+        }
+    }
+
+    return $keyByRoleId;
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function fillerExperienceEntries(array $factKeyByRoleId, int $excludeRoleId): array
+{
+    $entries = [];
+
+    foreach ($factKeyByRoleId as $roleId => $factKey) {
+        if ($roleId === $excludeRoleId) {
+            continue;
+        }
+
+        $entries[] = [
+            'role_id' => $roleId,
+            'title_choice' => 'full',
+            'bullet_groups' => [[
+                'project_id' => -1,
+                'order' => 1,
+                'career_fact_keys' => [$factKey],
+                'job_analysis_finding_ids' => [],
+            ]],
+        ];
+    }
+
+    return $entries;
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function fillerWordingEntries(array $factKeyByRoleId, int $excludeRoleId): array
+{
+    $entries = [];
+
+    foreach ($factKeyByRoleId as $roleId => $factKey) {
+        if ($roleId === $excludeRoleId) {
+            continue;
+        }
+
+        $entries[] = [
+            'role_id' => $roleId,
+            'bullets' => [['bullet_group_index' => 0, 'text' => 'A generated filler bullet.']],
+        ];
+    }
+
+    return $entries;
+}
+
+/**
  * @return array<string, mixed>
  */
-function singleRoleSelection(int $roleId, string $titleChoice, string $careerFactKey): array
+function singleRoleSelection(int $roleId, string $titleChoice, string $careerFactKey, array $fillerEntries): array
 {
     return [
         'summary_evidence' => [],
         'skills' => [],
-        'education_selection' => [],
-        'experience' => [[
-            'role_id' => $roleId,
-            'title_choice' => $titleChoice,
-            'bullet_groups' => [[
-                'project_id' => -1,
-                'order' => 1,
-                'career_fact_keys' => [$careerFactKey],
-                'job_analysis_finding_ids' => [],
-            ]],
-        ]],
+        'experience' => [
+            [
+                'role_id' => $roleId,
+                'title_choice' => $titleChoice,
+                'bullet_groups' => [[
+                    'project_id' => -1,
+                    'order' => 1,
+                    'career_fact_keys' => [$careerFactKey],
+                    'job_analysis_finding_ids' => [],
+                ]],
+            ],
+            ...$fillerEntries,
+        ],
         'target_term_usages' => [],
     ];
 }
@@ -78,33 +155,53 @@ function singleRoleSelection(int $roleId, string $titleChoice, string $careerFac
 /**
  * @return array<string, mixed>
  */
-function singleRoleWording(int $roleId): array
+function singleRoleWording(int $roleId, array $fillerEntries): array
 {
     return [
         'summary' => 'Candidate summary.',
-        'experience' => [[
-            'role_id' => $roleId,
-            'bullets' => [['bullet_group_index' => 0, 'text' => 'A generated bullet.']],
-        ]],
+        'experience' => [
+            [
+                'role_id' => $roleId,
+                'bullets' => [['bullet_group_index' => 0, 'text' => 'A generated bullet.']],
+            ],
+            ...$fillerEntries,
+        ],
     ];
 }
 
 function generateWithTitleChoice(int $roleId, string $titleChoice, string $careerFactKey): ResumeVariant
 {
     $match = canonicalJobMatch();
+    $factKeyByRoleId = oneFactKeyPerCanonicalRole($match);
+
     [$selection, $wording] = bindCanonicalResumeFakes();
-    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', singleRoleSelection($roleId, $titleChoice, $careerFactKey)));
-    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleRoleWording($roleId)));
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', singleRoleSelection(
+        $roleId, $titleChoice, $careerFactKey, fillerExperienceEntries($factKeyByRoleId, $roleId)
+    )));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleRoleWording(
+        $roleId, fillerWordingEntries($factKeyByRoleId, $roleId)
+    )));
 
     return app(GenerateResumeVariant::class)->generateFull($match);
+}
+
+/**
+ * Filler roles (added so role-completeness never blocks these
+ * title_choice-focused tests) are also present in `experienceRoles` —
+ * look up the specific role under test by id rather than assuming it
+ * is first.
+ */
+function displayTitleFor(int $roleId, string $titleChoice, string $careerFactKey): string
+{
+    return generateWithTitleChoice($roleId, $titleChoice, $careerFactKey)
+        ->experienceRoles->firstWhere('role_id', $roleId)->display_title;
 }
 
 it('offers only full for RocketGate\'s slash-free canonical title', function () {
     $role = Role::where('title', 'Developer Support Engineer')->firstOrFail();
 
-    $variant = generateWithTitleChoice($role->id, 'full', 'rocketgate-source-control-gitlab');
-
-    expect($variant->experienceBullets->first()->display_title)->toBe('Developer Support Engineer');
+    expect(displayTitleFor($role->id, 'full', 'rocketgate-source-control-gitlab'))
+        ->toBe('Developer Support Engineer');
 });
 
 it('rejects segment_1 for RocketGate, which has no "/" in its title', function () {
@@ -118,9 +215,8 @@ it('rejects segment_1 for RocketGate, which has no "/" in its title', function (
 it('offers only full for Pearson SEO Analyst\'s slash-free canonical title', function () {
     $role = Role::where('title', 'Search Engine Optimization Analyst')->firstOrFail();
 
-    $variant = generateWithTitleChoice($role->id, 'full', 'pearson-seo-analyst-what-they-did');
-
-    expect($variant->experienceBullets->first()->display_title)->toBe('Search Engine Optimization Analyst');
+    expect(displayTitleFor($role->id, 'full', 'pearson-seo-analyst-what-they-did'))
+        ->toBe('Search Engine Optimization Analyst');
 });
 
 it('rejects segment_1 for Pearson SEO Analyst, which has no "/" in its title', function () {
@@ -135,11 +231,11 @@ it('resolves full/segment_1/segment_2 exactly for Pearson Data & Analytics Lead 
     $role = Role::where('title', 'Data & Analytics Lead Developer / Data Analyst')->firstOrFail();
     $fact = 'pearson-data-analytics-lead-stakeholder-partnership';
 
-    expect(generateWithTitleChoice($role->id, 'full', $fact)->experienceBullets->first()->display_title)
+    expect(displayTitleFor($role->id, 'full', $fact))
         ->toBe('Data & Analytics Lead Developer / Data Analyst');
-    expect(generateWithTitleChoice($role->id, 'segment_1', $fact)->experienceBullets->first()->display_title)
+    expect(displayTitleFor($role->id, 'segment_1', $fact))
         ->toBe('Data & Analytics Lead Developer');
-    expect(generateWithTitleChoice($role->id, 'segment_2', $fact)->experienceBullets->first()->display_title)
+    expect(displayTitleFor($role->id, 'segment_2', $fact))
         ->toBe('Data Analyst');
 });
 
@@ -155,11 +251,11 @@ it('resolves full/segment_1/segment_2 exactly for Liquid Gravity\'s Founder & Fu
     $role = Role::where('title', 'Founder & Full Stack Developer / Marketing Consultant')->firstOrFail();
     $fact = 'liquid-gravity-what-they-did';
 
-    expect(generateWithTitleChoice($role->id, 'full', $fact)->experienceBullets->first()->display_title)
+    expect(displayTitleFor($role->id, 'full', $fact))
         ->toBe('Founder & Full Stack Developer / Marketing Consultant');
-    expect(generateWithTitleChoice($role->id, 'segment_1', $fact)->experienceBullets->first()->display_title)
+    expect(displayTitleFor($role->id, 'segment_1', $fact))
         ->toBe('Founder & Full Stack Developer');
-    expect(generateWithTitleChoice($role->id, 'segment_2', $fact)->experienceBullets->first()->display_title)
+    expect(displayTitleFor($role->id, 'segment_2', $fact))
         ->toBe('Marketing Consultant');
 });
 

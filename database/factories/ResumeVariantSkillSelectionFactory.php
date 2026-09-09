@@ -22,6 +22,8 @@ class ResumeVariantSkillSelectionFactory extends Factory
         return [
             'resume_variant_id' => ResumeVariant::factory(),
             'skill_id' => Skill::factory(),
+            'name' => fake()->word(),
+            'category' => 'capability',
             'display_order' => 1,
         ];
     }

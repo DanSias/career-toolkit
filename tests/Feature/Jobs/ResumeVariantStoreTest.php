@@ -17,7 +17,6 @@ function resumeStoreValidSelection(array $candidate, array $job): array
     return [
         'summary_evidence' => [$candidate['factIndependent']->key],
         'skills' => [],
-        'education_selection' => [],
         'experience' => [[
             'role_id' => $candidate['role']->id,
             'title_choice' => 'full',

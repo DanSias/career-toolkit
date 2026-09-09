@@ -13,12 +13,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * One generated Experience-section bullet, nested under a real,
- * canonical Employer/Role (and optionally Project) — v1 always renders
- * professional-project work as bullets under its owning role rather
- * than promoting it to a separate Selected Projects section, to avoid
- * professional work reading like a side project. See
- * docs/domain-model.md "ResumeVariant".
+ * One generated Experience-section bullet, nested under a frozen
+ * ResumeVariantExperienceRole snapshot (and optionally a live Project,
+ * lineage only) — v1 always renders professional-project work as
+ * bullets under its owning role rather than promoting it to a separate
+ * Selected Projects section, to avoid professional work reading like a
+ * side project. See docs/domain-model.md "ResumeVariant".
  *
  * `text` is Stage 2's free-generated prose. It is deliberately never
  * the sole record of what evidence backs it — see
@@ -26,12 +26,16 @@ use Illuminate\Support\Carbon;
  * array, for the same reason CareerFactMatch is a real table: FK-level
  * restrict protection only has teeth against a real foreign key.
  *
+ * `resume_variant_id` is kept directly on the bullet as well as being
+ * reachable via `experienceRole`, deliberately — the same pattern
+ * CareerFact already uses for `career_profile_id` alongside its own
+ * attribution chain: "so 'all X for this Y' is a plain indexed lookup,
+ * never a join."
+ *
  * @property int $id
  * @property int $resume_variant_id
- * @property int $employer_id
- * @property int $role_id
+ * @property int $resume_variant_experience_role_id
  * @property int|null $project_id
- * @property string $display_title
  * @property int $display_order
  * @property string $text
  * @property Carbon|null $created_at
@@ -39,10 +43,8 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable([
     'resume_variant_id',
-    'employer_id',
-    'role_id',
+    'resume_variant_experience_role_id',
     'project_id',
-    'display_title',
     'display_order',
     'text',
 ])]
@@ -60,22 +62,18 @@ class ResumeVariantExperienceBullet extends Model
     }
 
     /**
-     * @return BelongsTo<Employer, $this>
+     * @return BelongsTo<ResumeVariantExperienceRole, $this>
      */
-    public function employer(): BelongsTo
+    public function experienceRole(): BelongsTo
     {
-        return $this->belongsTo(Employer::class);
+        return $this->belongsTo(ResumeVariantExperienceRole::class);
     }
 
     /**
-     * @return BelongsTo<Role, $this>
-     */
-    public function role(): BelongsTo
-    {
-        return $this->belongsTo(Role::class);
-    }
-
-    /**
+     * Lineage only, and only when this bullet is specifically about one
+     * named project — never read for a rendered project label in v1
+     * (see docs/domain-model.md "ResumeVariant").
+     *
      * @return BelongsTo<Project, $this>
      */
     public function project(): BelongsTo

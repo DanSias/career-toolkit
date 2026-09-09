@@ -22,6 +22,11 @@ class ResumeVariantEducationSelectionFactory extends Factory
         return [
             'resume_variant_id' => ResumeVariant::factory(),
             'education_id' => Education::factory(),
+            'institution' => fake()->company(),
+            'degree' => 'Bachelor of Science',
+            'field_of_study' => fake()->word(),
+            'start_year' => null,
+            'end_year' => fake()->year(),
             'display_order' => 1,
         ];
     }

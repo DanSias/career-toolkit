@@ -28,20 +28,25 @@ use BackedEnum;
  * docs/resume-variant-generation.md "Live evaluation".
  *
  * Produces structure only — evidence selection, bullet grouping,
- * Skills/Education selection, and target-term claim posture. No
- * employer-facing prose is ever asked for or accepted here; that is
- * exclusively ResumeWordingPromptV1's job.
+ * Skills selection, and target-term claim posture. No employer-facing
+ * prose is ever asked for or accepted here; that is exclusively
+ * ResumeWordingPromptV1's job. Education is deliberately absent from
+ * this schema entirely (structural absence, not a runtime check) —
+ * every resume-eligible Education record is included deterministically
+ * at persistence time instead of being a Selection decision. See
+ * GenerateResumeVariant::generateFull() and docs/domain-model.md
+ * "ResumeVariant".
  */
 final readonly class ResumeSelectionPromptV1
 {
     public function version(): string
     {
-        return 'resume-selection-v1.2';
+        return 'resume-selection-v1.3';
     }
 
     public function schemaVersion(): string
     {
-        return '1.1';
+        return '1.2';
     }
 
     public function systemPrompt(): string
@@ -55,10 +60,13 @@ final readonly class ResumeSelectionPromptV1
 
         ## The full corpus is available to you — JobMatch is guidance, not a gate
 
-        You are given every currently eligible CareerFact, Education
-        record, and Skill in the candidate's canonical profile — not
-        only the ones a prior JobMatch diagnostic run happened to link
-        to a specific job requirement. Each CareerFact carries zero or
+        You are given every currently eligible CareerFact and Skill in
+        the candidate's canonical profile — not only the ones a prior
+        JobMatch diagnostic run happened to link to a specific job
+        requirement. Education records are also included for context
+        (e.g. aligning dates with early-career roles) but are never a
+        decision you make — every one is included in the final resume
+        automatically, outside this response. Each CareerFact carries zero or
         more `job_match_annotations` (which findings JobMatch linked it
         to, with what coverage/relationship, and the finding's own
         requirement_strength/emphasis) when they exist — treat these as
@@ -81,6 +89,20 @@ final readonly class ResumeSelectionPromptV1
         even when it maps only loosely to a specific job requirement, if
         it makes the candidate look substantially more senior or
         capable.
+
+        ## Every resume-eligible role must appear
+
+        Relevance controls how much space a role gets, never whether it
+        appears at all. Every real, resume-eligible Role supplied to
+        you — one with at least one eligible CareerFact attributed to
+        it or to one of its projects — must appear in `experience` with
+        at least one bullet group, even if that group is a single,
+        concise bullet for an older or less job-relevant role. Do not
+        omit a role merely because it maps weakly to this specific job;
+        weak relevance is a reason to give it one modest bullet, never
+        a reason to erase it from the candidate's employment history.
+        This is checked and enforced independently — a response missing
+        a resume-eligible role is rejected outright.
 
         ## Grouping evidence into bullets
 
@@ -137,16 +159,18 @@ final readonly class ResumeSelectionPromptV1
         is rejected; there is no mechanism to supply new or reworded
         title text.
 
-        ## Skills and Education
+        ## Skills
 
         Select Skills from the supplied eligible-skills list only — a
         skill with no real supporting CareerFact evidence anywhere is
         never supplied to you, so anything in that list is fair game.
         Order by relevance to this job. Do not select a skill whose only
         evidence is old and clearly superseded unless the job genuinely
-        calls for it. Select Education records the same way — on their
-        own merits for this job, independent of whether JobMatch ever
-        cited them.
+        calls for it.
+
+        There is no Education selection here — every resume-eligible
+        Education record is always included in the final resume,
+        deterministically, outside this response.
 
         ## Target-term usages — claim posture
 
@@ -194,11 +218,11 @@ final readonly class ResumeSelectionPromptV1
 
         ## Do not invent anything
 
-        Every `career_fact_key`, `education_id`, `skill_id`, `role_id`,
-        `project_id`, and `job_analysis_finding_id` you use must be one
-        of the exact values supplied to you. Every `term` must be one of
-        the exact values in `target_terminology`. Never invent, guess, or
-        slightly modify any of these identifiers.
+        Every `career_fact_key`, `skill_id`, `role_id`, `project_id`,
+        and `job_analysis_finding_id` you use must be one of the exact
+        values supplied to you. Every `term` must be one of the exact
+        values in `target_terminology`. Never invent, guess, or slightly
+        modify any of these identifiers.
         PROMPT;
     }
 
@@ -228,7 +252,6 @@ final readonly class ResumeSelectionPromptV1
      * @param  array<int, int>  $validRoleIds
      * @param  array<int, int>  $validProjectIds
      * @param  array<int, string>  $validFactKeys
-     * @param  array<int, int>  $validEducationIds
      * @param  array<int, int>  $validSkillIds
      * @param  array<int, int>  $validFindingIds
      * @param  array<int, string>  $validTargetTerms
@@ -239,7 +262,6 @@ final readonly class ResumeSelectionPromptV1
         array $validRoleIds,
         array $validProjectIds,
         array $validFactKeys,
-        array $validEducationIds,
         array $validSkillIds,
         array $validFindingIds,
         array $validTargetTerms,
@@ -264,18 +286,6 @@ final readonly class ResumeSelectionPromptV1
                             'order' => ['type' => 'integer'],
                         ],
                         'required' => ['skill_id', 'order'],
-                        'additionalProperties' => false,
-                    ],
-                ],
-                'education_selection' => [
-                    'type' => 'array',
-                    'items' => [
-                        'type' => 'object',
-                        'properties' => [
-                            'education_id' => ['type' => 'integer', 'enum' => $this->nonEmptyIntEnum($validEducationIds)],
-                            'order' => ['type' => 'integer'],
-                        ],
-                        'required' => ['education_id', 'order'],
                         'additionalProperties' => false,
                     ],
                 ],
@@ -335,7 +345,7 @@ final readonly class ResumeSelectionPromptV1
                     ],
                 ],
             ],
-            'required' => ['summary_evidence', 'skills', 'education_selection', 'experience', 'target_term_usages'],
+            'required' => ['summary_evidence', 'skills', 'experience', 'target_term_usages'],
             'additionalProperties' => false,
         ];
     }

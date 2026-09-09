@@ -2,10 +2,9 @@
 
 namespace Database\Factories;
 
-use App\Models\Employer;
 use App\Models\ResumeVariant;
 use App\Models\ResumeVariantExperienceBullet;
-use App\Models\Role;
+use App\Models\ResumeVariantExperienceRole;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -22,10 +21,8 @@ class ResumeVariantExperienceBulletFactory extends Factory
     {
         return [
             'resume_variant_id' => ResumeVariant::factory(),
-            'employer_id' => Employer::factory(),
-            'role_id' => Role::factory(),
+            'resume_variant_experience_role_id' => ResumeVariantExperienceRole::factory(),
             'project_id' => null,
-            'display_title' => fake()->jobTitle(),
             'display_order' => 1,
             'text' => fake()->sentence(),
         ];

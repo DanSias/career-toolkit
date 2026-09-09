@@ -108,6 +108,19 @@ class ResumeVariant extends Model
     }
 
     /**
+     * One frozen snapshot row per Role appearing in this variant,
+     * ordered by the deterministic reverse-chronological rank computed
+     * once at generation time. See docs/domain-model.md "ResumeVariant"
+     * -> "Experience role snapshots".
+     *
+     * @return HasMany<ResumeVariantExperienceRole, $this>
+     */
+    public function experienceRoles(): HasMany
+    {
+        return $this->hasMany(ResumeVariantExperienceRole::class);
+    }
+
+    /**
      * @return HasMany<ResumeVariantSummaryEvidence, $this>
      */
     public function summaryEvidence(): HasMany

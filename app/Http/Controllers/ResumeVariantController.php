@@ -13,8 +13,8 @@ use App\Models\JobMatch;
 use App\Models\JobPosting;
 use App\Models\ResumeVariant;
 use App\Models\ResumeVariantExperienceBullet;
+use App\Models\ResumeVariantExperienceRole;
 use App\Models\ResumeVariantTargetTermUsage;
-use App\Models\Role;
 use App\Models\Skill;
 use App\Support\JobMatch\CareerFactAttribution;
 use App\Support\ResumeVariant\GenerateResumeVariant;
@@ -81,8 +81,8 @@ class ResumeVariantController extends Controller
         abort_unless($resumeVariant->job_match_id === $jobMatch->id, 404);
 
         $resumeVariant->load([
-            'experienceBullets.citations.careerFact',
-            'experienceBullets.targetTermUsages',
+            'experienceRoles.bullets.citations.careerFact',
+            'experienceRoles.bullets.targetTermUsages',
             'summaryEvidence.careerFact',
             'skillSelections.skill',
             'educationSelections.education',
@@ -124,7 +124,7 @@ class ResumeVariantController extends Controller
                 ->map($this->transformTargetTermUsage(...))
                 ->values()
                 ->all(),
-            'experience' => $this->groupBulletsByRole($variant->experienceBullets),
+            'experience' => $this->transformExperienceRoles($variant->experienceRoles),
             'skills' => $variant->skillSelections
                 ->sortBy('display_order')
                 ->map(fn ($selection) => $this->transformSkill($selection->skill))
@@ -139,35 +139,34 @@ class ResumeVariantController extends Controller
     }
 
     /**
-     * Roles are ordered deterministically by their real canonical start
-     * date — reverse-chronological, exactly like a conventional resume
-     * — never by anything the model decided. See docs/domain-model.md
-     * "ResumeVariant".
+     * Reads the frozen role-snapshot rows directly — display_order was
+     * already computed deterministically, once, at generation time
+     * (reverse-chronological by real canonical start date, exactly
+     * like a conventional resume, never by anything the model decided
+     * — see GenerateResumeVariant::generateFull()). No live Role/
+     * Employer query here: employer name and dates are frozen on the
+     * snapshot row itself, so this never re-derives them and never
+     * drifts if the live Role/Employer is later edited. See
+     * docs/domain-model.md "ResumeVariant" -> "Experience role
+     * snapshots".
      *
-     * @param  Collection<int, ResumeVariantExperienceBullet>  $bullets
+     * @param  Collection<int, ResumeVariantExperienceRole>  $experienceRoles
      * @return array<int, array<string, mixed>>
      */
-    private function groupBulletsByRole(Collection $bullets): array
+    private function transformExperienceRoles(Collection $experienceRoles): array
     {
-        $roleIds = $bullets->pluck('role_id')->unique()->values();
-        $roles = Role::query()->whereIn('id', $roleIds)->with('employer')->get()->keyBy('id');
-
-        return $roles
-            ->sortByDesc(fn (Role $role) => sprintf('%04d-%02d', $role->start_year, $role->start_month ?? 1))
-            ->map(function (Role $role) use ($bullets) {
-                $roleBullets = $bullets->where('role_id', $role->id)->sortBy('display_order');
-
-                return [
-                    'role_id' => $role->id,
-                    'employer' => $role->employer->name,
-                    'display_title' => $roleBullets->first()?->display_title,
-                    'start_year' => $role->start_year,
-                    'start_month' => $role->start_month,
-                    'end_year' => $role->end_year,
-                    'end_month' => $role->end_month,
-                    'bullets' => $roleBullets->map($this->transformBullet(...))->values()->all(),
-                ];
-            })
+        return $experienceRoles
+            ->sortBy('display_order')
+            ->map(fn (ResumeVariantExperienceRole $role) => [
+                'role_id' => $role->role_id,
+                'employer' => $role->employer_name,
+                'display_title' => $role->display_title,
+                'start_year' => $role->start_year,
+                'start_month' => $role->start_month,
+                'end_year' => $role->end_year,
+                'end_month' => $role->end_month,
+                'bullets' => $role->bullets->sortBy('display_order')->map($this->transformBullet(...))->values()->all(),
+            ])
             ->values()
             ->all();
     }

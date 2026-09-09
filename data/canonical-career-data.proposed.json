@@ -28,7 +28,12 @@
 
     "career_profile": {
         "key": "daniel-sias",
-        "name": "Daniel Sias"
+        "name": "Daniel Sias",
+        "email": "dan.sias@gmail.com",
+        "phone": null,
+        "location": null,
+        "portfolio_url": "https://danielsias.dev",
+        "github_url": "https://github.com/DanSias"
     },
 
     "employers": [

@@ -13,6 +13,7 @@ use App\Models\ResumeVariant;
 use App\Models\ResumeVariantBulletCitation;
 use App\Models\ResumeVariantEducationSelection;
 use App\Models\ResumeVariantExperienceBullet;
+use App\Models\ResumeVariantExperienceRole;
 use App\Models\ResumeVariantSkillSelection;
 use App\Models\ResumeVariantSummaryEvidence;
 use App\Models\ResumeVariantTargetTermUsage;
@@ -52,14 +53,23 @@ it('builds the full relational tree: bullets, citations, summary evidence, skill
     $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
     $variant = ResumeVariant::factory()->create(['career_profile_id' => $profile->id, 'job_match_id' => $match->id]);
 
-    $bullet = $variant->experienceBullets()->create([
-        'employer_id' => $employer->id, 'role_id' => $role->id, 'project_id' => $project->id,
-        'display_title' => $role->title, 'display_order' => 1, 'text' => 'Built things on AWS.',
+    $experienceRole = $variant->experienceRoles()->create([
+        'role_id' => $role->id, 'employer_name' => $employer->name, 'display_title' => $role->title,
+        'start_year' => $role->start_year, 'start_month' => $role->start_month,
+        'end_year' => $role->end_year, 'end_month' => $role->end_month, 'display_order' => 1,
+    ]);
+    $bullet = $experienceRole->bullets()->create([
+        'resume_variant_id' => $variant->id, 'project_id' => $project->id,
+        'display_order' => 1, 'text' => 'Built things on AWS.',
     ]);
     $bullet->citations()->create(['career_fact_id' => $factAws->id]);
     $variant->summaryEvidence()->create(['career_fact_id' => $factAws->id]);
-    $variant->skillSelections()->create(['skill_id' => $awsSkill->id, 'display_order' => 1]);
-    $variant->educationSelections()->create(['education_id' => $education->id, 'display_order' => 1]);
+    $variant->skillSelections()->create(['skill_id' => $awsSkill->id, 'name' => $awsSkill->name, 'category' => $awsSkill->category->value, 'display_order' => 1]);
+    $variant->educationSelections()->create([
+        'education_id' => $education->id, 'institution' => $education->institution, 'degree' => $education->degree,
+        'field_of_study' => $education->field_of_study, 'start_year' => $education->start_year, 'end_year' => $education->end_year,
+        'display_order' => 1,
+    ]);
     $usage = $variant->targetTermUsages()->create([
         'bullet_id' => $bullet->id, 'job_analysis_finding_id' => $azureFinding->id,
         'target_term' => 'Azure', 'posture' => ResumeClaimPosture::Qualified,
@@ -91,16 +101,16 @@ it('rejects a duplicate skill selection within one ResumeVariant', function () {
     ['awsSkill' => $skill] = ResumeVariantFixtures::candidate();
     $variant = ResumeVariant::factory()->create();
 
-    $variant->skillSelections()->create(['skill_id' => $skill->id, 'display_order' => 1]);
-    $variant->skillSelections()->create(['skill_id' => $skill->id, 'display_order' => 2]);
+    $variant->skillSelections()->create(['skill_id' => $skill->id, 'name' => $skill->name, 'category' => $skill->category->value, 'display_order' => 1]);
+    $variant->skillSelections()->create(['skill_id' => $skill->id, 'name' => $skill->name, 'category' => $skill->category->value, 'display_order' => 2]);
 })->throws(QueryException::class);
 
 it('rejects a duplicate education selection within one ResumeVariant', function () {
     ['education' => $education] = ResumeVariantFixtures::candidate();
     $variant = ResumeVariant::factory()->create();
 
-    $variant->educationSelections()->create(['education_id' => $education->id, 'display_order' => 1]);
-    $variant->educationSelections()->create(['education_id' => $education->id, 'display_order' => 2]);
+    $variant->educationSelections()->create(['education_id' => $education->id, 'institution' => $education->institution, 'degree' => $education->degree, 'display_order' => 1]);
+    $variant->educationSelections()->create(['education_id' => $education->id, 'institution' => $education->institution, 'degree' => $education->degree, 'display_order' => 2]);
 })->throws(QueryException::class);
 
 // --- Immutability --------------------------------------------------------------
@@ -161,14 +171,18 @@ it('cascades deletes from ResumeVariant through its full tree', function () {
     $match = JobMatch::factory()->create(['career_profile_id' => $profile->id, 'job_analysis_id' => $analysis->id]);
     $variant = ResumeVariant::factory()->create(['career_profile_id' => $profile->id, 'job_match_id' => $match->id]);
 
-    $bullet = $variant->experienceBullets()->create([
-        'employer_id' => $employer->id, 'role_id' => $role->id, 'project_id' => null,
-        'display_title' => $role->title, 'display_order' => 1, 'text' => 'x',
+    $experienceRole = $variant->experienceRoles()->create([
+        'role_id' => $role->id, 'employer_name' => $employer->name, 'display_title' => $role->title,
+        'start_year' => $role->start_year, 'start_month' => $role->start_month,
+        'end_year' => $role->end_year, 'end_month' => $role->end_month, 'display_order' => 1,
+    ]);
+    $bullet = $experienceRole->bullets()->create([
+        'resume_variant_id' => $variant->id, 'project_id' => null, 'display_order' => 1, 'text' => 'x',
     ]);
     $citation = $bullet->citations()->create(['career_fact_id' => $factAws->id]);
     $summaryEvidence = $variant->summaryEvidence()->create(['career_fact_id' => $factAws->id]);
-    $skillSelection = $variant->skillSelections()->create(['skill_id' => $skill->id, 'display_order' => 1]);
-    $educationSelection = $variant->educationSelections()->create(['education_id' => $education->id, 'display_order' => 1]);
+    $skillSelection = $variant->skillSelections()->create(['skill_id' => $skill->id, 'name' => $skill->name, 'category' => $skill->category->value, 'display_order' => 1]);
+    $educationSelection = $variant->educationSelections()->create(['education_id' => $education->id, 'institution' => $education->institution, 'degree' => $education->degree, 'display_order' => 1]);
     $usage = $variant->targetTermUsages()->create([
         'bullet_id' => $bullet->id, 'job_analysis_finding_id' => $finding->id,
         'target_term' => 'Azure', 'posture' => ResumeClaimPosture::Capability,
@@ -199,7 +213,7 @@ it('does not cascade-delete a bullet citation when its CareerFact is deleted —
 it('does not cascade-delete a skill selection when its Skill is deleted — the delete is restricted instead', function () {
     ['awsSkill' => $skill] = ResumeVariantFixtures::candidate();
     $variant = ResumeVariant::factory()->create();
-    $variant->skillSelections()->create(['skill_id' => $skill->id, 'display_order' => 1]);
+    $variant->skillSelections()->create(['skill_id' => $skill->id, 'name' => $skill->name, 'category' => $skill->category->value, 'display_order' => 1]);
 
     expect(fn () => $skill->delete())->toThrow(QueryException::class);
     expect(Skill::find($skill->id))->not->toBeNull();
@@ -208,22 +222,24 @@ it('does not cascade-delete a skill selection when its Skill is deleted — the 
 it('does not cascade-delete an education selection when its Education is deleted — the delete is restricted instead', function () {
     ['education' => $education] = ResumeVariantFixtures::candidate();
     $variant = ResumeVariant::factory()->create();
-    $variant->educationSelections()->create(['education_id' => $education->id, 'display_order' => 1]);
+    $variant->educationSelections()->create(['education_id' => $education->id, 'institution' => $education->institution, 'degree' => $education->degree, 'display_order' => 1]);
 
     expect(fn () => $education->delete())->toThrow(QueryException::class);
     expect(Education::find($education->id))->not->toBeNull();
 });
 
-it('does not cascade-delete a bullet when its Employer/Role is deleted — the delete is restricted instead', function () {
+it('does not cascade-delete an experience role snapshot when its Role is deleted — the delete is restricted instead', function () {
     ['profile' => $profile, 'role' => $role, 'employer' => $employer] = ResumeVariantFixtures::candidate();
     $variant = ResumeVariant::factory()->create(['career_profile_id' => $profile->id]);
-    $variant->experienceBullets()->create([
-        'employer_id' => $employer->id, 'role_id' => $role->id, 'project_id' => null,
-        'display_title' => $role->title, 'display_order' => 1, 'text' => 'x',
+    $experienceRole = $variant->experienceRoles()->create([
+        'role_id' => $role->id, 'employer_name' => $employer->name, 'display_title' => $role->title,
+        'start_year' => $role->start_year, 'start_month' => $role->start_month,
+        'end_year' => $role->end_year, 'end_month' => $role->end_month, 'display_order' => 1,
     ]);
 
     expect(fn () => $role->delete())->toThrow(QueryException::class);
-    expect(Role::find($role->id))->not->toBeNull();
+    expect(Role::find($role->id))->not->toBeNull()
+        ->and(ResumeVariantExperienceRole::find($experienceRole->id))->not->toBeNull();
 });
 
 it('does not cascade-delete a ResumeVariant when its JobMatch is deleted — the delete is restricted instead', function () {

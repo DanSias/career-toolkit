@@ -7,6 +7,7 @@ use App\Enums\Visibility;
 use App\Exceptions\InvalidResumeVariantResponseException;
 use App\Exceptions\ResumeGenerationProviderException;
 use App\Models\CareerFact;
+use App\Models\Education;
 use App\Models\Employer;
 use App\Models\Project;
 use App\Models\ResumeVariant;
@@ -35,8 +36,10 @@ function bindFakeResumeProviders(): array
  * Builds a minimal but complete valid Selection response for the
  * standard ResumeVariantFixtures graph: one bullet group citing the
  * AWS fact under a qualified Azure claim, a second bullet group citing
- * the independent-implementation fact, plus skills/education/summary
- * selections.
+ * the independent-implementation fact, plus skills/summary selections.
+ * Education is never a Selection-stage decision — every canonical
+ * Education record is included deterministically instead (see
+ * GenerateResumeVariant::generateFull()).
  *
  * @return array<string, mixed>
  */
@@ -45,7 +48,6 @@ function validSelectionContent(array $candidate, array $job): array
     return [
         'summary_evidence' => [$candidate['factIndependent']->key],
         'skills' => [['skill_id' => $candidate['awsSkill']->id, 'order' => 1]],
-        'education_selection' => [['education_id' => $candidate['education']->id, 'order' => 1]],
         'experience' => [[
             'role_id' => $candidate['role']->id,
             'title_choice' => 'segment_1',
@@ -121,8 +123,8 @@ it('persists the full graph from a valid two-stage response', function () {
         ->and($variant->summaryEvidence)->toHaveCount(1)
         ->and($variant->targetTermUsages)->toHaveCount(1)
         ->and($variant->summary)->not->toBeNull()
-        ->and($variant->schema_version)->toBe('1.1')
-        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1.2')
+        ->and($variant->schema_version)->toBe('1.2')
+        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1.3')
         ->and($variant->wording_prompt_version)->toBe('resume-wording-v1')
         ->and($variant->selection_generated_by)->toBe('openai:gpt-test')
         ->and($variant->wording_generated_by)->toBe('openai:gpt-test');
@@ -379,7 +381,7 @@ it('resolves title_choice segment_2 to the exact canonical segment string, never
 
     $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
 
-    expect($variant->experienceBullets->first()->display_title)->toBe('Platform Lead');
+    expect($variant->experienceRoles->first()->display_title)->toBe('Platform Lead');
 });
 
 it('rejects a project_id that belongs to a different role than its bullet group', function () {
@@ -443,7 +445,7 @@ it('excludes Skills from any target-term/qualified mechanism entirely — the sc
     // elsewhere.
     $schemaStart = strpos($schemaSource, 'function jsonSchema');
     $skillsBlockStart = strpos($schemaSource, "'skills' =>", $schemaStart);
-    $skillsBlockEnd = strpos($schemaSource, "'education_selection' =>", $skillsBlockStart);
+    $skillsBlockEnd = strpos($schemaSource, "'experience' =>", $skillsBlockStart);
     $skillsBlock = substr($schemaSource, $skillsBlockStart, $skillsBlockEnd - $skillsBlockStart);
 
     expect($skillsBlock)->not->toContain('term')
@@ -454,16 +456,18 @@ it('excludes Skills from any target-term/qualified mechanism entirely — the sc
 it('rejects wrong Employer/Role/Project attribution: a bullet cannot claim an Employer the Role does not actually belong to', function () {
     [$candidate, $job, $jobMatch] = fullFixtureSetup();
 
-    // The orchestrator always resolves employer_id from the real Role
-    // model, never from provider input — so this is a structural
-    // guarantee, verified directly rather than via a rejection path.
+    // The orchestrator always resolves employer_name/role_id from the
+    // real Role model, never from provider input — so this is a
+    // structural guarantee, verified directly rather than via a
+    // rejection path.
     [$selection, $wording] = bindFakeResumeProviders();
     $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', validSelectionContent($candidate, $job)));
     $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
 
     $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
 
-    expect($variant->experienceBullets->first()->employer_id)->toBe($candidate['employer']->id);
+    expect($variant->experienceRoles->first()->role_id)->toBe($candidate['role']->id)
+        ->and($variant->experienceRoles->first()->employer_name)->toBe($candidate['employer']->name);
 });
 
 it('propagates a Selection provider failure and persists nothing', function () {
@@ -524,6 +528,133 @@ it('freezes the exact selection and wording input snapshots, immune to a later C
 
     expect($frozenStatement)->toBe($originalStatement)
         ->and($frozenStatement)->not->toBe('A completely different, later-edited statement.');
+});
+
+it('rejects a Selection response that omits a resume-eligible role entirely', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+
+    // A second, resume-eligible Role at the same employer with its own
+    // eligible CareerFact — the fixture graph's only role besides
+    // $candidate['role'].
+    $secondRole = Role::factory()->create([
+        'employer_id' => $candidate['employer']->id,
+        'title' => 'Support Engineer',
+        'start_year' => 2018,
+        'start_month' => 1,
+        'end_year' => 2020,
+        'end_month' => 12,
+    ]);
+    CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-second-role-fact',
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $secondRole->id,
+        'visibility' => Visibility::Public,
+    ]);
+
+    // validSelectionContent() only represents $candidate['role'] —
+    // $secondRole is resume-eligible but silently missing entirely.
+    $content = validSelectionContent($candidate, $job);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
+        ->toThrow(InvalidResumeVariantResponseException::class);
+    expect(ResumeVariant::count())->toBe(0);
+});
+
+it('accepts a resume-eligible role represented by a single modest bullet group, never requiring heavy coverage', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+
+    $secondRole = Role::factory()->create([
+        'employer_id' => $candidate['employer']->id,
+        'title' => 'Support Engineer',
+        'start_year' => 2018,
+        'start_month' => 1,
+        'end_year' => 2020,
+        'end_month' => 12,
+    ]);
+    CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-second-role-fact',
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $secondRole->id,
+        'visibility' => Visibility::Public,
+    ]);
+
+    $content = validSelectionContent($candidate, $job);
+    $content['experience'][] = [
+        'role_id' => $secondRole->id,
+        'title_choice' => 'full',
+        'bullet_groups' => [[
+            'project_id' => -1,
+            'order' => 1,
+            'career_fact_keys' => ['fixture-second-role-fact'],
+            'job_analysis_finding_ids' => [],
+        ]],
+    ];
+
+    $wordingContent = validWordingContent($candidate);
+    $wordingContent['experience'][] = [
+        'role_id' => $secondRole->id,
+        'bullets' => [
+            ['bullet_group_index' => 0, 'text' => 'Provided support engineering for a legacy platform.'],
+        ],
+    ];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', $wordingContent));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->experienceRoles->pluck('role_id')->all())
+        ->toContain($candidate['role']->id, $secondRole->id);
+});
+
+it('deterministically includes every canonical Education record regardless of what Selection returned, ordered by end_year descending with sort_order as tiebreak', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+
+    $olderDegree = Education::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'degree' => 'Associate Degree',
+        'end_year' => 2000,
+        'sort_order' => 5,
+    ]);
+    $tiedYearDegreeA = Education::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'degree' => 'Minor A',
+        'end_year' => 2010,
+        'sort_order' => 1,
+    ]);
+    $tiedYearDegreeB = Education::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'degree' => 'Minor B',
+        'end_year' => 2010,
+        'sort_order' => 0,
+    ]);
+
+    // $candidate['education'] itself has no explicit end_year override
+    // in the fixture (randomized 1990-2020) — pin it above the others
+    // so ordering is unambiguous.
+    $candidate['education']->update(['end_year' => 2020, 'sort_order' => 0]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', validSelectionContent($candidate, $job)));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->educationSelections)->toHaveCount(4)
+        ->and($variant->educationSelections->sortBy('display_order')->pluck('education_id')->all())
+        ->toBe([
+            $candidate['education']->id,
+            $tiedYearDegreeB->id,
+            $tiedYearDegreeA->id,
+            $olderDegree->id,
+        ]);
 });
 
 it('never persists any years-of-experience computation anywhere in the generated tree', function () {

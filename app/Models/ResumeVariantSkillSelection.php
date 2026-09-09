@@ -12,10 +12,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * One canonical Skill selected for the Skills section — always the
- * real, canonical Skill.name/category, never generated text. Skills
- * are a selection-and-ordering problem, not a wording problem: no
- * qualified target-term positioning is permitted here (see
+ * One canonical Skill selected for the Skills section. `name`/
+ * `category` are frozen from the real, canonical Skill at generation
+ * time — never generated text, and never re-resolved from the live
+ * Skill on render, so a later rename/recategorization can't change
+ * what an already-generated ResumeVariant is understood to say. The
+ * `skill_id` FK (restrictOnDelete) remains for lineage/audit only.
+ * Skills are a selection-and-ordering problem, not a wording problem:
+ * no qualified target-term positioning is permitted here (see
  * docs/domain-model.md "ResumeVariant") — a skill either has real,
  * eligible CareerFact backing somewhere in the profile, or it isn't
  * listed.
@@ -23,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $resume_variant_id
  * @property int $skill_id
+ * @property string $name
+ * @property string $category
  * @property int $display_order
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -30,6 +36,8 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'resume_variant_id',
     'skill_id',
+    'name',
+    'category',
     'display_order',
 ])]
 class ResumeVariantSkillSelection extends Model

@@ -8,9 +8,11 @@ use App\Enums\ResumeClaimPosture;
 use App\Enums\ResumeQualifiedPhrase;
 use App\Enums\ResumeTermUsageLocation;
 use App\Models\CareerFact;
+use App\Models\Education;
 use App\Models\JobMatch;
 use App\Models\ResumeVariant;
 use App\Models\Role;
+use App\Models\Skill;
 use App\Support\JobMatch\JobPayloadBuilder;
 use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV1;
 use App\Support\ResumeVariant\Prompts\ResumeWordingPromptV1;
@@ -59,11 +61,21 @@ final class GenerateResumeVariant
         $targetTerminology = $this->targetTerminologyBuilder->build($jobMatch);
 
         $validFactKeys = array_column($candidatePayload['career_facts'], 'key');
-        $validEducationIds = array_column($candidatePayload['education'], 'id');
         $validSkillIds = array_column($candidatePayload['eligible_skills'], 'id');
         $validFindingIds = array_column($jobPayload['findings'], 'id');
         $validTargetTerms = array_column($targetTerminology, 'term');
         $directEvidenceExistsByTerm = array_combine($validTargetTerms, array_column($targetTerminology, 'direct_evidence_exists'));
+
+        // Every role with at least one resume-eligible CareerFact
+        // attributed to it directly or via a project — the set Selection
+        // must fully represent (assertRoleCompleteness()); relevance
+        // controls emphasis, never basic employment-history presence.
+        $resumeEligibleRoleIds = collect($candidatePayload['career_facts'])
+            ->pluck('attribution.role_id')
+            ->filter(fn (mixed $roleId) => $roleId !== null)
+            ->unique()
+            ->values()
+            ->all();
 
         $roles = Role::query()
             ->whereHas('employer', fn ($query) => $query->where('career_profile_id', $profile->id))
@@ -95,7 +107,6 @@ final class GenerateResumeVariant
             $validRoleIds,
             $validProjectIds,
             $validFactKeys,
-            $validEducationIds,
             $validSkillIds,
             $validFindingIds,
             $validTargetTerms,
@@ -112,12 +123,12 @@ final class GenerateResumeVariant
             $selectionResponse->structuredContent,
             $validRoleIds,
             $validFactKeys,
-            $validEducationIds,
             $validSkillIds,
             $roleIdByProjectId,
             $validFindingIds,
             $titleChoicesByRole,
             $directEvidenceExistsByTerm,
+            $resumeEligibleRoleIds,
         );
 
         $selectionDraft = $this->toSelectionDraft($validatedSelection, $titleChoicesByRole);
@@ -170,8 +181,24 @@ final class GenerateResumeVariant
 
             $rolesById = Role::query()
                 ->whereIn('id', collect($selectionDraft->experience)->pluck('roleId'))
+                ->with('employer')
                 ->get()
                 ->keyBy('id');
+
+            $skillsById = Skill::query()
+                ->whereIn('id', collect($selectionDraft->skills)->pluck('skillId'))
+                ->get()
+                ->keyBy('id');
+
+            // Education is deterministically included in full, never a
+            // Selection decision — every canonical record for this
+            // profile, most-recently-completed first with canonical
+            // sort_order as tiebreak. See ResumeSelectionDraft's docblock.
+            $educationRecords = Education::query()
+                ->where('career_profile_id', $profile->id)
+                ->orderByDesc('end_year')
+                ->orderBy('sort_order')
+                ->get();
 
             $summaryQualified = collect($selectionDraft->targetTermUsages)->first(
                 fn (TargetTermUsageDraft $usage) => $usage->location === ResumeTermUsageLocation::Summary
@@ -204,9 +231,34 @@ final class GenerateResumeVariant
 
             $bulletIdsByLocation = [];
 
-            foreach ($selectionDraft->experience as $role) {
+            // Chronology is always deterministic, never model-decided
+            // (docs/domain-model.md "ResumeVariant" -> "Titles,
+            // chronology, and attribution") — the role snapshot rows'
+            // own display_order is computed here, once, the same way
+            // ResumeVariantController historically re-derived it on
+            // every render.
+            $orderedExperience = collect($selectionDraft->experience)
+                ->sortByDesc(function (RoleSelectionDraft $role) use ($rolesById) {
+                    $roleModel = $rolesById->get($role->roleId);
+
+                    return sprintf('%04d-%02d', $roleModel->start_year, $roleModel->start_month ?? 1);
+                })
+                ->values();
+
+            foreach ($orderedExperience as $roleDisplayOrder => $role) {
                 $roleModel = $rolesById->get($role->roleId);
                 $wordingRole = collect($wordingDraft->experience)->first(fn (RoleWordingDraft $r) => $r->roleId === $role->roleId);
+
+                $experienceRole = $variant->experienceRoles()->create([
+                    'role_id' => $role->roleId,
+                    'employer_name' => $roleModel->employer->name,
+                    'display_title' => $role->displayTitle,
+                    'start_year' => $roleModel->start_year,
+                    'start_month' => $roleModel->start_month,
+                    'end_year' => $roleModel->end_year,
+                    'end_month' => $roleModel->end_month,
+                    'display_order' => $roleDisplayOrder,
+                ]);
 
                 foreach ($role->bulletGroups as $index => $group) {
                     $wordingBullet = $wordingRole === null ? null : collect($wordingRole->bullets)
@@ -230,11 +282,9 @@ final class GenerateResumeVariant
                         ? $baseText
                         : $this->appendQualifiedClause($baseText, $bulletQualified->relationshipPhraseKey, $bulletQualified->term);
 
-                    $bullet = $variant->experienceBullets()->create([
-                        'employer_id' => $roleModel->employer_id,
-                        'role_id' => $role->roleId,
+                    $bullet = $experienceRole->bullets()->create([
+                        'resume_variant_id' => $variant->id,
                         'project_id' => $group->projectId,
-                        'display_title' => $role->displayTitle,
                         'display_order' => $group->order,
                         'text' => $finalText,
                     ]);
@@ -252,11 +302,26 @@ final class GenerateResumeVariant
             }
 
             foreach ($selectionDraft->skills as $skill) {
-                $variant->skillSelections()->create(['skill_id' => $skill->skillId, 'display_order' => $skill->order]);
+                $skillModel = $skillsById->get($skill->skillId);
+
+                $variant->skillSelections()->create([
+                    'skill_id' => $skill->skillId,
+                    'name' => $skillModel->name,
+                    'category' => $skillModel->category->value,
+                    'display_order' => $skill->order,
+                ]);
             }
 
-            foreach ($selectionDraft->educationSelections as $education) {
-                $variant->educationSelections()->create(['education_id' => $education->educationId, 'display_order' => $education->order]);
+            foreach ($educationRecords as $displayOrder => $educationModel) {
+                $variant->educationSelections()->create([
+                    'education_id' => $educationModel->id,
+                    'institution' => $educationModel->institution,
+                    'degree' => $educationModel->degree,
+                    'field_of_study' => $educationModel->field_of_study,
+                    'start_year' => $educationModel->start_year,
+                    'end_year' => $educationModel->end_year,
+                    'display_order' => $displayOrder,
+                ]);
             }
 
             foreach ($selectionDraft->targetTermUsages as $usage) {
@@ -355,8 +420,6 @@ final class GenerateResumeVariant
         $summaryEvidence = $validated['summary_evidence'];
         /** @var array<int, array<string, mixed>> $skills */
         $skills = $validated['skills'];
-        /** @var array<int, array<string, mixed>> $educationSelection */
-        $educationSelection = $validated['education_selection'];
         /** @var array<int, array<string, mixed>> $experience */
         $experience = $validated['experience'];
         /** @var array<int, array<string, mixed>> $targetTermUsages */
@@ -365,7 +428,6 @@ final class GenerateResumeVariant
         return new ResumeSelectionDraft(
             summaryEvidenceFactKeys: $summaryEvidence,
             skills: array_map(fn (array $s) => new SkillSelectionDraft($s['skill_id'], $s['order']), $skills),
-            educationSelections: array_map(fn (array $e) => new EducationSelectionDraft($e['education_id'], $e['order']), $educationSelection),
             experience: array_map(fn (array $r) => new RoleSelectionDraft(
                 roleId: $r['role_id'],
                 // Trusted, not re-checked: ResumeSelectionResponseValidator
