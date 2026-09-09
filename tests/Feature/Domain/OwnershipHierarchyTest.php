@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\InvalidProjectOwnershipException;
 use App\Models\CareerProfile;
 use App\Models\Employer;
 use App\Models\Project;
@@ -56,6 +57,50 @@ it('lets a role have zero or many projects', function () {
 
     expect($roleWithNoProjects->projects)->toHaveCount(0)
         ->and($roleWithProjects->projects)->toHaveCount(2);
+});
+
+it('auto-derives a professional Project\'s career_profile_id from its role_id when omitted', function () {
+    $profile = CareerProfile::factory()->create();
+    $employer = Employer::factory()->for($profile)->create();
+    $role = Role::factory()->for($employer)->create();
+
+    $project = Project::factory()->for($role)->create();
+
+    expect($project->career_profile_id)->toBe($profile->id)
+        ->and($project->ownerCareerProfileId())->toBe($profile->id);
+});
+
+it('requires an independent Project (role_id null) to supply career_profile_id explicitly', function () {
+    expect(fn () => Project::factory()->create(['role_id' => null, 'career_profile_id' => null]))
+        ->toThrow(InvalidProjectOwnershipException::class);
+});
+
+it('lets an independent Project belong directly to a CareerProfile with no Role at all', function () {
+    $profile = CareerProfile::factory()->create();
+
+    $project = Project::factory()->create(['role_id' => null, 'career_profile_id' => $profile->id]);
+
+    expect($project->role_id)->toBeNull()
+        ->and($project->career_profile_id)->toBe($profile->id)
+        ->and($project->ownerCareerProfileId())->toBe($profile->id)
+        ->and($project->role)->toBeNull();
+});
+
+it('rejects a Project whose explicit career_profile_id does not match its role_id\'s real owning CareerProfile', function () {
+    $ownProfile = CareerProfile::factory()->create();
+    $otherProfile = CareerProfile::factory()->create();
+    $employer = Employer::factory()->for($ownProfile)->create();
+    $role = Role::factory()->for($employer)->create();
+
+    expect(fn () => Project::factory()->create(['role_id' => $role->id, 'career_profile_id' => $otherProfile->id]))
+        ->toThrow(InvalidProjectOwnershipException::class);
+});
+
+it('rejects a Project referencing a role_id that does not exist', function () {
+    $profile = CareerProfile::factory()->create();
+
+    expect(fn () => Project::factory()->create(['role_id' => 999999, 'career_profile_id' => $profile->id]))
+        ->toThrow(InvalidProjectOwnershipException::class);
 });
 
 it('requires a role start year but allows an open-ended end for a current role', function () {

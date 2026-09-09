@@ -116,6 +116,13 @@ final class MigrationScratchConnection
         ]);
     }
 
+    public static function seedProject(int $roleId, string $name, string $slug): int
+    {
+        return self::db()->table('projects')->insertGetId([
+            'role_id' => $roleId, 'name' => $name, 'slug' => $slug, 'sort_order' => 0,
+        ]);
+    }
+
     public static function seedSkill(int $profileId, string $name, string $slug, string $category): int
     {
         return self::db()->table('skills')->insertGetId([

@@ -238,6 +238,33 @@
             "description": "A paid-acquisition and conversion-rate-optimization engagement for Brute Strength Training, delivered as part of Liquid Gravity Engineering's contracted work through Tech Guys Who Get Marketing. Daniel contributed as part of the engagement team; Tech Guys Who Get Marketing was the contracting intermediary, not Daniel's employer, and Brute Strength Training was the end client.",
             "default_visibility": "restricted",
             "sort_order": 0
+        },
+        {
+            "key": "well-prompted",
+            "name": "Well Prompted",
+            "description": "Developers lose time re-deriving good prompts for the same recurring tasks (debugging, documentation, code review) from scratch every time. Built a structured prompt library with React, Node, and Prisma that keeps AI-assisted development consistent and reusable across a codebase instead of ad hoc.",
+            "default_visibility": "public",
+            "live_url": "https://wellprompted.danielsias.dev",
+            "repository_url": "https://github.com/DanSias/well-prompted",
+            "sort_order": 0
+        },
+        {
+            "key": "promptworks",
+            "name": "PromptWorks",
+            "description": "Writing a clear, well-structured AI prompt takes iteration most people don't have time for. Built an AI prompt-generation tool with React and Node that turns a rough goal into a reusable prompt: useful for technical documentation as much as general business writing.",
+            "default_visibility": "public",
+            "live_url": "https://promptworks.danielsias.dev",
+            "repository_url": "https://github.com/DanSias/prompt-works",
+            "sort_order": 1
+        },
+        {
+            "key": "well-applied",
+            "name": "Well Applied",
+            "description": "Job applications benefit from tailored, specific language, but writing that from scratch for every posting doesn't scale. Built an AI assistant that generates tailored prompts for applications and interview prep, extending the same structured-prompt approach into a non-developer use case.",
+            "default_visibility": "public",
+            "live_url": "https://wellapplied.danielsias.dev",
+            "repository_url": "https://github.com/DanSias/well-applied",
+            "sort_order": 2
         }
     ],
 
@@ -323,6 +350,12 @@
         {
             "key": "prisma",
             "name": "Prisma",
+            "category": "build_technology",
+            "description": null
+        },
+        {
+            "key": "supabase",
+            "name": "Supabase",
             "category": "build_technology",
             "description": null
         },
@@ -2538,6 +2571,60 @@
                 "guardrail": "This is a team/engagement-level outcome, never a personal individual result. Never write 'Daniel reduced CPL by 63%', 'reduced CPL by 63%', 'Daniel reduced cost per lead by 63%', 'reduced cost per lead by 63%', 'Daniel reduced CPL from $1.21 to $0.45', 'reduced CPL from $1.21 to $0.45', 'Daniel cut CPL by 63%', 'cut CPL by 63%', 'Daniel cut CPL from $1.21 to $0.45', 'cut CPL from $1.21 to $0.45', 'Daniel cut cost per lead by 63%', 'cut cost per lead by 63%', 'Daniel cut cost per lead from $1.21 to $0.45', or 'cut cost per lead from $1.21 to $0.45' as an unqualified sole-credit claim. Always frame as a contribution to a team/engagement outcome, for example: Contributed to a paid-acquisition and CRO engagement in which CPL fell from $1.21 to $0.45 (~63%)."
             },
             "skills": ["paid-acquisition", "conversion-rate-optimization"]
+        },
+        {
+            "key": "well-prompted-what-it-is",
+            "fact_type": "bullet",
+            "statement": "Developers lose time re-deriving good prompts for the same recurring tasks (debugging, documentation, code review) from scratch every time. Built a structured prompt library with React, Node, and Prisma that keeps AI-assisted development consistent and reusable across a codebase instead of ad hoc.",
+            "verification": "strongly_supported",
+            "visibility": "public",
+            "notes": "Independent/personal project — portfolio-only, no dedicated case-study page. See docs/canonical-data-proposal.md \"Independent projects\".",
+            "attributable": { "type": "project", "key": "well-prompted" },
+            "evidence": [
+                {
+                    "source": "portfolio",
+                    "path": "danielsias-dev/src/constants/projects.ts",
+                    "locator": "Well Prompted entry"
+                }
+            ],
+            "metric": null,
+            "skills": ["react", "node-js", "prisma", "supabase", "tailwind-css"]
+        },
+        {
+            "key": "promptworks-what-it-is",
+            "fact_type": "bullet",
+            "statement": "Writing a clear, well-structured AI prompt takes iteration most people don't have time for. Built an AI prompt-generation tool with React and Node that turns a rough goal into a reusable prompt: useful for technical documentation as much as general business writing.",
+            "verification": "strongly_supported",
+            "visibility": "public",
+            "notes": "Independent/personal project — portfolio-only, no dedicated case-study page. See docs/canonical-data-proposal.md \"Independent projects\".",
+            "attributable": { "type": "project", "key": "promptworks" },
+            "evidence": [
+                {
+                    "source": "portfolio",
+                    "path": "danielsias-dev/src/constants/projects.ts",
+                    "locator": "PromptWorks entry"
+                }
+            ],
+            "metric": null,
+            "skills": ["react", "node-js"]
+        },
+        {
+            "key": "well-applied-what-it-is",
+            "fact_type": "bullet",
+            "statement": "Job applications benefit from tailored, specific language, but writing that from scratch for every posting doesn't scale. Built an AI assistant that generates tailored prompts for applications and interview prep, extending the same structured-prompt approach into a non-developer use case.",
+            "verification": "strongly_supported",
+            "visibility": "public",
+            "notes": "Independent/personal project — portfolio-only, no dedicated case-study page. See docs/canonical-data-proposal.md \"Independent projects\".",
+            "attributable": { "type": "project", "key": "well-applied" },
+            "evidence": [
+                {
+                    "source": "portfolio",
+                    "path": "danielsias-dev/src/constants/projects.ts",
+                    "locator": "Well Applied entry"
+                }
+            ],
+            "metric": null,
+            "skills": ["react", "node-js"]
         }
     ]
 }

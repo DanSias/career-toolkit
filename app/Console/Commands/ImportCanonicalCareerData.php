@@ -112,12 +112,19 @@ class ImportCanonicalCareerData extends Command
 
         $profile = CareerProfile::updateOrCreate(
             ['user_id' => $user->id],
-            ['name' => $json['career_profile']['name']],
+            [
+                'name' => $json['career_profile']['name'],
+                'email' => $json['career_profile']['email'] ?? null,
+                'phone' => $json['career_profile']['phone'] ?? null,
+                'location' => $json['career_profile']['location'] ?? null,
+                'portfolio_url' => $json['career_profile']['portfolio_url'] ?? null,
+                'github_url' => $json['career_profile']['github_url'] ?? null,
+            ],
         );
 
         $employersByKey = $this->importEmployers($json['employers'], $profile);
         $rolesByKey = $this->importRoles($json['roles'], $employersByKey);
-        $projectsByKey = $this->importProjects($json['projects'], $rolesByKey);
+        $projectsByKey = $this->importProjects($json['projects'], $rolesByKey, $profile);
         $skillsByKey = $this->importSkills($json['skills'], $profile);
         $educationCount = $this->importEducations($json['educations'] ?? [], $profile);
         $this->syncProjectSkills($json['projects'], $projectsByKey, $skillsByKey);
@@ -244,25 +251,41 @@ class ImportCanonicalCareerData extends Command
     }
 
     /**
+     * A Project entry with a `role_key` is professional, owned by that
+     * Role; one with no `role_key` at all is independent, owned
+     * directly by `$profile` — see docs/domain-model.md "Project
+     * ownership". `career_profile_id` is always set explicitly to
+     * `$profile->id` here rather than left to Project's own auto-fill
+     * default, since the importer always knows the real owning profile
+     * up front.
+     *
      * @param  array<int, array<string, mixed>>  $projects
      * @param  array<string, Role>  $rolesByKey
      * @return array<string, Project>
      */
-    protected function importProjects(array $projects, array $rolesByKey): array
+    protected function importProjects(array $projects, array $rolesByKey, CareerProfile $profile): array
     {
         $byKey = [];
 
         foreach ($projects as $data) {
-            $role = $rolesByKey[$data['role_key']]
-                ?? throw new CanonicalDataImportException("Project [{$data['key']}] references unknown role_key [{$data['role_key']}].");
+            $roleId = null;
+
+            if (array_key_exists('role_key', $data) && $data['role_key'] !== null) {
+                $role = $rolesByKey[$data['role_key']]
+                    ?? throw new CanonicalDataImportException("Project [{$data['key']}] references unknown role_key [{$data['role_key']}].");
+                $roleId = $role->id;
+            }
 
             $byKey[$data['key']] = Project::updateOrCreate(
                 ['slug' => $data['key']],
                 [
-                    'role_id' => $role->id,
+                    'career_profile_id' => $profile->id,
+                    'role_id' => $roleId,
                     'name' => $data['name'],
                     'description' => $data['description'] ?? null,
                     'default_visibility' => $data['default_visibility'] ?? null,
+                    'live_url' => $data['live_url'] ?? null,
+                    'repository_url' => $data['repository_url'] ?? null,
                     'sort_order' => $data['sort_order'] ?? 0,
                 ],
             );

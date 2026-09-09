@@ -65,10 +65,14 @@ it('keeps the eleven technique/process Restricted facts eligible', function () {
     }
 });
 
-it('matches the exact expected visibility distribution: 51 public / 16 restricted / 7 private', function () {
+it('matches the exact expected visibility distribution: 54 public / 16 restricted / 7 private', function () {
+    // 51/16/7 was the count before the 2026-09-09 independent-projects
+    // pass added 3 new public "what it is" facts (Well Prompted,
+    // PromptWorks, Well Applied) — see docs/canonical-data-proposal.md
+    // "Independent projects". Restricted/private are unchanged.
     $counts = CareerFact::query()->selectRaw('visibility, count(*) as c')->groupBy('visibility')->pluck('c', 'visibility');
 
-    expect($counts['public'])->toBe(51)
+    expect($counts['public'])->toBe(54)
         ->and($counts['restricted'])->toBe(16)
         ->and($counts['private'])->toBe(7);
 });

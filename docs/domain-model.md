@@ -66,14 +66,18 @@ application layer instead. See "Attribution integrity" below.
 
 **Invariant:** a `CareerFact`'s `attributable` target must belong to the
 _same_ `CareerProfile` as the fact itself. Ownership of an attribution
-target is resolved by walking existing relationships — never by a stored
-`career_profile_id` on `Role`/`Project`:
+target is resolved per-model: `Employer`/`Role` walk existing
+relationships (never a stored `career_profile_id` of their own);
+`Project` stores `career_profile_id` directly (required on every
+Project, professional or independent — see "Project ownership"
+below) since an independent Project has no `Role` to walk through at
+all:
 
 ```text
 CareerProfile → itself
 Employer      → employer.career_profile_id
 Role          → role.employer.career_profile_id
-Project       → project.role.employer.career_profile_id
+Project       → project.career_profile_id (stored directly — see "Project ownership")
 ```
 
 Each of the four attributable models implements
@@ -579,6 +583,72 @@ them drift apart, so the UI reads `derivedSkills()` exclusively.
 
 No caching or duplication was added: `derivedSkills()` is computed at
 read time from data that already exists, not persisted anywhere new.
+
+## Project ownership
+
+A `Project` is either **professional** (owned by a `Role`) or
+**independent/personal** (owned directly by a `CareerProfile`, with no
+`Role` at all — e.g. a self-directed side project never done through an
+employer). Both kinds are the same `Project` model; there is no separate
+`IndependentProject` class and no XOR pair of ownership columns.
+
+`projects.career_profile_id` is **required on every Project**;
+`projects.role_id` is **nullable**:
+
+- `role_id !== null` — a professional Project owned by that Role. Its
+  `career_profile_id` must equal that Role's own owning CareerProfile
+  (`role.employer.career_profile_id`) — checked deterministically on
+  every save, never merely assumed consistent.
+- `role_id === null` — an independent Project, owned directly by
+  `career_profile_id`.
+
+This design was chosen over two alternatives considered and rejected:
+an explicit project "context/type" enum (redundant — `role_id === null`
+already unambiguously means "independent" for this two-kind model, so a
+separate type column would just duplicate that signal) and a wholly
+separate `IndependentProject` model (would duplicate CareerFact's morph
+map, `ResumeEligibility`'s Project-level visibility backstop, and the
+resume-payload builders' attribution-resolution logic across two
+parallel models for one relatively small ownership difference).
+
+**Enforcement** mirrors `CareerFact::enforceAttributionIntegrity()`
+exactly: a `#[Boot]`-attributed `saving` listener on `Project`
+(`enforceOwnershipIntegrity()`) runs on every create and update. When
+`role_id` is set, it resolves that Role's real owning CareerProfile and
+throws `App\Exceptions\InvalidProjectOwnershipException` on any
+mismatch or a nonexistent Role. When `role_id` is set but
+`career_profile_id` is omitted, it is auto-filled from the Role's
+owning CareerProfile — a convenience that keeps every existing
+`Project::factory()->for($role)`-style call site and the canonical
+importer's role-attached Projects working unchanged, without weakening
+the check itself (an explicitly-supplied, contradicting
+`career_profile_id` is still rejected). An independent Project
+(`role_id` null) is never auto-filled — the caller must supply
+`career_profile_id` explicitly, since there is no Role to derive it
+from.
+
+`Project::ownerCareerProfileId()` (the `HasCareerProfileOwnership`
+implementation `CareerFact`'s own attribution check compares against)
+simply returns `$this->career_profile_id` directly now, rather than
+traversing `role.employer` — the same column this section's own
+invariant already keeps correct, so a CareerFact attributed to either
+kind of Project resolves its owning profile identically.
+
+**Migration safety:** every pre-existing Project was created before
+`career_profile_id` existed and has only `role_id`. The
+2026_09_09_000006 migration backfills it via the same
+nullable-column-first, backfill, verify, then-finalize pattern already
+established for the ResumeVariant snapshot migrations (see "Safe
+populated-table migration pattern" precedent in
+`App\Support\ResumeVariant\ExperienceRoleSnapshotBackfiller`): add
+`career_profile_id` nullable, backfill every row from
+`role_id -> roles.employer_id -> employers.career_profile_id`
+(`App\Support\CareerData\ProjectCareerProfileBackfiller`), verify zero
+unresolved rows, abort without finalizing on any failure, then make
+`career_profile_id` required and `role_id` nullable. See
+`tests/Feature/Domain/ProjectOwnershipMigrationTest.php`, which runs
+the real migration file against seeded old-schema data on an isolated
+scratch connection — never a simulation of it.
 
 ## JobPosting
 

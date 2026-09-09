@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Contracts\HasCareerProfileOwnership;
 use App\Enums\Visibility;
+use App\Exceptions\InvalidProjectOwnershipException;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Boot;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -16,7 +17,17 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
- * A named, evidenced body of work within a Role. Zero or many per Role.
+ * A named, evidenced body of work — either professional (owned by a
+ * Role) or independent/personal (owned directly by a CareerProfile,
+ * with no Role at all).
+ *
+ * `career_profile_id` is required on every Project; `role_id` is
+ * nullable. `role_id !== null` means a professional project owned by
+ * that Role (its `career_profile_id` must match that Role's own
+ * owning CareerProfile — enforced below); `role_id === null` means an
+ * independent project belonging directly to the CareerProfile. One
+ * uniform ownership column for both kinds, rather than an
+ * either/or (XOR) pair — see docs/domain-model.md "Project ownership".
  *
  * Deliberately thin: ownership breadth, collaboration context, metrics,
  * and architecture detail are NOT columns here — they're CareerFacts
@@ -25,16 +36,19 @@ use Illuminate\Support\Collection;
  * docs/domain-model.md.
  *
  * @property int $id
- * @property int $role_id
+ * @property int|null $career_profile_id Required by the database (NOT NULL) once saved — nullable here only because a professional Project's caller may omit it and rely on enforceOwnershipIntegrity() to auto-fill it from role_id before the row is actually written.
+ * @property int|null $role_id
  * @property string $name
  * @property string $slug
  * @property string|null $description
  * @property Visibility|null $default_visibility
+ * @property string|null $live_url
+ * @property string|null $repository_url
  * @property int $sort_order
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['role_id', 'name', 'slug', 'description', 'default_visibility', 'sort_order'])]
+#[Fillable(['career_profile_id', 'role_id', 'name', 'slug', 'description', 'default_visibility', 'live_url', 'repository_url', 'sort_order'])]
 class Project extends Model implements HasCareerProfileOwnership
 {
     /** @use HasFactory<ProjectFactory> */
@@ -48,6 +62,16 @@ class Project extends Model implements HasCareerProfileOwnership
     }
 
     /**
+     * @return BelongsTo<CareerProfile, $this>
+     */
+    public function careerProfile(): BelongsTo
+    {
+        return $this->belongsTo(CareerProfile::class);
+    }
+
+    /**
+     * Null for an independent project — see class docblock.
+     *
      * @return BelongsTo<Role, $this>
      */
     public function role(): BelongsTo
@@ -100,13 +124,65 @@ class Project extends Model implements HasCareerProfileOwnership
             ->values();
     }
 
-    /**
-     * Traverses Role -> Employer rather than storing its own
-     * `career_profile_id` — see docs/domain-model.md.
-     */
     public function ownerCareerProfileId(): ?int
     {
-        return $this->role?->employer?->career_profile_id;
+        return $this->career_profile_id;
+    }
+
+    /**
+     * Enforces the one ownership invariant every writer must satisfy:
+     * when `role_id` is set, that Role must exist and its own owning
+     * CareerProfile must match this Project's `career_profile_id` —
+     * deterministically checked, never assumed. Mirrors
+     * `CareerFact::enforceAttributionIntegrity()`'s `saving`-listener
+     * convention exactly.
+     *
+     * `career_profile_id` is auto-filled from the Role's owning
+     * CareerProfile when a professional Project's caller supplies
+     * `role_id` but omits it — a convenience that keeps every existing
+     * `Project::factory()->for($role)`-style call site and the
+     * canonical importer's role-attached projects working unchanged.
+     * It is never auto-filled for an independent Project (`role_id`
+     * null): the caller must supply `career_profile_id` explicitly,
+     * since there is no Role to derive it from.
+     */
+    #[Boot]
+    protected static function enforceOwnershipIntegrity(): void
+    {
+        static::saving(function (self $project) {
+            if ($project->role_id === null) {
+                if ($project->career_profile_id === null) {
+                    throw new InvalidProjectOwnershipException(
+                        'An independent Project (role_id null) must have an explicit career_profile_id.'
+                    );
+                }
+
+                return;
+            }
+
+            $role = Role::query()->with('employer')->find($project->role_id);
+
+            if ($role === null) {
+                throw new InvalidProjectOwnershipException(
+                    "Project references role_id [{$project->role_id}], which does not exist."
+                );
+            }
+
+            $roleOwnerId = $role->employer?->career_profile_id;
+
+            if ($project->career_profile_id === null) {
+                $project->career_profile_id = $roleOwnerId;
+
+                return;
+            }
+
+            if ($roleOwnerId !== $project->career_profile_id) {
+                throw new InvalidProjectOwnershipException(
+                    "Project's role_id [{$project->role_id}] belongs to CareerProfile #{$roleOwnerId}, ".
+                    "not CareerProfile #{$project->career_profile_id}."
+                );
+            }
+        });
     }
 
     /**
