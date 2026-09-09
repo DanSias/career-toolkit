@@ -251,3 +251,109 @@ it('makes no outbound HTTP/provider calls while rendering the preview', function
     $response->assertOk();
     Http::assertNothingSent();
 });
+
+// --- Print pagination CSS rules --------------------------------------------
+//
+// Deterministic assertions on the *rules themselves* (text-matched
+// against the rendered <style> block), never on rendered pixel
+// positions or page counts — those are verified separately against
+// the real Chromium print pipeline, not in this suite. See
+// docs/domain-model.md "ResumeVariant" -> "Selected Projects" and the
+// print.blade.php docblock for the pagination model these encode.
+
+/**
+ * Extracts exactly one CSS rule's body by selector — `\.role\s*\{`
+ * requires "role" to be followed immediately by `{` (optional
+ * whitespace between), so this can't accidentally match a longer
+ * selector like `.role-header` or `.role-title`. CSS comments are
+ * stripped first so an explanatory `/* ... *\/` comment (e.g. one
+ * documenting which property is deliberately absent) can never be
+ * mistaken for the property itself.
+ */
+function cssRuleBody(string $css, string $selector): ?string
+{
+    $withoutComments = preg_replace('#/\*.*?\*/#s', '', $css) ?? $css;
+    $pattern = '/'.preg_quote($selector, '/').'\s*\{([^}]*)\}/';
+
+    return preg_match($pattern, $withoutComments, $matches) === 1 ? $matches[1] : null;
+}
+
+it('no longer treats a whole Role as one unbreakable print unit', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $css = $response->getContent();
+
+    $roleRule = cssRuleBody($css, '.role');
+
+    expect($roleRule)->not->toBeNull()
+        ->and($roleRule)->not->toContain('break-inside')
+        ->and($roleRule)->not->toContain('page-break-inside');
+});
+
+it('keeps a Role heading glued to whatever follows it (its first bullet), and keeps the heading itself unsplit', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $css = $response->getContent();
+
+    $headerRule = cssRuleBody($css, '.role-header');
+
+    expect($headerRule)->not->toBeNull()
+        ->and($headerRule)->toContain('break-after: avoid')
+        ->and($headerRule)->toContain('page-break-after: avoid')
+        ->and($headerRule)->toContain('break-inside: avoid');
+});
+
+it('treats every individual bullet (Experience and Selected Project) as an indivisible print unit', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $css = $response->getContent();
+
+    $bulletRule = cssRuleBody($css, 'ul.bullets li');
+
+    expect($bulletRule)->not->toBeNull()
+        ->and($bulletRule)->toContain('break-inside: avoid')
+        ->and($bulletRule)->toContain('page-break-inside: avoid');
+});
+
+it('never lets any section heading be stranded alone at the bottom of a page — a generic rule, not per-section', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $css = $response->getContent();
+
+    $h2Rule = cssRuleBody($css, 'h2');
+
+    expect($h2Rule)->not->toBeNull()
+        ->and($h2Rule)->toContain('break-after: avoid')
+        ->and($h2Rule)->toContain('page-break-after: avoid');
+});
+
+it('keeps small semantic units (Summary paragraph, a Skills category line, an Education entry, a Selected Project entry) print-indivisible', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $css = $response->getContent();
+
+    foreach (['.summary-text', '.skill-group', '.education-entry', '.selected-project'] as $selector) {
+        $rule = cssRuleBody($css, $selector);
+
+        expect($rule)->not->toBeNull()
+            ->and($rule)->toContain('break-inside: avoid');
+    }
+});
+
+it('never groups all Education entries into one unbreakable block — only each individual entry', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $css = $response->getContent();
+
+    // No selector targets the whole .education section as an atomic
+    // print unit — only .education-entry (already asserted above).
+    $educationSectionRule = cssRuleBody($css, '.education');
+
+    expect($educationSectionRule)->toBeNull();
+});

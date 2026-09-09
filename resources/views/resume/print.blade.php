@@ -9,7 +9,20 @@
     field order (Summary -> Experience -> Skills -> Selected Projects
     -> Education); nothing is regrouped or reordered in this template.
     The Selected Projects section is omitted entirely when empty — no
-    page-fitting or hardcoded page break exists anywhere in this file.
+    page-fitting or hardcoded/employer-specific page break exists
+    anywhere in this file.
+
+    Pagination model: content is allowed to flow across pages freely
+    except where a *small* semantic unit would otherwise be visually
+    broken — one bullet, one Education entry, one Selected Project
+    entry, the Summary paragraph, a Skills category line, and (via a
+    heading-glued-to-next-content rule) every section/Role heading
+    together with whatever immediately follows it. A Role itself is
+    deliberately NOT one atomic unit: a Role with several bullets may
+    span a page boundary between bullets, with its heading always
+    staying with at least its first bullet. See the `break-*`/
+    `page-break-*` rules below for exactly where each invariant lives;
+    none of them reference a specific employer, Role, or page number.
 
     ATS v1 rendering contract: US Letter, single-column, ordinary
     top-to-bottom DOM order (never CSS `order`, floats, or absolute
@@ -101,6 +114,11 @@
             color: #1a1a1a;
             border-bottom: 1pt solid #cccccc;
             padding-bottom: 3pt;
+            /* A section heading must never be the last thing on a page —
+               applies uniformly to every section's own heading, never a
+               per-section override. */
+            page-break-after: avoid;
+            break-after: avoid;
         }
 
         section:first-of-type h2 {
@@ -109,12 +127,21 @@
 
         .summary-text {
             margin: 0;
+            /* A short paragraph should never be split mid-sentence across
+               a page boundary — the same "protect small semantic units"
+               principle applied everywhere else in this file. */
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
 
         .role {
             margin-bottom: 0.2in;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            /* Deliberately NOT page-break-inside/break-inside: avoid here
+               — a Role with several bullets is explicitly allowed to span
+               pages (see .role-header and ul.bullets li below for the
+               actual invariants: the heading stays with its first bullet,
+               and every individual bullet stays whole; only the "treat
+               the whole Role as one atomic block" behavior is removed). */
         }
 
         .role:last-child {
@@ -123,6 +150,14 @@
 
         .role-header {
             margin: 0 0 0.06in;
+            /* Keeps the heading glued to whatever follows (the bullet
+               list); combined with ul.bullets li's own break-inside:avoid
+               below, this transitively keeps the heading with its first
+               bullet without needing a role-specific selector. */
+            page-break-after: avoid;
+            break-after: avoid;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
 
         .role-title {
@@ -144,6 +179,12 @@
 
         ul.bullets li {
             margin-bottom: 0.05in;
+            /* Each bullet is an indivisible unit — never split mid-bullet
+               across a page. Applies uniformly to Experience bullets and
+               Selected Project bullets (both share this class); a Role
+               itself may still span pages between bullets. */
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
 
         ul.bullets li:last-child {
@@ -152,6 +193,8 @@
 
         .skill-group {
             margin-bottom: 0.08in;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
 
         .skill-group:last-child {
@@ -164,6 +207,9 @@
 
         .selected-project {
             margin-bottom: 0.16in;
+            /* Unlike .role, a selected-project entry is always small and
+               intentionally compact (name/technology line/one bullet/
+               links) — kept fully atomic, never split across pages. */
             page-break-inside: avoid;
             break-inside: avoid;
         }
@@ -200,6 +246,12 @@
 
         .education-entry {
             margin-bottom: 0.12in;
+            /* Each entry stays whole, but entries are never grouped
+               together as a block — a later entry may start a new page
+               on its own while an earlier one stays on the previous
+               page. The Education heading itself is protected from being
+               stranded without its first entry by the generic h2 rule
+               above, not by anything section-specific here. */
             page-break-inside: avoid;
             break-inside: avoid;
         }
