@@ -51,9 +51,10 @@
     beneath the centered name/contact header — while the Summary
     section/DTO field itself is unchanged. Role and Education entries
     use a two-level header (primary line, then a secondary metadata
-    line); Skills groups put their label and skill list on separate
-    lines. None of this introduces tables, grid, columns, icons, or
-    absolute positioning.
+    line); each Skills group is one compact "Label: skill · skill"
+    line — the label stays visually distinguishable via font-weight
+    only, never consuming its own row. None of this introduces tables,
+    grid, columns, icons, or absolute positioning.
 --}}
 <!DOCTYPE html>
 <html lang="en">
@@ -282,7 +283,10 @@
         }
 
         .skill-group {
-            margin-bottom: 0.05in;
+            margin: 0 0 0.06in;
+            /* Compact, single-line presentation: "Label: skill · skill"
+               — the label stays visually distinguishable via font-weight
+               alone, never consuming its own vertical row. */
             page-break-inside: avoid;
             break-inside: avoid;
         }
@@ -292,18 +296,7 @@
         }
 
         .skill-group-label {
-            margin: 0 0 0.01in;
-            font-size: 9.5pt;
             font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            line-height: 1.25;
-            color: #1a1a1a;
-        }
-
-        .skill-group-items {
-            margin: 0;
-            line-height: 1.3;
         }
 
         .selected-project {
@@ -430,10 +423,10 @@
         <section class="skills">
             <h2>Technical Skills</h2>
             @foreach ($document->skills as $group)
-                <div class="skill-group">
-                    <p class="skill-group-label">{{ $group->label }}</p>
-                    <p class="skill-group-items">{{ implode(' · ', $group->skills) }}</p>
-                </div>
+                <p class="skill-group">
+                    <span class="skill-group-label">{{ $group->label }}:</span>
+                    {{ implode(' · ', $group->skills) }}
+                </p>
             @endforeach
         </section>
 

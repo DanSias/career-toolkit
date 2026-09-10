@@ -331,9 +331,9 @@ it('assembles a complete, real ResumeDocument from the Pearly fixture', function
         ->and($document->skills[0]->skills)->toBe(['TypeScript', 'Node.js', 'PostgreSQL', 'MySQL', 'React', 'Express.js'])
         ->and($document->skills[1]->label)->toBe('Platforms & Tools')
         ->and($document->skills[1]->skills)->toBe(['BigQuery', 'Google Cloud Functions', 'Salesforce', 'Jira', 'GitLab'])
-        ->and($document->skills[2]->label)->toBe('Capabilities')
+        ->and($document->skills[2]->label)->toBe('Engineering')
         ->and($document->skills[2]->skills)->toBe(['API integration & design', 'Data pipelines', 'High-risk data remediation engineering', 'Security-conscious engineering', 'Analytics systems'])
-        ->and($document->skills[3]->label)->toBe('Practices')
+        ->and($document->skills[3]->label)->toBe('Workflow')
         ->and($document->skills[3]->skills)->toBe(['CI/CD'])
         // This fixture reconstructs a real generation from before
         // Selected Projects existed (schema_version 1.1) — correctly

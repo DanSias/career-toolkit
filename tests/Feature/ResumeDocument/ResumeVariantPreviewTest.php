@@ -375,18 +375,16 @@ it('renders the Education degree on its own primary line, and institution/dates 
 
 // --- Skills DOM/text ordering ------------------------------------------------
 
-it('renders each Skills group label on its own line, immediately above a line of its skills', function () {
+it('renders each Skills group as one compact line — a bold inline label followed by its skills, not on its own row', function () {
     [$candidate, $variant] = previewCandidateVariant();
 
     $response = $this->get(route('resume-variants.preview', $variant));
     $html = $response->getContent();
 
-    expect($html)->toContain('<p class="skill-group-items">'.$candidate['awsSkill']->name.'</p>');
-
-    // The label line and items line for the same group appear back to
-    // back — no intervening markup — proving the two-line structure
-    // rather than the old one-line "Label: skills" paragraph.
-    expect($html)->toMatch('/<p class="skill-group-label">[^<]+<\/p>\s*<p class="skill-group-items">'.preg_quote($candidate['awsSkill']->name, '/').'<\/p>/');
+    // The label is an inline <span> inside the same <p> as the skills
+    // that follow it — proving the compact one-line structure, not a
+    // separate label row.
+    expect($html)->toMatch('/<p class="skill-group">\s*<span class="skill-group-label">[^<]+:<\/span>\s*'.preg_quote($candidate['awsSkill']->name, '/').'\s*<\/p>/');
 });
 
 it('joins multiple skills within a group with a middle dot, not a comma', function () {

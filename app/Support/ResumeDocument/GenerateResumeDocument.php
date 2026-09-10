@@ -28,14 +28,19 @@ final class GenerateResumeDocument
     /**
      * Fixed v1 presentation labels and group display order — a category
      * with zero selected skills is simply skipped, never rendered empty.
+     * These are rendering labels only: SkillCategory's own enum cases
+     * (BuildTechnology/PlatformIntegration/Capability/Practice) are the
+     * real domain concept and are never renamed — "Engineering" and
+     * "Workflow" below are just what Capability/Practice are called on
+     * the printed resume.
      *
      * @var array<string, string>
      */
     private const CATEGORY_LABELS = [
         SkillCategory::BuildTechnology->value => 'Technologies',
         SkillCategory::PlatformIntegration->value => 'Platforms & Tools',
-        SkillCategory::Capability->value => 'Capabilities',
-        SkillCategory::Practice->value => 'Practices',
+        SkillCategory::Capability->value => 'Engineering',
+        SkillCategory::Practice->value => 'Workflow',
     ];
 
     public function generate(ResumeVariant $variant): ResumeDocument
