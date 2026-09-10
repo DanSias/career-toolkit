@@ -10,6 +10,11 @@ use App\Support\ResumeVariant\Prompts\ResumeWordingPromptV1;
  * bullet-length/focus, verb-variation, and Summary-positioning
  * guidance without touching any existing truthfulness/guardrail rule.
  *
+ * v1.3 narrows three behaviors observed across multiple live Pearly
+ * generations under v1.2 — see the "checklist synthesis, stronger verb
+ * variation, Summary ownership scope" section below for what changed
+ * and why.
+ *
  * Assertions are made against whitespace-normalized text (the raw
  * heredoc wraps mid-sentence) so they stay robust to rewording that
  * doesn't change the wrap points. Mirrors
@@ -21,7 +26,7 @@ function normalizedResumeWordingSystemPrompt(): string
 }
 
 it('bumps the prompt version after this wording-density update', function () {
-    expect((new ResumeWordingPromptV1)->version())->toBe('resume-wording-v1.2');
+    expect((new ResumeWordingPromptV1)->version())->toBe('resume-wording-v1.3');
 });
 
 it('does not change the schema version — no schema field changed, only prompt guidance', function () {
@@ -50,17 +55,64 @@ it('states concise does not mean generic', function () {
     expect(normalizedResumeWordingSystemPrompt())->toContain('Concise does not mean generic');
 });
 
+// --- v1.3: checklist synthesis, stronger verb variation, Summary ownership scope ---
+//
+// Fixes three behaviors observed across multiple live Pearly
+// generations under v1.2: (1) bullets that enumerate every stage/
+// safeguard of one system as a checklist rather than synthesizing the
+// strongest details (e.g. the RocketGate remediation bullet's "safely
+// planned, executed, verified, recovered from, and audited"); (2) two
+// consecutive same-role bullets both opening with "Led" despite the
+// existing verb-variation guidance; (3) the Summary generalizing a
+// project-scoped "independently implemented" fact into a career-wide
+// "independently delivers production systems" claim.
+
+it('instructs synthesizing stage/safeguard/mechanics facts into one coherent accomplishment rather than listing every step', function () {
+    $systemPrompt = normalizedResumeWordingSystemPrompt();
+
+    expect($systemPrompt)
+        ->toContain('When several cited facts describe stages, safeguards, or mechanics of one system')
+        ->toContain('synthesize the most differentiating details into a coherent accomplishment rather than listing every supported step')
+        ->toContain('Prefer the few details that best establish technical difficulty, safety, scale, or outcome');
+});
+
+it('requires checklist synthesis to preserve guardrail framing and metric scope rather than dropping it', function () {
+    $systemPrompt = normalizedResumeWordingSystemPrompt();
+
+    expect($systemPrompt)
+        ->toContain('it must never cause a guardrail-bearing detail or a Metric\'s own required scope/qualifier to disappear')
+        ->toContain('it must still carry exactly the framing its guardrail and scope_note require');
+});
+
+it('tells the Summary to prefer direct positioning over broad self-sufficiency claims, without banning supported project-level independence wording', function () {
+    $systemPrompt = normalizedResumeWordingSystemPrompt();
+
+    expect($systemPrompt)
+        ->toContain('Prefer direct candidate-positioning language over broad self-sufficiency claims')
+        ->toContain('Do not generalize project-specific independent ownership into a career-wide statement such as "independently delivers production systems" unless the selected evidence supports independence at that broader scope')
+        ->toContain('This does not prohibit supported project-level wording such as "independently designed/implemented" where the selected CareerFacts explicitly authorize it');
+});
+
 it('applies the same length/focus guidance to a Selected Project bullet', function () {
     expect(normalizedResumeWordingSystemPrompt())
         ->toContain("This same length/focus guidance applies to a Selected Project's one bullet");
 });
 
-it('explicitly prevents repetitive same-verb bullet openings within a Role', function () {
+it('explicitly prevents repetitive same-verb bullet openings within a role', function () {
     $systemPrompt = normalizedResumeWordingSystemPrompt();
 
     expect($systemPrompt)
-        ->toContain('Do not start consecutive bullets with the same verb')
-        ->toContain("do not start a large majority of one Role's bullets with the same verb");
+        ->toContain('do not begin consecutive bullets with the same verb when a truthful, natural alternative is available')
+        ->toContain("do not start a large majority of one role's bullets with the same verb");
+});
+
+it('forbids mechanical synonym rotation while still requiring truthful, natural variation', function () {
+    $systemPrompt = normalizedResumeWordingSystemPrompt();
+
+    expect($systemPrompt)
+        ->toContain('Do not mechanically rotate synonyms merely to satisfy this preference')
+        ->toContain('only vary when the actual work supports the different verb you choose')
+        ->toContain('never force a variation so unnatural that it misdescribes the work');
 });
 
 it('offers example verbs without mandating mechanical rotation, and defers to ownership guardrails', function () {

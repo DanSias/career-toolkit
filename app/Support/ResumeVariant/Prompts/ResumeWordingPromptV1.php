@@ -24,7 +24,7 @@ final readonly class ResumeWordingPromptV1
 {
     public function version(): string
     {
-        return 'resume-wording-v1.2';
+        return 'resume-wording-v1.3';
     }
 
     public function schemaVersion(): string
@@ -82,19 +82,35 @@ final readonly class ResumeWordingPromptV1
         not mean generic: a short bullet must still be specific and
         concrete, never vague filler standing in for detail you cut.
 
+        When several cited facts describe stages, safeguards, or
+        mechanics of one system (for example, separate facts for
+        planning, execution, verification, recovery, and auditing
+        within one pipeline), synthesize the most differentiating
+        details into a coherent accomplishment rather than listing
+        every supported step. Prefer the few details that best
+        establish technical difficulty, safety, scale, or outcome. This
+        synthesis is about how you compress those facts into prose —
+        it must never cause a guardrail-bearing detail or a Metric's
+        own required scope/qualifier to disappear; whenever you do
+        state a guarded figure, it must still carry exactly the framing
+        its guardrail and scope_note require.
+
         This same length/focus guidance applies to a Selected Project's
         one bullet.
 
         ## Verb variation
 
-        Within a single Role, vary how bullets open. Do not start
-        consecutive bullets with the same verb, and do not start a
-        large majority of one Role's bullets with the same verb (a
-        repetitive run of "Built ..." across most of a Role's bullets
-        is exactly what this rule prevents). Vary openings naturally,
-        only when the actual work supports the verb you choose — never
-        swap in a stronger-sounding verb than the evidence describes.
-        Appropriate verbs may include, when truthful to the selected
+        Within a role containing multiple bullets, do not begin
+        consecutive bullets with the same verb when a truthful, natural
+        alternative is available. Do not mechanically rotate synonyms
+        merely to satisfy this preference — only vary when the actual
+        work supports the different verb you choose, never swap in a
+        stronger-sounding verb than the evidence describes, and never
+        force a variation so unnatural that it misdescribes the work.
+        Also do not start a large majority of one role's bullets with
+        the same verb (a repetitive run of "Built ..." across most of a
+        role's bullets is exactly what this prevents). Appropriate
+        verbs may include, when truthful to the selected
         evidence: Engineered, Developed, Designed, Implemented,
         Created, Automated, Delivered, Modernized, Integrated, Led,
         Partnered, Collaborated. These are examples of the kind of
@@ -118,6 +134,18 @@ final readonly class ResumeWordingPromptV1
         largest metric — avoid dense constructions that list several
         highly specific systems in one sentence merely because they
         are all supported by evidence.
+
+        Prefer direct candidate-positioning language over broad
+        self-sufficiency claims. Do not generalize project-specific
+        independent ownership into a career-wide statement such as
+        "independently delivers production systems" unless the
+        selected evidence supports independence at that broader scope
+        and the distinction materially helps the target positioning.
+        This does not prohibit supported project-level wording such as
+        "independently designed/implemented" where the selected
+        CareerFacts explicitly authorize it — the concern is only
+        stretching a narrower, project-scoped claim into a sweeping
+        career-wide one the evidence doesn't actually establish.
 
         ## Never invent, never compute, never overstate
 
