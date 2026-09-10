@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\DB;
 function validImportDataset(): array
 {
     return [
-        'career_profile' => ['key' => 'test-profile', 'name' => 'Test Person'],
+        'career_profile' => ['key' => 'test-profile', 'name' => 'Test Person', 'email' => 'test-person@example.com', 'phone' => '(407) 272-1720'],
         'employers' => [
             ['key' => 'acme', 'name' => 'Acme Corp', 'short_name' => null, 'description' => null],
         ],
@@ -173,6 +173,37 @@ it('does not duplicate any record on a second import', function () {
         ->and(Evidence::count())->toBe(2)
         ->and(Metric::count())->toBe(1)
         ->and(DB::table('career_fact_skill')->count())->toBe(2);
+});
+
+it('imports the canonical phone number onto CareerProfile using the same normalized human-readable string convention as other contact fields', function () {
+    $path = writeImportFixture(validImportDataset());
+
+    Artisan::call('career:import', ['path' => $path]);
+
+    $profile = CareerProfile::where('email', 'test-person@example.com')->firstOrFail();
+    expect($profile->phone)->toBe('(407) 272-1720');
+});
+
+it('does not duplicate or alter the CareerProfile phone number on a second import', function () {
+    $path = writeImportFixture(validImportDataset());
+
+    Artisan::call('career:import', ['path' => $path]);
+    Artisan::call('career:import', ['path' => $path]);
+
+    expect(CareerProfile::count())->toBe(1);
+    $profile = CareerProfile::where('email', 'test-person@example.com')->firstOrFail();
+    expect($profile->phone)->toBe('(407) 272-1720');
+});
+
+it('imports a null phone as null rather than inventing a value, when the canonical source has none', function () {
+    $dataset = validImportDataset();
+    unset($dataset['career_profile']['phone']);
+    $path = writeImportFixture($dataset);
+
+    Artisan::call('career:import', ['path' => $path]);
+
+    $profile = CareerProfile::where('email', 'test-person@example.com')->firstOrFail();
+    expect($profile->phone)->toBeNull();
 });
 
 it('deterministically applies edited canonical wording on re-import', function () {

@@ -12,13 +12,18 @@ namespace App\Support\ResumeDocument;
  * docs/domain-model.md "ResumeVariant" -> "ATS Resume Renderer" for
  * the milestone this belongs to.
  *
- * Section order (Summary -> Experience -> Skills -> Selected Projects
- * -> Education) is a fixed, declared convention — not derived from
- * anything — applied by whatever consumes this tree, not encoded as a
- * field here. Selected Projects sits between Skills and Education,
- * matching the two-page composition direction (Skills is page-1
- * content; Selected Projects and Education are both page-2 content —
- * see docs/domain-model.md "ResumeVariant" -> "Selected Projects").
+ * Section order (Summary -> Skills -> Experience -> Selected Projects
+ * -> Education) is a fixed v1 display convention — not derived from
+ * anything, and NOT the same as this constructor's own param order
+ * below — applied only by whatever consumes this tree (currently
+ * resources/views/resume/print.blade.php). This order is a deliberate
+ * product decision: Summary establishes positioning, Skills
+ * immediately demonstrates target-job relevance and is highly
+ * scannable, and Experience then provides proof. Selected Projects
+ * sits between Experience and Education, matching Selected Projects'
+ * own role as supplementary independent-project evidence rather than
+ * primary Experience proof (see docs/domain-model.md "ResumeVariant"
+ * -> "Selected Projects").
  */
 final readonly class ResumeDocument
 {

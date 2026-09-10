@@ -23,8 +23,8 @@ function previewCandidateVariant(): array
 
     $candidate['profile']->update([
         'email' => 'candidate@example.com',
-        'phone' => null,
-        'location' => null,
+        'phone' => '(407) 272-1720',
+        'location' => 'Orlando, FL',
         'portfolio_url' => 'https://example.dev',
         'github_url' => 'https://github.com/example',
     ]);
@@ -127,18 +127,37 @@ it('omits null contact fields rather than rendering an empty placeholder', funct
         ->and($html)->not->toContain('Location:');
 });
 
-it('renders portfolio and GitHub links as real anchors with the canonical URL as href and the link label as visible text', function () {
+it('renders the portfolio link as a real anchor with the canonical URL as href and the human-readable domain as visible text', function () {
     [$candidate, $variant] = previewCandidateVariant();
 
     $response = $this->get(route('resume-variants.preview', $variant));
 
     $response->assertOk();
     $html = $response->getContent();
-    expect($html)->toContain('<a href="https://example.dev">example.dev</a>')
-        ->and($html)->toContain('<a href="https://github.com/example">github.com/example</a>');
+    expect($html)->toContain('<a href="https://example.dev">example.dev</a>');
 });
 
-it('renders nothing for portfolio/GitHub when both are null', function () {
+it('omits GitHub from the default rendered header even though the candidate has a github_url', function () {
+    [$candidate, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+
+    $response->assertOk();
+    $html = $response->getContent();
+    expect($html)->not->toContain('github.com/example')
+        ->and($html)->not->toContain('<a href="https://github.com/example"');
+});
+
+it('omits location from the default rendered header', function () {
+    [$candidate, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+
+    $response->assertOk();
+    expect($response->getContent())->not->toContain('Orlando, FL');
+});
+
+it('renders nothing for portfolio when it is null', function () {
     [$candidate, $variant] = previewCandidateVariant();
     $candidate['profile']->update(['portfolio_url' => null, 'github_url' => null]);
 
@@ -146,6 +165,24 @@ it('renders nothing for portfolio/GitHub when both are null', function () {
 
     $response->assertOk();
     expect($response->getContent())->not->toContain('<a href');
+});
+
+it('renders the default contact line in the order email, then phone, then portfolio', function () {
+    [$candidate, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $response->assertOk();
+    $html = $response->getContent();
+
+    $emailPos = strpos($html, 'candidate@example.com');
+    $phonePos = strpos($html, '(407) 272-1720');
+    $portfolioPos = strpos($html, 'example.dev');
+
+    expect($emailPos)->not->toBeFalse()
+        ->and($phonePos)->not->toBeFalse()
+        ->and($portfolioPos)->not->toBeFalse()
+        ->and($emailPos)->toBeLessThan($phonePos)
+        ->and($phonePos)->toBeLessThan($portfolioPos);
 });
 
 it('renders the frozen ResumeDocument content, not live domain data, when the underlying Employer/Skill are mutated after generation', function () {
@@ -164,25 +201,47 @@ it('renders the frozen ResumeDocument content, not live domain data, when the un
         ->and($html)->toContain($originalEmployerName);
 });
 
-it('renders sections in ResumeDocument order: Summary, then Experience, then Skills, then Education', function () {
+it('renders sections in v1 display order: Summary, then Skills, then Experience, then Education', function () {
     [, $variant] = previewCandidateVariant();
 
     $response = $this->get(route('resume-variants.preview', $variant));
     $response->assertOk();
     $html = $response->getContent();
 
-    $summaryPos = strpos($html, '>Summary<');
-    $experiencePos = strpos($html, '>Experience<');
-    $skillsPos = strpos($html, '>Skills<');
+    $summaryPos = strpos($html, 'A targeted preview summary.');
+    $skillsPos = strpos($html, '>Technical Skills<');
+    $experiencePos = strpos($html, '>Professional Experience<');
     $educationPos = strpos($html, '>Education<');
 
     expect($summaryPos)->not->toBeFalse()
-        ->and($experiencePos)->not->toBeFalse()
         ->and($skillsPos)->not->toBeFalse()
+        ->and($experiencePos)->not->toBeFalse()
         ->and($educationPos)->not->toBeFalse()
-        ->and($summaryPos)->toBeLessThan($experiencePos)
-        ->and($experiencePos)->toBeLessThan($skillsPos)
-        ->and($skillsPos)->toBeLessThan($educationPos);
+        ->and($summaryPos)->toBeLessThan($skillsPos)
+        ->and($skillsPos)->toBeLessThan($experiencePos)
+        ->and($experiencePos)->toBeLessThan($educationPos);
+});
+
+it('renders no visible Summary section heading, while the summary text itself still renders', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $response->assertOk();
+    $html = $response->getContent();
+
+    expect($html)->toContain('A targeted preview summary.')
+        ->and($html)->not->toContain('>Summary<');
+});
+
+it('renders conventional, ATS-recognizable section heading text for Skills and Experience', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+
+    $response->assertOk()
+        ->assertSee('Technical Skills')
+        ->assertSee('Professional Experience')
+        ->assertSee('Education');
 });
 
 it('omits the entire Selected Projects section — no heading at all — when no Project was selected', function () {
@@ -210,21 +269,24 @@ it('renders the Selected Projects name, technologies, bullet, and both links whe
         ->and($html)->toContain('<a href="https://github.com/example/well-prompted">Repository</a>');
 });
 
-it('renders sections in order: Summary, Experience, Skills, Selected Projects, Education, when a Project is selected', function () {
+it('renders sections in order: Skills, Experience, Selected Projects, Education, when a Project is selected', function () {
     [, $variant] = previewCandidateVariantWithSelectedProject();
 
     $response = $this->get(route('resume-variants.preview', $variant));
     $response->assertOk();
     $html = $response->getContent();
 
-    $skillsPos = strpos($html, '>Skills<');
+    $skillsPos = strpos($html, '>Technical Skills<');
+    $experiencePos = strpos($html, '>Professional Experience<');
     $selectedProjectsPos = strpos($html, '>Selected Projects<');
     $educationPos = strpos($html, '>Education<');
 
     expect($skillsPos)->not->toBeFalse()
+        ->and($experiencePos)->not->toBeFalse()
         ->and($selectedProjectsPos)->not->toBeFalse()
         ->and($educationPos)->not->toBeFalse()
-        ->and($skillsPos)->toBeLessThan($selectedProjectsPos)
+        ->and($skillsPos)->toBeLessThan($experiencePos)
+        ->and($experiencePos)->toBeLessThan($selectedProjectsPos)
         ->and($selectedProjectsPos)->toBeLessThan($educationPos);
 });
 
@@ -255,23 +317,34 @@ it('makes no outbound HTTP/provider calls while rendering the preview', function
 
 // --- Employment header structure --------------------------------------------
 
-it('renders the Role title on its own primary line, and the employer/dates on a separate secondary line', function () {
+it('renders the Role title, company, and dates as three DOM elements in that logical order — title, company, date — regardless of visual CSS layout', function () {
     [$candidate, $variant] = previewCandidateVariant();
 
     $response = $this->get(route('resume-variants.preview', $variant));
     $html = $response->getContent();
 
-    expect($html)->toContain('<p class="role-title-line">')
-        ->and($html)->toContain('<span class="role-title">Senior Software Engineer</span>')
-        ->and($html)->toContain('<p class="role-meta-line">')
-        ->and($html)->toContain('<span class="role-employer">'.$candidate['employer']->name.'</span>');
+    expect($html)->toContain('<p class="role-title">Senior Software Engineer</p>')
+        ->and($html)->toContain('<p class="role-employer">'.e($candidate['employer']->name).'</p>')
+        ->and($html)->toContain('<p class="role-dates">');
 
-    $titleLinePos = strpos($html, 'role-title-line');
-    $metaLinePos = strpos($html, 'role-meta-line');
+    $titlePos = strpos($html, 'class="role-title"');
+    $employerPos = strpos($html, 'class="role-employer"');
+    $datesPos = strpos($html, 'class="role-dates"');
 
-    expect($titleLinePos)->not->toBeFalse()
-        ->and($metaLinePos)->not->toBeFalse()
-        ->and($titleLinePos)->toBeLessThan($metaLinePos);
+    expect($titlePos)->not->toBeFalse()
+        ->and($employerPos)->not->toBeFalse()
+        ->and($datesPos)->not->toBeFalse()
+        ->and($titlePos)->toBeLessThan($employerPos)
+        ->and($employerPos)->toBeLessThan($datesPos);
+});
+
+it('renders Role title/company/dates as plain block-level <p> elements, so a CSS-off view still stacks them as three lines in DOM order', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = $response->getContent();
+
+    expect($html)->toMatch('/<p class="role-title">[^<]*<\/p>\s*<p class="role-employer">[^<]*<\/p>\s*<p class="role-dates">[^<]*<\/p>/');
 });
 
 it('renders the Role date range with abbreviated three-letter months', function () {
@@ -437,4 +510,15 @@ it('never groups all Education entries into one unbreakable block — only each 
     $educationSectionRule = cssRuleBody($css, '.education');
 
     expect($educationSectionRule)->toBeNull();
+});
+
+it('never uses a table or absolute positioning anywhere, including for the Role title/date line layout', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = $response->getContent();
+
+    expect($html)->not->toContain('<table')
+        ->and($html)->not->toContain('position: absolute')
+        ->and($html)->not->toContain('position:absolute');
 });

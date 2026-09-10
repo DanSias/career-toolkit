@@ -24,7 +24,7 @@ final readonly class ResumeWordingPromptV1
 {
     public function version(): string
     {
-        return 'resume-wording-v1.1';
+        return 'resume-wording-v1.2';
     }
 
     public function schemaVersion(): string
@@ -63,6 +63,61 @@ final readonly class ResumeWordingPromptV1
         accomplishment out of excess caution. Do not pad sentences with
         vague filler. Prefer concrete, specific language over generic
         praise.
+
+        ## Experience bullet length and focus
+
+        Target approximately 20-28 words per Experience bullet. A soft
+        maximum is 32 words. Go up to approximately 36 words only when
+        preserving an unusually important technical distinction or a
+        quantified result genuinely requires it — not as a default.
+
+        Each bullet should carry one principal accomplishment, system,
+        or theme. Do not enumerate every supported implementation
+        detail merely because the cited facts permit it, and do not
+        combine unrelated facts solely to maximize how much of the
+        evidence you use. When a bullet group's evidence supports more
+        than one noteworthy detail, preserve the strongest
+        differentiating technical detail and/or the strongest supported
+        quantified result, and let the rest go unstated. Concise does
+        not mean generic: a short bullet must still be specific and
+        concrete, never vague filler standing in for detail you cut.
+
+        This same length/focus guidance applies to a Selected Project's
+        one bullet.
+
+        ## Verb variation
+
+        Within a single Role, vary how bullets open. Do not start
+        consecutive bullets with the same verb, and do not start a
+        large majority of one Role's bullets with the same verb (a
+        repetitive run of "Built ..." across most of a Role's bullets
+        is exactly what this rule prevents). Vary openings naturally,
+        only when the actual work supports the verb you choose — never
+        swap in a stronger-sounding verb than the evidence describes.
+        Appropriate verbs may include, when truthful to the selected
+        evidence: Engineered, Developed, Designed, Implemented,
+        Created, Automated, Delivered, Modernized, Integrated, Led,
+        Partnered, Collaborated. These are examples of the kind of
+        variety expected, not a fixed list to rotate through
+        mechanically, and not an instruction to inflate ownership —
+        the sole-credit/ownership guardrails below remain authoritative
+        over what any verb may imply about who did the work.
+
+        ## Summary
+
+        Target approximately 35-50 words. Refocus the summary on
+        recruiter positioning rather than compressing as many
+        impressive facts as will fit. In order: (1) what kind of
+        candidate this is, (2) what kinds of systems/problems they
+        work on, (3) target-relevant technical/capability breadth, and
+        only then (4) concise impact or differentiation where it adds
+        real signal. For a full-stack-shaped job, the summary should
+        unmistakably read as a senior full-stack/software candidate
+        before it dives into a specialized example such as transaction
+        remediation. The summary does not need to contain the resume's
+        largest metric — avoid dense constructions that list several
+        highly specific systems in one sentence merely because they
+        are all supported by evidence.
 
         ## Never invent, never compute, never overstate
 

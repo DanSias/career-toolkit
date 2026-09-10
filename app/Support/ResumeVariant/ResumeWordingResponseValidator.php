@@ -33,10 +33,28 @@ use Illuminate\Validation\Validator;
  * live/human review (see docs/resume-variant-generation.md "Live
  * evaluation"), not approximated here with pattern-guessing that would
  * risk rejecting a correct sentence.
+ *
+ * One additional structural check lives here: a per-bullet word-count
+ * ceiling (see BULLET_WORD_COUNT_CEILING) on Experience bullets and
+ * Selected Project bullets. The prompt's ~20-28 word target and
+ * ~32-word soft maximum are quality guidance only, deliberately NOT
+ * enforced here — only a generous hard ceiling well above that is, so
+ * this catches clearly excessive output (the kind of 46-word run-on
+ * bullet that motivated this check) without making normal technical
+ * prose brittle over a single word of genuine necessity.
  */
 final class ResumeWordingResponseValidator
 {
     private const UNIVERSAL_BANNED_PHRASES = ['100% accuracy', '100% success rate', 'zero defects'];
+
+    /**
+     * A hard ceiling, not the ~20-28 word target/~32-word soft maximum
+     * the prompt asks for — comfortably above the ~36-word "unusually
+     * important technical distinction" allowance so this never rejects
+     * genuinely necessary prose, while still catching clearly
+     * excessive output.
+     */
+    private const BULLET_WORD_COUNT_CEILING = 40;
 
     private const INDEPENDENT_IMPLEMENTATION_FACT_KEYS = [
         'rocketgate-independently-implemented-from-team-requirements',
@@ -101,6 +119,7 @@ final class ResumeWordingResponseValidator
 
                     $this->assertDenylistRespected($validator, $field, $text, $denylistTerms);
                     $this->assertGuardrails($validator, $field, $text, $careerFactKeysByLocation[$locationKey] ?? [], $guardrailByFactKey);
+                    $this->assertWordCountCeiling($validator, $field, $text);
                 }
             }
 
@@ -116,6 +135,7 @@ final class ResumeWordingResponseValidator
 
                 $this->assertDenylistRespected($validator, $field, $text, $denylistTerms);
                 $this->assertGuardrails($validator, $field, $text, $careerFactKeysByLocation[$locationKey] ?? [], $guardrailByFactKey);
+                $this->assertWordCountCeiling($validator, $field, $text);
             }
         });
 
@@ -255,6 +275,31 @@ final class ResumeWordingResponseValidator
         if ($unexpected !== []) {
             $validator->errors()->add('selected_projects', 'Response includes wording for Selected Project(s) never approved by Selection: '.implode(', ', $unexpected).'.');
         }
+    }
+
+    /**
+     * A generous hard ceiling above the prompt's own ~20-28 word
+     * target/~32-word soft maximum — see BULLET_WORD_COUNT_CEILING's
+     * own docblock for why this stays intentionally permissive.
+     */
+    private function assertWordCountCeiling(Validator $validator, string $field, string $text): void
+    {
+        $wordCount = $this->wordCount($text);
+
+        if ($wordCount > self::BULLET_WORD_COUNT_CEILING) {
+            $validator->errors()->add(
+                $field,
+                "Generated bullet is {$wordCount} words, over the ".self::BULLET_WORD_COUNT_CEILING
+                .'-word structural ceiling — Wording must compress to the strongest defensible statement rather than enumerating every supported detail.',
+            );
+        }
+    }
+
+    private function wordCount(string $text): int
+    {
+        $words = preg_split('/\s+/u', trim($text));
+
+        return $words === false ? 0 : count(array_filter($words, fn (string $word) => $word !== ''));
     }
 
     /**

@@ -5,12 +5,13 @@
     visually drift. Receives only a single `$document` variable, an
     App\Support\ResumeDocument\ResumeDocument value-object tree built
     by GenerateResumeDocument — never an Eloquent model, never raw
-    domain data. Content order here is exactly ResumeDocument's own
-    field order (Summary -> Experience -> Skills -> Selected Projects
-    -> Education); nothing is regrouped or reordered in this template.
-    The Selected Projects section is omitted entirely when empty — no
-    page-fitting or hardcoded/employer-specific page break exists
-    anywhere in this file.
+    domain data. Content order here is a fixed v1 display convention —
+    Header -> Summary -> Skills -> Experience -> Selected Projects ->
+    Education — declared only here (see ResumeDocument's own docblock:
+    its constructor's param order is deliberately NOT the render
+    order). The Selected Projects section is omitted entirely when
+    empty — no page-fitting or hardcoded/employer-specific page break
+    exists anywhere in this file.
 
     Pagination model: content is allowed to flow across pages freely
     except where a *small* semantic unit would otherwise be visually
@@ -24,25 +25,35 @@
     `page-break-*` rules below for exactly where each invariant lives;
     none of them reference a specific employer, Role, or page number.
 
-    ATS v1 rendering contract: US Letter, single-column, ordinary
-    top-to-bottom DOM order (never CSS `order`, floats, or absolute
-    positioning to reorder content), real selectable text, standard
-    `<ul><li>` bullets, conventional heading elements, no essential
-    information conveyed only through color/icons/position, no
-    essential content in a header/footer, no forced one-page
-    constraint. CSS deliberately avoids flex/grid in favor of plain
-    block/inline layout, since this same markup is expected to render
-    through dompdf later, which has limited flexbox/grid support.
+    ATS v1 rendering contract: US Letter, single-column, real
+    selectable text, standard `<ul><li>` bullets, conventional heading
+    elements, no essential information conveyed only through color/
+    icons/position, no essential content in the printed page header/
+    footer, no forced one-page constraint, no tables, no absolute
+    positioning. DOM/text order (what a plain-text extractor or CSS-off
+    view sees) always matches a sane reading order — see .role-header
+    below for the one place layout visually reflows a line (title+date
+    sharing a row) while keeping DOM order title -> company -> date via
+    ordinary flexbox `order`, never floats or absolute positioning. CSS
+    uses a small amount of flexbox for exactly two things — the
+    centered section-heading rule and that role-header line layout —
+    everything else stays plain block/inline; this file still targets
+    an eventual dompdf render, which has partial (not full) flexbox
+    support, so flexbox use here stays intentionally minimal.
 
     Visual design: one restrained dark accent color (--accent, a single
     CSS custom property below) is used for section-heading text/rules
-    and links only — never scattered as separate hex literals. Role
-    and Education entries use a two-level header (primary line, then a
-    secondary metadata line) rather than one run-on line; Skills groups
-    put their label and skill list on separate lines. None of this
-    introduces tables, grid, flexbox, columns, icons, or absolute
-    positioning — every change here is typography, spacing, and the one
-    accent color, on the same ordinary block/inline elements as before.
+    and links only — never scattered as separate hex literals. Section
+    headings are centered conventional labels flanked by a decorative
+    accent rule (pure CSS ::before/::after, no injected dash/line
+    characters in the actual heading text). There is deliberately no
+    visible Summary heading — the summary paragraph reads directly
+    beneath the centered name/contact header — while the Summary
+    section/DTO field itself is unchanged. Role and Education entries
+    use a two-level header (primary line, then a secondary metadata
+    line); Skills groups put their label and skill list on separate
+    lines. None of this introduces tables, grid, columns, icons, or
+    absolute positioning.
 --}}
 <!DOCTYPE html>
 <html lang="en">
@@ -103,14 +114,16 @@
 
         header {
             margin: 0 0 0.12in;
-            padding-bottom: 0.06in;
-            /* The one rule beneath the name/contact block — a subtle
-               anchor for the document, not a decorative graphic. */
+            padding-bottom: 0.08in;
+            /* Centered anchor for the document — name, then compact
+               contact info beneath, with one subtle accent rule below;
+               not a decorative graphic. */
+            text-align: center;
             border-bottom: 1pt solid var(--accent);
         }
 
         h1 {
-            margin: 0 0 0.08in;
+            margin: 0 0 0.06in;
             font-size: 22pt;
             font-weight: 700;
             letter-spacing: 0.01em;
@@ -133,14 +146,19 @@
         }
 
         h2 {
-            margin: 0.16in 0 0.08in;
+            margin: 0.22in 0 0.1in;
             font-size: 12pt;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.07em;
             color: var(--accent);
-            border-bottom: 1pt solid var(--accent);
-            padding-bottom: 3pt;
+            /* Centered conventional label flanked by a decorative accent
+               rule on both sides — ::before/::after are empty, purely
+               CSS lines, never characters injected into the heading's
+               own text/DOM content. */
+            display: flex;
+            align-items: center;
+            text-align: center;
             /* A section heading must never be the last thing on a page —
                applies uniformly to every section's own heading, never a
                per-section override. */
@@ -148,8 +166,21 @@
             break-after: avoid;
         }
 
-        section:first-of-type h2 {
-            margin-top: 0;
+        h2::before,
+        h2::after {
+            content: "";
+            flex: 1 1 auto;
+            border-top: 1pt solid var(--accent);
+            margin: 0 0.18in;
+        }
+
+        /* The heading of whatever section immediately follows Summary
+           (Skills in the current v1 order) sits directly beneath a
+           plain paragraph rather than another heading/rule, so it gets
+           a tighter top margin — a generic "first heading after
+           Summary" rule, not a Skills-specific one. */
+        section.summary + section h2 {
+            margin-top: 0.08in;
         }
 
         .summary-text {
@@ -187,29 +218,47 @@
             break-inside: avoid;
         }
 
-        .role-title-line {
-            margin: 0 0 0.02in;
-            line-height: 1.25;
+        .role-header-row {
+            /* Visually reflows title+date onto a shared first line
+               (date right-aligned) with company on its own second
+               line, while DOM/text order stays title -> company ->
+               date (see the docblock at the top of this file) — the
+               `order` values below are purely visual, and `role-title`/
+               `role-employer`/`role-dates` are ordinary <p> elements so
+               a CSS-off view already reads as three stacked lines in
+               that same order. flex-wrap allows graceful wrapping
+               instead of overlap/truncation when a title is long. */
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            column-gap: 0.2in;
         }
 
         .role-title {
+            order: 1;
+            margin: 0;
             font-size: 11.5pt;
             font-weight: 700;
+            line-height: 1.25;
             color: #1a1a1a;
         }
 
-        .role-meta-line {
-            margin: 0;
+        .role-dates {
+            order: 2;
+            margin: 0 0 0 auto;
             font-size: 10pt;
             line-height: 1.25;
+            color: #444444;
+            white-space: nowrap;
         }
 
         .role-employer {
+            order: 3;
+            flex-basis: 100%;
+            margin: 0.02in 0 0;
+            font-size: 10pt;
+            line-height: 1.25;
             font-weight: 400;
-            color: #444444;
-        }
-
-        .role-dates {
             color: #444444;
         }
 
@@ -349,6 +398,11 @@
             <h1>{{ $document->contact->name }}</h1>
 
             @php
+                // Default v1 contact order is exactly email -> phone ->
+                // portfolio. Location and GitHub are deliberately not
+                // rendered here — a rendering decision only, both stay
+                // on ResumeContact/CareerProfile untouched (see
+                // App\Support\ResumeDocument\ResumeContact's docblock).
                 $contactParts = [];
                 if ($document->contact->email) {
                     $contactParts[] = $document->contact->email;
@@ -356,59 +410,49 @@
                 if ($document->contact->phone) {
                     $contactParts[] = $document->contact->phone;
                 }
-                if ($document->contact->location) {
-                    $contactParts[] = $document->contact->location;
-                }
             @endphp
 
-            @if (count($contactParts) > 0 || $document->contact->portfolio || $document->contact->github)
+            @if (count($contactParts) > 0 || $document->contact->portfolio)
                 <p class="contact-line">
                     {{ implode(' · ', $contactParts) }}
                     @if ($document->contact->portfolio)
                         @if (count($contactParts) > 0) · @endif
                         <a href="{{ $document->contact->portfolio->url }}">{{ $document->contact->portfolio->label }}</a>
                     @endif
-                    @if ($document->contact->github)
-                        @if (count($contactParts) > 0 || $document->contact->portfolio) · @endif
-                        <a href="{{ $document->contact->github->url }}">{{ $document->contact->github->label }}</a>
-                    @endif
                 </p>
             @endif
         </header>
 
         <section class="summary">
-            <h2>Summary</h2>
             <p class="summary-text">{{ $document->summary }}</p>
         </section>
 
+        <section class="skills">
+            <h2>Technical Skills</h2>
+            @foreach ($document->skills as $group)
+                <div class="skill-group">
+                    <p class="skill-group-label">{{ $group->label }}</p>
+                    <p class="skill-group-items">{{ implode(' · ', $group->skills) }}</p>
+                </div>
+            @endforeach
+        </section>
+
         <section class="experience">
-            <h2>Experience</h2>
+            <h2>Professional Experience</h2>
             @foreach ($document->experience as $role)
                 <div class="role">
                     <div class="role-header">
-                        <p class="role-title-line">
-                            <span class="role-title">{{ $role->displayTitle }}</span>
-                        </p>
-                        <p class="role-meta-line">
-                            <span class="role-employer">{{ $role->employerName }}</span>
-                            · <span class="role-dates">{{ $role->dateRangeLabel }}</span>
-                        </p>
+                        <div class="role-header-row">
+                            <p class="role-title">{{ $role->displayTitle }}</p>
+                            <p class="role-employer">{{ $role->employerName }}</p>
+                            <p class="role-dates">{{ $role->dateRangeLabel }}</p>
+                        </div>
                     </div>
                     <ul class="bullets">
                         @foreach ($role->bullets as $bullet)
                             <li>{{ $bullet }}</li>
                         @endforeach
                     </ul>
-                </div>
-            @endforeach
-        </section>
-
-        <section class="skills">
-            <h2>Skills</h2>
-            @foreach ($document->skills as $group)
-                <div class="skill-group">
-                    <p class="skill-group-label">{{ $group->label }}</p>
-                    <p class="skill-group-items">{{ implode(' · ', $group->skills) }}</p>
                 </div>
             @endforeach
         </section>
