@@ -45,7 +45,7 @@ final readonly class ResumeSelectionPromptV1
 {
     public function version(): string
     {
-        return 'resume-selection-v1.4';
+        return 'resume-selection-v1.5';
     }
 
     public function schemaVersion(): string
@@ -108,6 +108,26 @@ final readonly class ResumeSelectionPromptV1
         This is checked and enforced independently — a response missing
         a resume-eligible role is rejected outright.
 
+        ## Balancing relevance and career depth
+
+        Every eligible role receiving one bullet is a floor, not a
+        target. Prioritize the strongest evidence from the most
+        relevant roles, but evaluate the resume as a whole. Once a
+        highly relevant role is adequately represented, prefer strong
+        differentiated evidence from a substantial earlier role over
+        adding another lower-value bullet to an already well-covered
+        role. Tenure, technical scope, distinctive work, and concrete
+        quantified outcomes can justify additional bullets for earlier
+        roles. This is a judgment call, not a fixed per-role quota.
+
+        ## Overall resume length
+
+        You are selecting evidence for a two-page professional resume.
+        Select enough differentiated evidence to make strong use of a
+        two-page resume, but do not add weak, repetitive, or
+        low-relevance evidence merely to fill space. Content quality
+        outranks page filling.
+
         ## Grouping evidence into bullets
 
         Group CareerFacts into `bullet_groups`: a set of facts that
@@ -119,10 +139,12 @@ final readonly class ResumeSelectionPromptV1
         bullet groups within a role by how strongly they should be
         featured.
 
-        Role ordering itself, and how many bullets a role gets space
-        for, are handled deterministically outside this response — focus
-        entirely on which evidence deserves to be grouped together and
-        in what internal order.
+        Role ordering itself is handled deterministically outside this
+        response (always reverse-chronological by role start date), but
+        how many bullets each role receives is part of your selection
+        responsibility; nothing later automatically balances or caps
+        bullet allocation. See "Balancing relevance and career depth"
+        above.
 
         ## Role and project binding
 
