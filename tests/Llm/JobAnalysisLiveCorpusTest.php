@@ -2,7 +2,13 @@
 
 use App\Enums\JobAnalysisFindingCategory;
 use App\Enums\JobAnalysisRequirementStrength;
+use App\Models\JobAnalysis;
+use App\Models\JobPosting;
+use App\Support\JobAnalysis\EvidenceExcerptVerifier;
 use App\Support\JobAnalysis\GenerateJobAnalysis;
+use App\Support\JobAnalysis\JobAnalysisResponseValidator;
+use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV2;
+use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
 
 /**
  * Opt-in regression evaluation against the real, configured OpenAI
@@ -11,6 +17,21 @@ use App\Support\JobAnalysis\GenerateJobAnalysis;
  * never part of `php artisan test`. Run explicitly:
  *
  *     vendor/bin/pest tests/Llm
+ *
+ * This corpus is specifically an OpenAI regression suite — each test
+ * below regression-checks a real extraction failure mode observed from
+ * OpenAI's provider — so it constructs GenerateJobAnalysis with an
+ * explicit OpenAIJobAnalysisClient (jobAnalysisViaOpenAI() below)
+ * rather than resolving GeneratesJobAnalysis through the container.
+ * That binding is provider-configurable as of
+ * AI_JOB_ANALYSIS_PROVIDER/services.job_analysis.provider (see
+ * AppServiceProvider::resolveJobAnalysisProvider()) — this file must
+ * stay OpenAI regardless of that setting, the same reasoning
+ * OpenAIJobAnalysisLiveTest.php already follows for its own explicit
+ * OpenAIJobAnalysisClient construction. Only the provider is
+ * explicit; JobAnalysisPromptV2, JobAnalysisResponseValidator, and
+ * EvidenceExcerptVerifier are still the real, unmodified,
+ * container-free classes GenerateJobAnalysis always uses.
  *
  * sources/jobs/job-analysis-design-set.md is the single source of
  * truth for the five postings — parsed fresh from that file by
@@ -29,9 +50,28 @@ beforeEach(function () {
     }
 });
 
+/**
+ * Explicitly OpenAI, independent of AI_JOB_ANALYSIS_PROVIDER — see this
+ * file's docblock.
+ */
+function jobAnalysisViaOpenAI(JobPosting $posting): JobAnalysis
+{
+    $generator = new GenerateJobAnalysis(
+        provider: new OpenAIJobAnalysisClient(
+            apiKey: (string) config('services.openai.key'),
+            model: (string) config('services.openai.model'),
+        ),
+        prompt: new JobAnalysisPromptV2,
+        validator: new JobAnalysisResponseValidator,
+        evidenceVerifier: new EvidenceExcerptVerifier,
+    );
+
+    return $generator->generate($posting);
+}
+
 it('preserves both conflicting location signals for Pearly rather than collapsing the contradiction', function () {
     $posting = jobAnalysisCorpusPosting('Pearly');
-    $analysis = app(GenerateJobAnalysis::class)->generate($posting);
+    $analysis = jobAnalysisViaOpenAI($posting);
 
     $excerpts = $analysis->findings->flatMap->evidence->pluck('excerpt')->implode(' | ');
 
@@ -41,7 +81,7 @@ it('preserves both conflicting location signals for Pearly rather than collapsin
 
 it('lands Rootstock ERP knowledge explicitly as not_required rather than silence', function () {
     $posting = jobAnalysisCorpusPosting('Rootstock');
-    $analysis = app(GenerateJobAnalysis::class)->generate($posting);
+    $analysis = jobAnalysisViaOpenAI($posting);
 
     $notRequiredErpFinding = $analysis->findings
         ->where('requirement_strength', JobAnalysisRequirementStrength::NotRequired)
@@ -52,7 +92,7 @@ it('lands Rootstock ERP knowledge explicitly as not_required rather than silence
 
 it('keeps Cardiff\'s named AI-development tooling specific rather than flattened into generic AI experience', function () {
     $posting = jobAnalysisCorpusPosting('Cardiff');
-    $analysis = app(GenerateJobAnalysis::class)->generate($posting);
+    $analysis = jobAnalysisViaOpenAI($posting);
 
     $excerpts = $analysis->findings->flatMap->evidence->pluck('excerpt')->implode(' | ');
     $namedTools = ['Claude Code', 'Cursor', 'Codex', 'Devin'];
@@ -62,7 +102,7 @@ it('keeps Cardiff\'s named AI-development tooling specific rather than flattened
 
 it('retains multiple evidence occurrences for Vista\'s 35-50% travel requirement', function () {
     $posting = jobAnalysisCorpusPosting('Vista');
-    $analysis = app(GenerateJobAnalysis::class)->generate($posting);
+    $analysis = jobAnalysisViaOpenAI($posting);
 
     $travelFinding = $analysis->findings->first(
         fn ($finding) => $finding->category === JobAnalysisFindingCategory::Travel
@@ -74,7 +114,7 @@ it('retains multiple evidence occurrences for Vista\'s 35-50% travel requirement
 
 it('does not blanket-propagate required onto sub-detail findings nested beneath the Agentic Workflows & Memory Systems heading for Intent Design', function () {
     $posting = jobAnalysisCorpusPosting('Intent Design');
-    $analysis = app(GenerateJobAnalysis::class)->generate($posting);
+    $analysis = jobAnalysisViaOpenAI($posting);
 
     // The posting's "Minimum Requirements" list includes one bullet,
     // "Agentic Workflows & Memory Systems", which is itself only a

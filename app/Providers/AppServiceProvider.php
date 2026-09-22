@@ -10,6 +10,7 @@ use App\Models\CareerProfile;
 use App\Models\Employer;
 use App\Models\Project;
 use App\Models\Role;
+use App\Support\JobAnalysis\Providers\OllamaJobAnalysisClient;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
 use App\Support\JobMatch\Providers\OpenAIJobMatchClient;
 use App\Support\ResumeVariant\Providers\OpenAIResumeSelectionClient;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use InvalidArgumentException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -28,10 +30,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(GeneratesJobAnalysis::class, fn () => new OpenAIJobAnalysisClient(
-            apiKey: (string) config('services.openai.key'),
-            model: (string) config('services.openai.model'),
-        ));
+        $this->app->bind(GeneratesJobAnalysis::class, fn () => $this->resolveJobAnalysisProvider());
 
         $this->app->bind(GeneratesJobMatch::class, fn () => new OpenAIJobMatchClient(
             apiKey: (string) config('services.openai.key'),
@@ -47,6 +46,39 @@ class AppServiceProvider extends ServiceProvider
             apiKey: (string) config('services.openai.key'),
             model: (string) config('services.openai.model'),
         ));
+    }
+
+    /**
+     * The one place GeneratesJobAnalysis's provider is chosen —
+     * `services.job_analysis.provider` (AI_JOB_ANALYSIS_PROVIDER),
+     * 'openai' by default. Job Analysis is the only purpose this
+     * applies to; Job Match, Resume Selection, and Resume Wording stay
+     * OpenAI-only above. GenerateJobAnalysis, its prompt, validator,
+     * and persistence never see this decision — they depend only on
+     * the GeneratesJobAnalysis interface, so adding a provider here is
+     * a new case in this match, never a change to them. An unrecognized
+     * provider value fails fast at resolution time rather than
+     * silently falling back to a default.
+     */
+    private function resolveJobAnalysisProvider(): GeneratesJobAnalysis
+    {
+        $provider = (string) config('services.job_analysis.provider');
+        $provider = $provider === '' ? 'openai' : $provider;
+
+        return match ($provider) {
+            'openai' => new OpenAIJobAnalysisClient(
+                apiKey: (string) config('services.openai.key'),
+                model: (string) config('services.openai.model'),
+            ),
+            'ollama' => new OllamaJobAnalysisClient(
+                baseUrl: (string) config('services.ollama.base_url'),
+                model: (string) config('services.ollama.model'),
+                timeoutSeconds: (int) config('services.ollama.timeout'),
+            ),
+            default => throw new InvalidArgumentException(
+                "Unsupported AI_JOB_ANALYSIS_PROVIDER value [{$provider}]. Supported values: openai, ollama."
+            ),
+        };
     }
 
     /**

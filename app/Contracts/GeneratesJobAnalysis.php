@@ -12,10 +12,15 @@ use App\Support\JobAnalysis\JobAnalysisProviderResponse;
  * way to reach candidate data even by accident, because nothing here
  * gives it a path to any model at all. See docs/job-analysis-generation.md.
  *
- * A single provider (OpenAI) implements this for v1
- * (App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient). This
- * interface exists so a second provider — or a fake for tests — is a
- * new class, not a change to the orchestrator or the domain layer.
+ * Two providers implement this today —
+ * App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient (the
+ * default) and OllamaJobAnalysisClient, selected via
+ * AI_JOB_ANALYSIS_PROVIDER (see
+ * AppServiceProvider::resolveJobAnalysisProvider()). Provider
+ * implementations satisfy this contract without exposing
+ * provider-specific details to the application layer — this interface
+ * exists so a new provider, or a fake for tests, is a new class, not a
+ * change to the orchestrator or the domain layer.
  */
 interface GeneratesJobAnalysis
 {

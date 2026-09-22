@@ -40,4 +40,35 @@ return [
         'model' => env('OPENAI_MODEL', 'gpt-5.6'),
     ],
 
+    /*
+    | Ollama (OpenAI-compatible Chat Completions endpoint on a
+    | self-hosted server). No API key — Ollama's OpenAI-compat layer
+    | doesn't require one. `base_url` is intentionally left with no
+    | default: it must be explicitly configured per environment (never
+    | a LAN IP baked into application code), and every consumer treats
+    | a blank value as "Ollama is not configured here." `timeout`
+    | defaults well above OpenAI's because local inference on
+    | consumer-grade hardware runs meaningfully slower than a hosted
+    | API. See app/Support/OllamaChatCompletionsClient.php.
+    */
+    'ollama' => [
+        'base_url' => env('OLLAMA_BASE_URL'),
+        'model' => env('OLLAMA_MODEL', 'qwen3.8:27b'),
+        'timeout' => (int) env('OLLAMA_TIMEOUT_SECONDS', 300),
+    ],
+
+    /*
+    | Which provider implementation GeneratesJobAnalysis resolves to —
+    | 'openai' or 'ollama'. Job Analysis is the only purpose that's
+    | provider-selectable today; Job Match, Resume Selection, and Resume
+    | Wording remain OpenAI-only. Provider-specific settings (model,
+    | base URL, timeout, API key) stay under 'openai'/'ollama' above —
+    | this key only chooses which of those two configurations Job
+    | Analysis uses. See
+    | App\Providers\AppServiceProvider::resolveJobAnalysisProvider().
+    */
+    'job_analysis' => [
+        'provider' => env('AI_JOB_ANALYSIS_PROVIDER', 'openai'),
+    ],
+
 ];
