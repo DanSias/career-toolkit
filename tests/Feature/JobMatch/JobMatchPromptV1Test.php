@@ -12,6 +12,13 @@ it('versions independently of JobAnalysis', function () {
         ->and($prompt->schemaVersion())->toBe('1.0');
 });
 
+it('retains its original no_evidence wording, unmodified by JobMatchPromptV2\'s clarification', function () {
+    $systemPrompt = (new JobMatchPromptV1)->systemPrompt();
+
+    expect($systemPrompt)->toContain("contains no\n  meaningful evidence addressing this finding")
+        ->and($systemPrompt)->not->toContain('If you find yourself citing any `career_fact_key` or `education_id`');
+});
+
 it('embeds the candidate and job payloads in the user prompt', function () {
     ['profile' => $profile, 'factOne' => $fact] = JobMatchFixtures::candidate();
     ['analysis' => $analysis, 'findingOne' => $finding] = JobMatchFixtures::job();

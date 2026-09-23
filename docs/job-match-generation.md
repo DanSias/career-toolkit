@@ -13,7 +13,7 @@ code itself.
 ```
 (JobAnalysis, CareerProfile)
   -> CandidatePayloadBuilder + JobPayloadBuilder (normalized input payloads)
-  -> JobMatchPromptV1 (current — system + user prompt, JSON schema)
+  -> JobMatchPromptV3 (current — system + user prompt, JSON schema)
   -> GeneratesJobMatch provider (untrusted decoded response)
   -> JobMatchResponseValidator (deterministic — throws on any violation)
   -> JobMatchDraft tree (trusted, readonly value objects)
@@ -100,13 +100,34 @@ posting length alone — does not.
 
 ## Prompt and version semantics
 
-`App\Support\JobMatch\Prompts\JobMatchPromptV1` owns the system prompt,
-the per-run user prompt (embedding both the candidate and job payloads,
-nothing else), and the JSON Schema passed to the provider. Versioned
-**independently** of `JobAnalysis`'s own prompt/schema versions — both
-currently report `schema_version: "1.0"`, but this is coincidence, not
-coupling; the two version sequences will diverge the moment either
-contract changes and nothing enforces them staying in step.
+`App\Support\JobMatch\Prompts\JobMatchPromptV3` (current) owns the system
+prompt, the per-run user prompt (embedding both the candidate and job
+payloads, nothing else), and the JSON Schema passed to the provider.
+Versioned **independently** of `JobAnalysis`'s own prompt/schema
+versions — both currently report `schema_version: "1.0"`, but this is
+coincidence, not coupling; the two version sequences will diverge the
+moment either contract changes and nothing enforces them staying in
+step.
+
+Each prompt bump is its own immutable class, never an in-place edit to
+a prior one — `JobMatchPromptV1` and `JobMatchPromptV2` remain in source
+control unchanged, exactly as they read when superseded:
+
+- **`JobMatchPromptV1`** — the original contract.
+- **`JobMatchPromptV2`** — clarified `no_evidence` to mean "no evidence
+  at all," not "no *meaningful* evidence," closing a live-evaluation gap
+  where a cited-but-insufficient finding was rejected by
+  `JobMatchResponseValidator` for carrying a citation `no_evidence`
+  forbids. Schema unchanged.
+- **`JobMatchPromptV3`** — addresses two further live-evaluation gaps V2
+  didn't touch: what an attached `skill` establishes and doesn't (see
+  `docs/job-match-contract.md` "Field notes"), the fact-local evidence
+  boundary (a citation may only draw on the one `CareerFact` it cites,
+  never import a detail true of a different fact), and a tighter
+  `direct`/`transferable`/`contextual` anchor (the finding's own literal
+  statement, not its broader category), plus a relationship/rationale
+  self-consistency requirement. Schema unchanged; `JobMatchResponseValidator`
+  unchanged — this is a prompt-contract-only revision.
 
 Two independent version identifiers are persisted on every `JobMatch`,
 mirroring `JobAnalysis`:

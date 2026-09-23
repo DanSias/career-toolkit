@@ -11,7 +11,7 @@ use App\Models\CareerFact;
 use App\Models\CareerProfile;
 use App\Models\JobAnalysis;
 use App\Models\JobMatch;
-use App\Support\JobMatch\Prompts\JobMatchPromptV1;
+use App\Support\JobMatch\Prompts\JobMatchPromptV3;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -33,7 +33,7 @@ final class GenerateJobMatch
 {
     public function __construct(
         private readonly GeneratesJobMatch $provider,
-        private readonly JobMatchPromptV1 $prompt,
+        private readonly JobMatchPromptV3 $prompt,
         private readonly CandidatePayloadBuilder $candidateBuilder,
         private readonly JobPayloadBuilder $jobBuilder,
         private readonly JobMatchResponseValidator $validator,

@@ -806,10 +806,14 @@ contradiction rather than an absence. `no_evidence` and `not_assessable`
 are both **epistemic, never capability**, judgments:
 
 - **`no_evidence`** means the canonical dataset supplied to *this run*
-  contains no meaningful evidence for the finding — never "the candidate
-  cannot do this." A capability genuinely absent from the current
-  dataset is indistinguishable, at this layer, from one simply never
-  captured yet.
+  contains no evidence at all for the finding — nothing supplied even
+  partially speaks to it, so `matches` and `education_matches` are both
+  empty — never "the candidate cannot do this." A capability genuinely
+  absent from the current dataset is indistinguishable, at this layer,
+  from one simply never captured yet. Relevant-but-insufficient evidence
+  (narrower in scope, adjacent/transferable, personal rather than
+  professional, covering only part of a multi-part requirement) is
+  `partial`, not `no_evidence` — see `docs/job-match-contract.md`.
 - **`not_assessable`** means the finding falls outside what this matcher
   is authorized to determine from the career-history/education evidence
   domain at all — visa/citizenship/work-authorization, current physical
@@ -832,17 +836,31 @@ strong. This is a deliberate departure from an earlier ordinal design
 miscalibration risk `JobAnalysis.basis` showed in practice: an LLM asked
 to rank strength tends to drift toward a "safe middle" value regardless
 of the actual case, whereas a categorical kind-of-support question has no
-such gravitational pull.
+such gravitational pull. `direct` is anchored to the `JobAnalysisFinding`'s
+own literal statement, not its broader category or label — a fact
+demonstrating a different technology in the same broad category (e.g. a
+different CI system than the one a finding names) is `transferable` at
+most, never `direct` merely by category membership. See
+`docs/job-match-contract.md` "Field notes."
 
 **Education is a first-class matchable unit, via its own small
 `EducationMatch` table — not a generic polymorphic "candidate support"
 framework.** `CareerFact` and `Education` are the only two matchable
 entity types, and each gets its own concrete join table
 (`career_fact_matches`, `education_matches`) sharing the `MatchRelationship`
-enum, rather than a single morph table standing in for both. Bare `Skill`
-tags are deliberately **not** independent evidence in this layer — they
-remain context-only, attached to the `CareerFact` they came from, exactly
-as in `docs/domain-model.md` "Skills" above.
+enum, rather than a single morph table standing in for both. `Skill` has
+no matchable table of its own — it is never cited independently, only
+ever read as part of the one `CareerFact` it's attached to. A `Skill`
+attached to a fact IS legitimate evidence that this specific fact
+involves that technology/capability/practice, often the only place a
+fact's full technical detail is captured at all (a fact's prose
+`statement` routinely omits it — see "Skills" above). What it does
+**not** do is independently authorize a claim stronger than that
+association — depth, duration, scale, ownership, or implementation
+detail the fact's own `statement`/`metric` doesn't itself state, and it
+never travels between facts: a `Skill` genuinely attached to one
+`CareerFact` never authorizes a claim about a different one, even for
+the same employer or role.
 
 **`Education` has no `visibility` field, and that absence is not a grant
 of default output eligibility.** `EducationMatch` isn't subject to

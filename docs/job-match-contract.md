@@ -86,6 +86,20 @@ app). `role_dates` is `null` whenever the fact's attribution chain has no
 `scope_note`, when present, are hard constraints the matcher must respect
 — see "Do not invent anything" in `docs/job-match-generation.md`.
 
+**`skills`** are legitimate evidence that a technology, platform,
+capability, or practice is associated with that specific `CareerFact`
+— genuinely load-bearing for technology matching, since a fact's prose
+`statement` routinely omits the full stack a Skill tag names (see
+`docs/domain-model.md` "Skills"). A `skill` alone does not, by itself,
+authorize a stronger claim than association — depth, duration, scale,
+ownership, or implementation detail beyond what that same fact's
+`statement`/`metric` states. Every field in one `career_facts[]` entry
+is scoped to that one fact: a matcher citing a fact may draw only on
+that fact's own `statement`, `skills`, `metric`/`guardrail`/
+`scope_note`, and `attribution`/`role_dates` — never a detail that is
+only true of a different fact, even one for the same employer or role.
+See `docs/job-match-generation.md` "Do not invent anything."
+
 ## Job input contract
 
 Built by `App\Support\JobMatch\JobPayloadBuilder` from a stored
@@ -165,16 +179,21 @@ empty `matches: []` array is used instead when no `CareerFact` applies.)
 
 - **`coverage`** is exactly one of `supported`, `partial`, `no_evidence`,
   `not_assessable` — see `docs/domain-model.md` "JobMatch" for the full
-  epistemic distinction between `no_evidence` (nothing in *this dataset*
-  addresses the finding) and `not_assessable` (the finding is outside
+  epistemic distinction between `no_evidence` (no supplied CareerFact or
+  Education evidence addresses the finding at all — nothing even
+  partially speaks to it) and `not_assessable` (the finding is outside
   this matcher's authorized domain entirely, regardless of dataset
   content). Neither is ever a claim that the candidate lacks a
   capability. There is no `contradicted` case — see "Deliberately out of
-  scope here" below.
+  scope here" below. Relevant-but-insufficient evidence (narrower in
+  scope, adjacent/transferable, personal rather than professional,
+  covering only part of a multi-part requirement, or otherwise short of
+  what's asked) is `partial`, cited accordingly — never `no_evidence`.
 - **`matches` and `education_matches` are always both present as arrays**
-  (possibly empty), never omitted — including for `not_assessable`
-  findings, where both **must** be empty; a non-empty array on a
-  `not_assessable` finding is a validation failure (see
+  (possibly empty), never omitted — including for `no_evidence` and
+  `not_assessable` findings, where both **must** be empty; a non-empty
+  array on a `no_evidence` or `not_assessable` finding is a validation
+  failure (see
   `docs/job-match-generation.md`).
 - **`career_fact_key`** must be exactly one of the keys present in the
   candidate input's `career_facts[].key` for this run. **`education_id`**
@@ -187,7 +206,17 @@ empty `matches: []` array is used instead when no `CareerFact` applies.)
 - **`relationship`** (on each `matches`/`education_matches` entry) is
   exactly one of `direct`, `transferable`, `contextual` — categorical,
   not a quality ranking. See `docs/domain-model.md` "JobMatch" for why
-  this is categorical rather than ordinal.
+  this is categorical rather than ordinal. It's anchored to the
+  finding's own literal statement, not its broader category: `direct`
+  requires the fact to demonstrate the same specific technology/
+  capability the finding names (not merely something in the same broad
+  category); `transferable` is a closely analogous capability in a
+  different technology/domain/context; `contextual` is relevant
+  background that doesn't itself demonstrate the requested capability
+  or a mechanically analogous substitute for it. A citation's
+  `relationship` and its own `rationale` must agree — a rationale that
+  itself argues the evidence is analogous/adjacent/different-context
+  should not be paired with `relationship: direct`.
 - **`coverage_rationale`** and each match's **`rationale`** are nullable
   free text. They are internal reviewer-facing commentary only — never
   canonical evidence, never resume wording, never safe to copy verbatim

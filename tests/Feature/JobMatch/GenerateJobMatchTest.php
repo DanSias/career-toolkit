@@ -68,7 +68,7 @@ it('persists correct schema/prompt/model generation metadata', function () {
     $match = jobMatchGenerator()->generate($analysis, $profile);
 
     expect($match->schema_version)->toBe('1.0')
-        ->and($match->prompt_version)->toBe('job-match-v1')
+        ->and($match->prompt_version)->toBe('job-match-v3')
         ->and($match->generated_by)->toBe('openai:gpt-5.6-2026-09-01')
         ->and($match->generated_at)->not->toBeNull()
         ->and($match->raw_response)->toBeArray();

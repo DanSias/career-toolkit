@@ -47,12 +47,22 @@ it('accepts not_assessable with zero support references', function () {
     expect($validated['findings'][1]['coverage'])->toBe('not_assessable');
 });
 
-it('accepts partial coverage with at least one support reference', function () {
+it('accepts partial coverage with at least one CareerFact support reference', function () {
     $response = validJobMatchResponse();
     $response['findings'][1]['coverage'] = 'partial';
     $response['findings'][1]['matches'] = [['career_fact_key' => 'fact-a', 'relationship' => 'transferable', 'rationale' => 'x']];
 
     $validated = jobMatchValidator()->validate($response, [1, 2], ['fact-a'], []);
+
+    expect($validated['findings'][1]['coverage'])->toBe('partial');
+});
+
+it('accepts partial coverage with at least one Education support reference', function () {
+    $response = validJobMatchResponse();
+    $response['findings'][1]['coverage'] = 'partial';
+    $response['findings'][1]['education_matches'] = [['education_id' => 1, 'relationship' => 'transferable', 'rationale' => 'x']];
+
+    $validated = jobMatchValidator()->validate($response, [1, 2], ['fact-a'], [1]);
 
     expect($validated['findings'][1]['coverage'])->toBe('partial');
 });
@@ -124,6 +134,21 @@ it('rejects a duplicate Education reference within one finding', function () {
 
 it('rejects no_evidence with a non-empty CareerFact match list', function () {
     $response = validJobMatchResponse();
+    $response['findings'][1]['matches'] = [['career_fact_key' => 'fact-a', 'relationship' => 'direct', 'rationale' => 'x']];
+
+    jobMatchValidator()->validate($response, [1, 2], ['fact-a'], []);
+})->throws(InvalidJobMatchResponseException::class);
+
+it('rejects no_evidence with a non-empty Education match list', function () {
+    $response = validJobMatchResponse();
+    $response['findings'][1]['education_matches'] = [['education_id' => 1, 'relationship' => 'direct', 'rationale' => 'x']];
+
+    jobMatchValidator()->validate($response, [1, 2], ['fact-a'], [1]);
+})->throws(InvalidJobMatchResponseException::class);
+
+it('rejects not_assessable with a non-empty CareerFact match list', function () {
+    $response = validJobMatchResponse();
+    $response['findings'][1]['coverage'] = 'not_assessable';
     $response['findings'][1]['matches'] = [['career_fact_key' => 'fact-a', 'relationship' => 'direct', 'rationale' => 'x']];
 
     jobMatchValidator()->validate($response, [1, 2], ['fact-a'], []);
