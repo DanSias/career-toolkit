@@ -13,9 +13,9 @@ use App\Support\JobAnalysis\JobAnalysisProviderResponse;
  * gives it a path to any model at all. See docs/job-analysis-generation.md.
  *
  * Two providers implement this today —
- * App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient (the
- * default) and OllamaJobAnalysisClient, selected via
- * AI_JOB_ANALYSIS_PROVIDER (see
+ * App\Support\JobAnalysis\Providers\OllamaJobAnalysisClient (the
+ * local-first default) and OpenAIJobAnalysisClient (explicitly
+ * selectable), chosen via AI_JOB_ANALYSIS_PROVIDER (see
  * AppServiceProvider::resolveJobAnalysisProvider()). Provider
  * implementations satisfy this contract without exposing
  * provider-specific details to the application layer — this interface

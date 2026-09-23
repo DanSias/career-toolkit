@@ -15,10 +15,10 @@ use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
  * calls anywhere here: every case only resolves the binding (which
  * just constructs a client object) and never calls ->generate().
  */
-it('resolves OpenAIJobAnalysisClient when no provider is configured at all', function () {
+it('resolves OllamaJobAnalysisClient when no provider is configured at all — local-first default', function () {
     config(['services.job_analysis.provider' => null]);
 
-    expect(app(GeneratesJobAnalysis::class))->toBeInstanceOf(OpenAIJobAnalysisClient::class);
+    expect(app(GeneratesJobAnalysis::class))->toBeInstanceOf(OllamaJobAnalysisClient::class);
 });
 
 it('resolves OpenAIJobAnalysisClient when explicitly configured as openai', function () {
@@ -38,10 +38,10 @@ it('resolves OllamaJobAnalysisClient when explicitly configured as ollama', func
     expect(app(GeneratesJobAnalysis::class))->toBeInstanceOf(OllamaJobAnalysisClient::class);
 });
 
-it('treats a blank provider value as the openai default, not a failure', function () {
+it('treats a blank provider value as the ollama default, not a failure — local-first default', function () {
     config(['services.job_analysis.provider' => '']);
 
-    expect(app(GeneratesJobAnalysis::class))->toBeInstanceOf(OpenAIJobAnalysisClient::class);
+    expect(app(GeneratesJobAnalysis::class))->toBeInstanceOf(OllamaJobAnalysisClient::class);
 });
 
 it('fails fast with a clear message for an unsupported provider value', function () {

@@ -42,33 +42,48 @@ return [
 
     /*
     | Ollama (OpenAI-compatible Chat Completions endpoint on a
-    | self-hosted server). No API key — Ollama's OpenAI-compat layer
-    | doesn't require one. `base_url` is intentionally left with no
-    | default: it must be explicitly configured per environment (never
-    | a LAN IP baked into application code), and every consumer treats
-    | a blank value as "Ollama is not configured here." `timeout`
-    | defaults well above OpenAI's because local inference on
-    | consumer-grade hardware runs meaningfully slower than a hosted
-    | API. See app/Support/OllamaChatCompletionsClient.php.
+    | self-hosted server) — the local-first default provider. No API
+    | key — Ollama's OpenAI-compat layer doesn't require one. `base_url`
+    | is intentionally left with no default: it must be explicitly
+    | configured per environment (never a LAN IP baked into application
+    | code), and every consumer treats a blank value as "Ollama is not
+    | configured here." `model`/`timeout` below are the generic/
+    | Job-Analysis values; `job_match_model`/`job_match_timeout` are
+    | purpose-specific so a future local-model swap for one purpose
+    | never silently changes another. `qwen3.8:27b` is the current
+    | validated local model for both purposes — a configuration
+    | default, not an architectural dependency; nothing in the
+    | Ollama*Client classes or the prompts they call assumes this
+    | specific model. See app/Support/OllamaChatCompletionsClient.php.
     */
     'ollama' => [
         'base_url' => env('OLLAMA_BASE_URL'),
         'model' => env('OLLAMA_MODEL', 'qwen3.8:27b'),
         'timeout' => (int) env('OLLAMA_TIMEOUT_SECONDS', 300),
+        'job_match_model' => env('OLLAMA_JOB_MATCH_MODEL', 'qwen3.8:27b'),
+        'job_match_timeout' => (int) env('OLLAMA_JOB_MATCH_TIMEOUT_SECONDS', 600),
     ],
 
     /*
-    | Which provider implementation GeneratesJobAnalysis resolves to —
-    | 'openai' or 'ollama'. Job Analysis is the only purpose that's
-    | provider-selectable today; Job Match, Resume Selection, and Resume
-    | Wording remain OpenAI-only. Provider-specific settings (model,
-    | base URL, timeout, API key) stay under 'openai'/'ollama' above —
-    | this key only chooses which of those two configurations Job
-    | Analysis uses. See
-    | App\Providers\AppServiceProvider::resolveJobAnalysisProvider().
+    | Which provider implementation GeneratesJobAnalysis/GeneratesJobMatch
+    | resolve to — 'openai' or 'ollama'. Local-first: both default to
+    | 'ollama' when unset/blank. OpenAI remains fully supported as an
+    | explicitly selectable provider (a benchmark/reference path, never
+    | an automatic fallback) — set the relevant AI_*_PROVIDER var to
+    | 'openai' to use it. Resume Selection and Resume Wording remain
+    | OpenAI-only for now (no local implementation exists yet).
+    | Provider-specific settings (model, base URL, timeout, API key)
+    | stay under 'openai'/'ollama' above — these keys only choose which
+    | of those two configurations each purpose uses. See
+    | App\Providers\AppServiceProvider::resolveJobAnalysisProvider()/
+    | resolveJobMatchProvider().
     */
     'job_analysis' => [
-        'provider' => env('AI_JOB_ANALYSIS_PROVIDER', 'openai'),
+        'provider' => env('AI_JOB_ANALYSIS_PROVIDER', 'ollama'),
+    ],
+
+    'job_match' => [
+        'provider' => env('AI_JOB_MATCH_PROVIDER', 'ollama'),
     ],
 
 ];

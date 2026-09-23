@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\Role;
 use App\Support\JobAnalysis\Providers\OllamaJobAnalysisClient;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
+use App\Support\JobMatch\Providers\OllamaJobMatchClient;
 use App\Support\JobMatch\Providers\OpenAIJobMatchClient;
 use App\Support\ResumeVariant\Providers\OpenAIResumeSelectionClient;
 use App\Support\ResumeVariant\Providers\OpenAIResumeWordingClient;
@@ -32,10 +33,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(GeneratesJobAnalysis::class, fn () => $this->resolveJobAnalysisProvider());
 
-        $this->app->bind(GeneratesJobMatch::class, fn () => new OpenAIJobMatchClient(
-            apiKey: (string) config('services.openai.key'),
-            model: (string) config('services.openai.model'),
-        ));
+        $this->app->bind(GeneratesJobMatch::class, fn () => $this->resolveJobMatchProvider());
 
         $this->app->bind(GeneratesResumeSelection::class, fn () => new OpenAIResumeSelectionClient(
             apiKey: (string) config('services.openai.key'),
@@ -51,19 +49,22 @@ class AppServiceProvider extends ServiceProvider
     /**
      * The one place GeneratesJobAnalysis's provider is chosen —
      * `services.job_analysis.provider` (AI_JOB_ANALYSIS_PROVIDER),
-     * 'openai' by default. Job Analysis is the only purpose this
-     * applies to; Job Match, Resume Selection, and Resume Wording stay
-     * OpenAI-only above. GenerateJobAnalysis, its prompt, validator,
-     * and persistence never see this decision — they depend only on
-     * the GeneratesJobAnalysis interface, so adding a provider here is
-     * a new case in this match, never a change to them. An unrecognized
-     * provider value fails fast at resolution time rather than
-     * silently falling back to a default.
+     * 'ollama' by default (local-first — see docs/job-analysis-generation.md
+     * "Provider boundary"). OpenAI remains fully supported as an
+     * explicitly selectable provider, never an automatic fallback.
+     * GenerateJobAnalysis, its prompt, validator, and persistence never
+     * see this decision — they depend only on the GeneratesJobAnalysis
+     * interface, so adding a provider here is a new case in this match,
+     * never a change to them. An unrecognized provider value fails fast
+     * at resolution time rather than silently falling back to a
+     * default. Resolving this binding only ever constructs a client
+     * object — no inference occurs until something calls ->generate()
+     * on the result.
      */
     private function resolveJobAnalysisProvider(): GeneratesJobAnalysis
     {
         $provider = (string) config('services.job_analysis.provider');
-        $provider = $provider === '' ? 'openai' : $provider;
+        $provider = $provider === '' ? 'ollama' : $provider;
 
         return match ($provider) {
             'openai' => new OpenAIJobAnalysisClient(
@@ -77,6 +78,42 @@ class AppServiceProvider extends ServiceProvider
             ),
             default => throw new InvalidArgumentException(
                 "Unsupported AI_JOB_ANALYSIS_PROVIDER value [{$provider}]. Supported values: openai, ollama."
+            ),
+        };
+    }
+
+    /**
+     * The one place GeneratesJobMatch's provider is chosen —
+     * `services.job_match.provider` (AI_JOB_MATCH_PROVIDER), 'ollama'
+     * by default (local-first — see docs/job-match-generation.md
+     * "Provider boundary"). OpenAI remains fully supported as an
+     * explicitly selectable provider, never an automatic fallback.
+     * Mirrors resolveJobAnalysisProvider() exactly, including the
+     * fail-fast behavior on an unrecognized value. Job Match uses its
+     * own purpose-specific Ollama model/timeout
+     * (`services.ollama.job_match_model`/`job_match_timeout`) rather
+     * than Job Analysis's, so evaluating a different local model for
+     * one purpose never silently changes the other. Resolving this
+     * binding only ever constructs a client object — no inference
+     * occurs until something calls ->generate() on the result.
+     */
+    private function resolveJobMatchProvider(): GeneratesJobMatch
+    {
+        $provider = (string) config('services.job_match.provider');
+        $provider = $provider === '' ? 'ollama' : $provider;
+
+        return match ($provider) {
+            'openai' => new OpenAIJobMatchClient(
+                apiKey: (string) config('services.openai.key'),
+                model: (string) config('services.openai.model'),
+            ),
+            'ollama' => new OllamaJobMatchClient(
+                baseUrl: (string) config('services.ollama.base_url'),
+                model: (string) config('services.ollama.job_match_model'),
+                timeoutSeconds: (int) config('services.ollama.job_match_timeout'),
+            ),
+            default => throw new InvalidArgumentException(
+                "Unsupported AI_JOB_MATCH_PROVIDER value [{$provider}]. Supported values: openai, ollama."
             ),
         };
     }

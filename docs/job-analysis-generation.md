@@ -42,20 +42,40 @@ about `App\Support\JobAnalysis\GenerateJobAnalysis`, is aware of
 Eloquent, `JobPosting`, or any candidate-side model — a provider
 implementation has no path to reach candidate data even by accident.
 
-This milestone implements this with a single provider,
-`App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient`, calling
-OpenAI's Responses API directly via Laravel's HTTP client (no provider
-SDK) and using OpenAI's native schema-constrained structured-output
-mechanism (`text.format` with `type: "json_schema"`, `strict: true`) —
-not a JSON-mode or forced-function-call workaround. No
-temperature/top_p is sent. This is deliberately not built as a
+Two providers implement this:
+`App\Support\JobAnalysis\Providers\OllamaJobAnalysisClient` (calling a
+local/self-hosted Ollama server's OpenAI-compatible Chat Completions
+endpoint) and `App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient`
+(calling OpenAI's Responses API directly via Laravel's HTTP client — no
+provider SDK — using OpenAI's native schema-constrained
+structured-output mechanism: `text.format` with `type: "json_schema"`,
+`strict: true`, not a JSON-mode or forced-function-call workaround; no
+temperature/top_p sent). This is deliberately not built as a
 multi-provider abstraction: the interface is the only seam, and a
-second provider (or a fake for tests) is a new class implementing it,
-not a change to the orchestrator, prompt, validator, or domain layer.
-Provider/model configuration (`OPENAI_API_KEY`, `OPENAI_MODEL`) lives in
-`config/services.php` under `services.openai`, bound to the interface in
-`AppServiceProvider::register()` — never hardcoded, never sent to the
-frontend.
+provider (or a fake for tests) is a new class implementing it, not a
+change to the orchestrator, prompt, validator, or domain layer.
+
+**career-toolkit is local-first**: `AppServiceProvider::resolveJobAnalysisProvider()`
+picks the bound implementation from `services.job_analysis.provider`
+(`AI_JOB_ANALYSIS_PROVIDER`), defaulting to `'ollama'` when unset/blank
+— the happy path does not require an OpenAI API key. OpenAI remains
+fully supported as an explicitly selectable provider
+(`AI_JOB_ANALYSIS_PROVIDER=openai`) — a benchmark/reference/manual-
+comparison path — but is never an automatic fallback target if Ollama
+fails; an unrecognized provider value fails fast rather than silently
+choosing either. Resolving the binding only ever constructs a client
+object — no inference occurs until something calls `->generate()` on
+the result, so this default has no effect on application boot or the
+default test suite. Provider/model configuration
+(`OPENAI_API_KEY`/`OPENAI_MODEL`, `OLLAMA_BASE_URL`/`OLLAMA_MODEL`/
+`OLLAMA_TIMEOUT_SECONDS`) lives in `config/services.php` under
+`services.openai`/`services.ollama` — never hardcoded, never sent to
+the frontend. `qwen3.8:27b` (the `OLLAMA_MODEL` default) is the
+current validated local model for Job Analysis — a configuration
+default, not an architectural dependency; nothing in
+`OllamaJobAnalysisClient` or the prompt it calls assumes this specific
+model, so evaluating a different local model later is a config change,
+not a code change.
 
 ## Prompt and version semantics
 

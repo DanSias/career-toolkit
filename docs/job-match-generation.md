@@ -60,13 +60,24 @@ two contracts. This is a genuinely separate interface from
 the two represent unrelated generation tasks that happen to share
 transport mechanics (see below) — not the same domain concern.
 
-This milestone implements it with a single provider,
+Two providers implement it:
+`App\Support\JobMatch\Providers\OllamaJobMatchClient` and
 `App\Support\JobMatch\Providers\OpenAIJobMatchClient`, calling OpenAI's
-Responses API using the currently configured provider/model
-(`services.openai.key`/`services.openai.model` — same configuration keys
-`JobAnalysis` generation uses; no separate JobMatch-specific model
-setting was introduced). Bound to `GeneratesJobMatch` in
-`AppServiceProvider::register()`, same pattern as `GeneratesJobAnalysis`.
+Responses API using `services.openai.key`/`services.openai.model` (the
+same configuration keys `JobAnalysis` generation uses).
+`AppServiceProvider::resolveJobMatchProvider()` picks the bound
+implementation from `services.job_match.provider`
+(`AI_JOB_MATCH_PROVIDER`), same pattern and same local-first default
+(`'ollama'` when unset/blank) as `resolveJobAnalysisProvider()` — see
+`docs/job-analysis-generation.md` "Provider boundary" for the full
+default/fallback/boot-safety reasoning, which applies identically here.
+Job Match uses its own purpose-specific Ollama model/timeout
+(`OLLAMA_JOB_MATCH_MODEL`/`OLLAMA_JOB_MATCH_TIMEOUT_SECONDS`, under
+`services.ollama.job_match_model`/`job_match_timeout`) rather than Job
+Analysis's `OLLAMA_MODEL`/`OLLAMA_TIMEOUT_SECONDS`, so evaluating a
+different local model for one purpose never silently changes the
+other. `qwen3.8:27b` is the current validated local model for Job
+Match — a configuration default, not an architectural dependency.
 
 **Shared HTTP transport, deliberately not a shared framework.** Writing
 `OpenAIJobMatchClient` as a fully standalone class first showed roughly
@@ -96,7 +107,18 @@ than `OpenAIJobAnalysisClient`'s 8,192: a JobMatch response can contain
 up to one `matches`/`education_matches` entry per (finding × candidate
 fact/education row) combination the model judges relevant, which scales
 with candidate dataset size in a way a JobAnalysis response — bounded by
-posting length alone — does not.
+posting length alone — does not. `OllamaJobMatchClient` requests a
+larger budget still (16,000, validated live against qwen3.8:27b/
+job-match-v3 on the full 25-finding/77-CareerFact Pearly corpus,
+`finish_reason: stop` with 18,115 completion tokens actually used) —
+this is a *requested* output budget sent as `max_tokens`, not a
+provider-enforced ceiling; Ollama's OpenAI-compat endpoint can and did
+exceed it while still finishing cleanly. `OllamaJobMatchClient` never
+sends `reasoning_effort` (the model's own default) — live evaluation
+found default reasoning materially more evidentially faithful than
+`reasoning_effort: none` for Job Match specifically, at the cost of
+roughly 50% more wall-clock time; that tradeoff was accepted
+deliberately given Job Match's factual-faithfulness requirements.
 
 ## Prompt and version semantics
 

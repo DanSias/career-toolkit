@@ -1,0 +1,727 @@
+{
+    "role_summary": "Senior Full-Stack Engineer (AI-Native) at Cardiff focusing on owning vertical projects end-to-end, deploying AI agents and LLM platforms, and leveraging modern AI coding tools to accelerate production software delivery within a US remote, full-time capacity.",
+    "overall_seniority": "senior",
+    "seniority_rationale": "The job title explicitly includes 'Senior', and the requirements mandate 5+ years of professional experience with senior-level ownership of production systems, indicating a senior-level role.",
+    "findings": [
+        {
+            "category": "work_arrangement",
+            "statement": "The role is fully remote.",
+            "label": null,
+            "basis": "explicit",
+            "requirement_strength": null,
+            "emphasis": "high",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Stated in multiple fields and benefit sections.",
+            "evidence": [
+                {
+                    "excerpt": "Remote, Full Time",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Location: Remote (U.S.)",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Remote-first, with support for your home-office setup",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "authorization",
+            "statement": "The position is restricted to candidates located in the United States.",
+            "label": "us_remote",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Implicitly requires US work authorization or eligibility to receive compensation in the US context.",
+            "evidence": [
+                {
+                    "excerpt": "Location: Remote (U.S.)",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "success_measure",
+            "statement": "The core business goal is to reduce the time to fund a customer from 24 business hours to minutes using automated systems with human-in-the-loop oversight.",
+            "label": "business_goal",
+            "basis": "explicit",
+            "requirement_strength": null,
+            "emphasis": "high",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Context for the role's impact.",
+            "evidence": [
+                {
+                    "excerpt": "Today our average turnaround is 24 business hours; our goal is minutes, through automated systems with human-in-the-loop oversight.",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "capability",
+            "statement": "Engineers are expected to have rebuilt their workflow around modern AI tooling to ship in days what used to take weeks.",
+            "label": "ai_workflow_rebuild",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Describes the expected working method.",
+            "evidence": [
+                {
+                    "excerpt": "engineers who have rebuilt how they work around modern tooling and ship in days what used to take weeks.",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "responsibility",
+            "statement": "Own vertical projects end to end, including customer-facing products, internal tools, backend, frontend, deployment, and iteration.",
+            "label": "e2e_ownership",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Central responsibility of the role.",
+            "evidence": [
+                {
+                    "excerpt": "You'll own vertical projects end to end: the customer-facing products and internal tools that sit on top of Cardiff's shared platform.",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Own each project end to end: backend, frontend, deployment, and iteration once it's live",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "work_arrangement",
+            "statement": "Candidates will work independently and communicate proactively, reporting directly to the Managing Partner.",
+            "label": "independent_work",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Structural aspect of the role.",
+            "evidence": [
+                {
+                    "excerpt": "You'll report directly to the Managing Partner",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "You work independently and communicate proactively; when something is blocked, you say so the same day.",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "success_measure",
+            "statement": "Within the first 90 days, ship a product to production that materially beats the status quo for the served department, measured on KPIs like speed, accuracy, ROI, or conversions.",
+            "label": "90_day_ship",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": "first 90 days",
+            "notes": "Specific performance expectation.",
+            "evidence": [
+                {
+                    "excerpt": "In your first 90 days, you will:",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Ship a product to production that materially beats the status quo for the department you serve, measured on the KPI that fits: speed, accuracy, ROI, or conversions",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "success_measure",
+            "statement": "Within the first 90 days, take at least two prototypes to production with clearly defined before-and-after KPIs.",
+            "label": "90_day_prototypes",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": "first 90 days",
+            "notes": "Specific performance expectation.",
+            "evidence": [
+                {
+                    "excerpt": "Take at least two more prototypes to production with clearly defined before-and-after KPIs",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "success_measure",
+            "statement": "Within the first 90 days, learn Cardiff's business model and integration surface well enough to ship against it without hand-holding.",
+            "label": "90_day_autonomy",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": "first 90 days",
+            "notes": "Learning curve expectation.",
+            "evidence": [
+                {
+                    "excerpt": "Learn Cardiff's business model and integration surface well enough to ship against it without hand-holding",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "success_measure",
+            "statement": "By the end of the first year, possess a portfolio of production systems with attributable impact on funding volume, conversion, or operating cost.",
+            "label": "1yr_impact",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": "first year",
+            "notes": "Long-term success criterion.",
+            "evidence": [
+                {
+                    "excerpt": "By the end of your first year:",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "A portfolio of production systems you own, with attributable impact on funding volume, conversion, or operating cost",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "success_measure",
+            "statement": "By the end of the first year, AI-assisted development patterns introduced by the engineer should be in common use, and AI-generated code must be read, audited, and corrected rather than merged on faith.",
+            "label": "1yr_judgment",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": "first year",
+            "notes": "Expectation on code quality and AI oversight.",
+            "evidence": [
+                {
+                    "excerpt": "Faster product cycles across the team, with AI-assisted development patterns you introduced now in common use",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "A track record of judgment: systems that scale, and AI-generated code that got read, audited, and corrected rather than merged on faith",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "technology",
+            "statement": "Design and launch AI agents that interact with customers, tied to measurable results.",
+            "label": "ai_agents",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Core technical task.",
+            "evidence": [
+                {
+                    "excerpt": "Design and launch AI agents that talk to customers, tied to results you can measure",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "technology",
+            "statement": "Work with the Lead AI Architect on the architecture and evolution of Cardiff's AI platform.",
+            "label": "ai_arch",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Collaboration responsibility.",
+            "evidence": [
+                {
+                    "excerpt": "Work with the Lead AI Architect on architecture and the ongoing evolution of Cardiff's AI platform",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "technology",
+            "statement": "Build against shared integrations including Salesforce, Snowflake, Gmail, Zoom, and Slack.",
+            "label": "integrations_stack",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Mentioned in responsibilities; Salesforce/Snowflake also appear as preferred.",
+            "evidence": [
+                {
+                    "excerpt": "Build against our shared integrations: Salesforce, Snowflake, Gmail, Zoom, Slack, and internal tools",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "capability",
+            "statement": "Prefer adopting best-in-class open-source projects over building from scratch when the work is not core IP.",
+            "label": "build_vs_adopt",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Engineering philosophy requirement.",
+            "evidence": [
+                {
+                    "excerpt": "Reach for best-in-class open source before building from scratch: where the work isn't core IP, adopting a strong community project (think Buzz, the agent-native workspace Block recently open-sourced) beats owning the support and upgrade burden of a homegrown clone",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Build-vs-adopt judgment: fluent enough in the open-source AI ecosystem to reach for a strong community project rather than hand-rolling what already exists",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "capability",
+            "statement": "Make AI tooling the default way of building and review AI-produced code before it ships.",
+            "label": "ai_default",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Core working method expectation.",
+            "evidence": [
+                {
+                    "excerpt": "Make AI tooling your default way of building, and read what it produces before it ships",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "capability",
+            "statement": "Ship a working v1 immediately and improve it later, rather than waiting months for a perfect v1.",
+            "label": "fast_iteration",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Workflow expectation.",
+            "evidence": [
+                {
+                    "excerpt": "Ship a working v1 today and improve it Monday, instead of a \"perfect\" v1 a month from now",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "You ship: a rough v1 in production beats a polished v1 in staging.",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "required_qualification",
+            "statement": "5+ years of professional software engineering experience, including senior-level ownership of production systems.",
+            "label": "yoe_floor",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": 5,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Hard requirement with seniority expectation.",
+            "evidence": [
+                {
+                    "excerpt": "5+ years of professional software engineering, with senior-level ownership of production systems",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "required_qualification",
+            "statement": "Experience shipping production features using AI coding tools (Claude Code, Cursor, Codex, Devin, or similar) as the primary method of building, not just occasional experimentation.",
+            "label": "ai_coding_pro",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Explicitly excludes casual experimentation.",
+            "evidence": [
+                {
+                    "excerpt": "Production features shipped using Claude Code, Cursor, Codex, Devin, or similar as your primary way of building, not occasional experimentation",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "required_qualification",
+            "statement": "A recent example (within the last six months) of using AI tooling to deliver work 3-5x faster than traditional methods.",
+            "label": "recent_ai_speedup",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": "within the last six months",
+            "time_horizon": null,
+            "notes": "Time-bound performance evidence required.",
+            "evidence": [
+                {
+                    "excerpt": "A recent example (within the last six months) of using AI tooling to deliver something 3–5x faster than you could have without it",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "technology",
+            "statement": "Proficiency in Python, modern JavaScript/TypeScript, SQL, REST/GraphQL, and cloud deployment (with AWS preferred).",
+            "label": "stack_skills",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "AWS is preferred among cloud options, implying a general cloud requirement.",
+            "evidence": [
+                {
+                    "excerpt": "Range across the stack: Python, modern JavaScript/TypeScript, SQL, REST/GraphQL, and cloud deployment (AWS preferred)",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "capability",
+            "statement": "Depth in agent orchestration, including loops, graphs, multi-step tool use, multi-agent patterns (e.g., LangGraph or similar), LLM APIs, RAG, vector databases, prompt engineering, and production evals.",
+            "label": "agent_deep_dive",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "production",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Explicitly requires production usage, not just prototypes.",
+            "evidence": [
+                {
+                    "excerpt": "Depth in agent orchestration (loops, graphs, multi-step tool use, multi-agent patterns; LangGraph or similar), with LLM APIs, RAG and vector databases, prompt engineering, and evals running in production, not just prototypes",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "capability",
+            "statement": "Engineering fundamentals sufficient to recognize when AI-generated output is wrong.",
+            "label": "ai_judgment",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "normal",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Critical for oversight of AI tools.",
+            "evidence": [
+                {
+                    "excerpt": "The engineering fundamentals to recognize when AI output is wrong",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "preferred_qualification",
+            "statement": "Experience with Salesforce APIs, Snowflake, or fintech/lending data models.",
+            "label": "niche_tech_pref",
+            "basis": "explicit",
+            "requirement_strength": "preferred",
+            "emphasis": "normal",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Listed under 'Nice to have'.",
+            "evidence": [
+                {
+                    "excerpt": "Nice to have:",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Salesforce APIs, Snowflake, or fintech/lending data models",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "cloud deployment (AWS preferred)",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "preferred_qualification",
+            "statement": "Contributions to open-source AI projects.",
+            "label": "oss_contrib",
+            "basis": "explicit",
+            "requirement_strength": "preferred",
+            "emphasis": "low",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Listed under 'Nice to have'.",
+            "evidence": [
+                {
+                    "excerpt": "Contributions to open-source AI projects",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "preferred_qualification",
+            "statement": "Experience shipping solo or on a small founding team.",
+            "label": "small_team_exp",
+            "basis": "explicit",
+            "requirement_strength": "preferred",
+            "emphasis": "low",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Listed under 'Nice to have'.",
+            "evidence": [
+                {
+                    "excerpt": "Experience shipping solo or on a small founding team",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "culture_signal",
+            "statement": "Candidates should be at the frontier of AI capabilities, capable of impressing the team and teaching them, rather than needing to be taught.",
+            "label": "frontier_knowledge",
+            "basis": "strongly_implied",
+            "requirement_strength": null,
+            "emphasis": "high",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Implies existing advanced knowledge level is expected.",
+            "evidence": [
+                {
+                    "excerpt": "You know the frontier better than we do. We're not looking to teach you the latest capabilities; we're looking to be wowed, and to learn from you.",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "culture_signal",
+            "statement": "Recent shipping performance (last 90 days) and portfolio of working AI-native projects are valued more highly than the brand or tenure on a resume.",
+            "label": "output_over_brand",
+            "basis": "explicit",
+            "requirement_strength": null,
+            "emphasis": "high",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": "last 90 days",
+            "time_horizon": null,
+            "notes": "Hiring philosophy.",
+            "evidence": [
+                {
+                    "excerpt": "We care less about the brand on your resume than what you've shipped in the last 90 days. A self-taught engineer with a GitHub full of working AI-native projects beats a 15-year veteran just starting to explore these tools. Show us the work.",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "negative_fit_signal",
+            "statement": "Candidates who prefer structured corporate environments with clear lanes, want detailed direction before starting, would rather maintain than build, or use AI tools only to assist an old workflow rather than rebuild around them are not a fit.",
+            "label": "misfit_signals",
+            "basis": "explicit",
+            "requirement_strength": null,
+            "emphasis": "high",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Explicit exclusion criteria.",
+            "evidence": [
+                {
+                    "excerpt": "This Role May Not Be a Fit If You",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Prefer structured corporate environments with clear lanes",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Want detailed direction before you start",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Would rather maintain systems than build them",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "Use AI tools to assist your old workflow, rather than having rebuilt your workflow around them",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        },
+        {
+            "category": "application_request",
+            "statement": "Apply by emailing AI-Eng@cardiff.co with a 2-3 minute video introduction, a GitHub link, and a specific production project with a viewable link.",
+            "label": "application_kit",
+            "basis": "explicit",
+            "requirement_strength": "required",
+            "emphasis": "high",
+            "maturity": "unspecified",
+            "years_experience_min": null,
+            "years_experience_max": null,
+            "recency_requirement": null,
+            "time_horizon": null,
+            "notes": "Specific submission requirements.",
+            "evidence": [
+                {
+                    "excerpt": "Email AI-Eng@cardiff.co with:",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "A 2–3 minute video introducing yourself and walking us through your work",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "A link to your GitHub",
+                    "source_section": null,
+                    "source_locator": null
+                },
+                {
+                    "excerpt": "A specific project you've shipped to production, with a link we can see or try",
+                    "source_section": null,
+                    "source_locator": null
+                }
+            ]
+        }
+    ]
+}

@@ -15,10 +15,12 @@ use App\Support\JobMatch\JobMatchProviderResponse;
  * interface, not a reuse of it, since the two calls have genuinely
  * different input/output shapes. See docs/job-match-generation.md.
  *
- * A single provider (OpenAI) implements this for v1
- * (App\Support\JobMatch\Providers\OpenAIJobMatchClient). This interface
- * exists so a second provider — or a fake for tests — is a new class,
- * not a change to the orchestrator or the domain layer.
+ * Two providers implement this:
+ * App\Support\JobMatch\Providers\OllamaJobMatchClient (local-first
+ * default) and App\Support\JobMatch\Providers\OpenAIJobMatchClient
+ * (explicitly selectable). This interface exists so a provider — or a
+ * fake for tests — is a new class, not a change to the orchestrator or
+ * the domain layer. See App\Providers\AppServiceProvider::resolveJobMatchProvider().
  */
 interface GeneratesJobMatch
 {
