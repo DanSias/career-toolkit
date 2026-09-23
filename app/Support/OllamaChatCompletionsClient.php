@@ -51,6 +51,15 @@ final class OllamaChatCompletionsClient
 
     /**
      * @param  array<string, mixed>  $schema
+     * @param  ?string  $reasoningEffort  When null (the default), the request
+     *                                    body is byte-for-byte identical to before this parameter existed —
+     *                                    no reasoning-related field is sent at all, and the model's own
+     *                                    default thinking behavior applies. When non-null, adds exactly one
+     *                                    top-level `reasoning_effort` field with this value — the single
+     *                                    OpenAI-compatible reasoning control this transport speaks, per the
+     *                                    local-Ollama-provider investigation's Question 1. Deliberately not
+     *                                    `think`/`reasoning` as well: one unambiguous variable per call, not
+     *                                    several speculative ones sent together.
      *
      * @throws OllamaChatCompletionsException
      */
@@ -64,9 +73,31 @@ final class OllamaChatCompletionsClient
         int $maxOutputTokens,
         int $timeoutSeconds,
         string $logPrefix,
+        ?string $reasoningEffort = null,
     ): OllamaChatCompletionsResult {
         if ($baseUrl === '') {
             throw new OllamaChatCompletionsException('No Ollama base URL is configured (OLLAMA_BASE_URL).');
+        }
+
+        $requestBody = [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'system', 'content' => $systemPrompt],
+                ['role' => 'user', 'content' => $userPrompt],
+            ],
+            'max_tokens' => $maxOutputTokens,
+            'response_format' => [
+                'type' => 'json_schema',
+                'json_schema' => [
+                    'name' => $schemaName,
+                    'schema' => $schema,
+                    'strict' => true,
+                ],
+            ],
+        ];
+
+        if ($reasoningEffort !== null) {
+            $requestBody['reasoning_effort'] = $reasoningEffort;
         }
 
         try {
@@ -77,22 +108,7 @@ final class OllamaChatCompletionsClient
                     fn (Throwable $exception) => $this->isRetryable($exception),
                     throw: false,
                 )
-                ->post($this->endpoint($baseUrl), [
-                    'model' => $model,
-                    'messages' => [
-                        ['role' => 'system', 'content' => $systemPrompt],
-                        ['role' => 'user', 'content' => $userPrompt],
-                    ],
-                    'max_tokens' => $maxOutputTokens,
-                    'response_format' => [
-                        'type' => 'json_schema',
-                        'json_schema' => [
-                            'name' => $schemaName,
-                            'schema' => $schema,
-                            'strict' => true,
-                        ],
-                    ],
-                ]);
+                ->post($this->endpoint($baseUrl), $requestBody);
         } catch (ConnectionException $e) {
             Log::warning("{$logPrefix}: Ollama connection failure.", ['model' => $model]);
 
@@ -108,26 +124,41 @@ final class OllamaChatCompletionsClient
         $body = $response->json();
         $resolvedModel = is_array($body) && is_string($body['model'] ?? null) ? $body['model'] : $model;
 
-        $decoded = $this->decodeStructuredContent($this->extractMessageContent($body, $logPrefix));
-
+        // Extracted here — before content extraction/decoding, which is
+        // where a finish_reason:length (or malformed-content) failure
+        // throws — so that failure can carry this diagnostic metadata
+        // rather than losing it. Purely observability: none of this is
+        // consulted by any control-flow decision below.
         $firstChoice = is_array($body) && is_array($body['choices'][0] ?? null) ? $body['choices'][0] : null;
-        $finishReason = is_string($firstChoice['finish_reason'] ?? null) ? $firstChoice['finish_reason'] : null;
+        $finishReasonForDiagnostics = is_string($firstChoice['finish_reason'] ?? null) ? $firstChoice['finish_reason'] : null;
+        $usageForDiagnostics = is_array($body) && is_array($body['usage'] ?? null) ? $body['usage'] : null;
 
-        $usage = is_array($body) && is_array($body['usage'] ?? null) ? $body['usage'] : null;
-        if ($usage !== null) {
+        try {
+            $decoded = $this->decodeStructuredContent($this->extractMessageContent($body, $logPrefix));
+        } catch (OllamaChatCompletionsException $e) {
+            throw new OllamaChatCompletionsException(
+                $e->getMessage(),
+                previous: $e,
+                model: $resolvedModel,
+                finishReason: $finishReasonForDiagnostics,
+                usage: $usageForDiagnostics,
+            );
+        }
+
+        if ($usageForDiagnostics !== null) {
             Log::info("{$logPrefix}: Ollama usage.", [
                 'model' => $resolvedModel,
-                'prompt_tokens' => $usage['prompt_tokens'] ?? null,
-                'completion_tokens' => $usage['completion_tokens'] ?? null,
-                'total_tokens' => $usage['total_tokens'] ?? null,
+                'prompt_tokens' => $usageForDiagnostics['prompt_tokens'] ?? null,
+                'completion_tokens' => $usageForDiagnostics['completion_tokens'] ?? null,
+                'total_tokens' => $usageForDiagnostics['total_tokens'] ?? null,
             ]);
         }
 
         return new OllamaChatCompletionsResult(
             model: $resolvedModel,
             structuredContent: $decoded,
-            finishReason: $finishReason,
-            usage: $usage,
+            finishReason: $finishReasonForDiagnostics,
+            usage: $usageForDiagnostics,
         );
     }
 

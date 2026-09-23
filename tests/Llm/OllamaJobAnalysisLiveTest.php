@@ -20,11 +20,21 @@ use App\Support\OllamaChatCompletionsException;
  *
  * Defaults to the Pearly corpus posting; set
  * OLLAMA_LIVE_JOB_ANALYSIS_POSTING to any other
- * jobAnalysisCorpusPosting() company prefix (e.g. Rootstock) to run
- * this same diagnostic against a different fixture for a one-off
- * comparison. Intentionally just one env var, not a multi-posting
- * runner — see the local corpus-comparison investigation for why a
- * generalized evaluation framework isn't warranted yet.
+ * jobAnalysisCorpusPosting() company prefix (e.g. Rootstock, Cardiff)
+ * to run this same diagnostic against a different fixture for a
+ * one-off comparison. Intentionally just one env var, not a
+ * multi-posting runner — see the local corpus-comparison investigation
+ * for why a generalized evaluation framework isn't warranted yet.
+ *
+ * Also defaults to omitting reasoning_effort entirely (the model's own
+ * default thinking behavior applies, unchanged from every prior run of
+ * this harness); set OLLAMA_LIVE_REASONING_EFFORT (e.g. "none") to
+ * opt this one run into OllamaChatCompletionsClient's optional
+ * reasoning_effort passthrough — added specifically to test the
+ * thinking-token-overhead hypothesis raised by the Cardiff
+ * finish_reason:length failure at the default 8192-token budget. Not
+ * a config() entry either, same one-off-diagnostic reasoning as the
+ * posting override above.
  *
  * Calls OllamaChatCompletionsClient directly rather than through
  * OllamaJobAnalysisClient. This is deliberate, not a fidelity
@@ -80,6 +90,8 @@ it('runs the real JobAnalysis prompt/schema through Ollama and reports every pip
     $postingPrefix = getenv('OLLAMA_LIVE_JOB_ANALYSIS_POSTING') ?: 'Pearly';
     $posting = jobAnalysisCorpusPosting($postingPrefix);
 
+    $reasoningEffort = getenv('OLLAMA_LIVE_REASONING_EFFORT') ?: null;
+
     $transport = new OllamaChatCompletionsClient;
     $prompt = new JobAnalysisPromptV2;
     $validator = new JobAnalysisResponseValidator;
@@ -89,6 +101,7 @@ it('runs the real JobAnalysis prompt/schema through Ollama and reports every pip
         'posting' => $postingPrefix,
         'configured_model' => config('services.ollama.model'),
         'returned_model' => null,
+        'reasoning_effort_requested' => $reasoningEffort,
         'elapsed_seconds' => null,
         'finish_reason' => null,
         'prompt_tokens' => null,
@@ -114,9 +127,21 @@ it('runs the real JobAnalysis prompt/schema through Ollama and reports every pip
             maxOutputTokens: OLLAMA_JOB_ANALYSIS_MAX_OUTPUT_TOKENS,
             timeoutSeconds: (int) config('services.ollama.timeout'),
             logPrefix: 'JobAnalysis generation (Ollama live check)',
+            reasoningEffort: $reasoningEffort,
         );
     } catch (OllamaChatCompletionsException $e) {
+        // Diagnostic metadata OllamaChatCompletionsException now carries
+        // on a content-extraction failure (e.g. finish_reason:length) —
+        // null for failure modes that never reached a decoded response
+        // body (connection errors, non-2xx responses). Reported, never
+        // used to retry or repair anything — this harness still fails
+        // the test on any transport exception, unchanged.
         $report['elapsed_seconds'] = round(microtime(true) - $start, 2);
+        $report['returned_model'] = $e->model;
+        $report['finish_reason'] = $e->finishReason;
+        $report['prompt_tokens'] = $e->usage['prompt_tokens'] ?? null;
+        $report['completion_tokens'] = $e->usage['completion_tokens'] ?? null;
+        $report['total_tokens'] = $e->usage['total_tokens'] ?? null;
         printReport($report);
         throw $e;
     }
