@@ -126,7 +126,7 @@ it('persists the full graph from a valid two-stage response', function () {
         ->and($variant->targetTermUsages)->toHaveCount(1)
         ->and($variant->summary)->not->toBeNull()
         ->and($variant->schema_version)->toBe('1.3')
-        ->and($variant->selection_prompt_version)->toBe('resume-selection-v1.5')
+        ->and($variant->selection_prompt_version)->toBe('resume-selection-v2.1')
         ->and($variant->wording_prompt_version)->toBe('resume-wording-v1.3')
         ->and($variant->selection_generated_by)->toBe('openai:gpt-test')
         ->and($variant->wording_generated_by)->toBe('openai:gpt-test');
@@ -441,7 +441,7 @@ it('allows the same CareerFact to legitimately back two distinct claims (summary
 });
 
 it('excludes Skills from any target-term/qualified mechanism entirely — the schema has no such field', function () {
-    $schemaSource = file_get_contents(base_path('app/Support/ResumeVariant/Prompts/ResumeSelectionPromptV1.php'));
+    $schemaSource = file_get_contents(base_path('app/Support/ResumeVariant/Prompts/ResumeSelectionPromptV2.php'));
     // Extract just the schema-building region so this check can't
     // false-positive on the systemPrompt's own prose mentioning skills
     // elsewhere.

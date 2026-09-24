@@ -113,14 +113,30 @@ Built by `App\Support\ResumeVariant\TargetTerminologyBuilder`.
 ```
 
 v1 scope: exactly the `JobAnalysisFinding` rows with
-`category = technology` whose `statement` follows the atomic
-`"{Term} is ..."` shape (e.g. "Azure is a cloud platform relevant to
-the role.") — confirmed against real `JobAnalysis` output. A bundled
-finding naming several technologies at once never matches this shape
-and is silently excluded; this is a deliberate, documented scope
-limit, not general keyword/entity extraction. `direct_evidence_exists`
-is computed once here by `App\Support\ResumeVariant\DirectEvidenceAuthorization`
-and independently re-checked by `ResumeSelectionResponseValidator` at
+`category = technology`, extracted via two structural paths, in
+priority order — never general keyword/entity extraction, and never a
+technology ontology/whitelist:
+
+1. **Structured `label`** (primary). Accepted only when the label
+   splits into exactly one underscore-delimited token (no qualifier, no
+   grouping) AND that token appears as a case-insensitive whole word in
+   the finding's own `statement` — the real term is then taken from
+   `statement` verbatim (correct casing, e.g. "SQL," "React"), never
+   re-cased from the label. A multi-token label
+   (`cicd_github_actions_terraform`, `major_cloud_provider`) is always
+   rejected outright, even one that happens to name one real
+   multi-word technology (e.g. `github_actions`) — nothing short of a
+   technology ontology could safely distinguish that case from a
+   generic tag-plus-qualifier, and this milestone does not build one.
+2. **Atomic `"{Term} is ..."` statement shape** (fallback), tried only
+   when the label path yields nothing — preserved for backward
+   compatibility with any already-persisted `JobAnalysis` whose
+   technology findings happen to use that form.
+
+A finding matching neither path is silently excluded — a deliberate,
+documented scope limit. `direct_evidence_exists` is computed once here
+by `App\Support\ResumeVariant\DirectEvidenceAuthorization` and
+independently re-checked by `ResumeSelectionResponseValidator` at
 validation time — never trusted from either computation alone in a way
 that skips the other.
 
@@ -207,6 +223,33 @@ nullable+enum combinations are avoided throughout.
   two different bullets, or a summary claim and a bullet — is always
   allowed; there is no one-fact-per-bullet rule and no semantic-
   similarity/dedup NLP.
+- **Content-volume budget — deterministic, provider-neutral (since
+  `ResumeSelectionPromptV2`).** Total Experience `bullet_groups` across
+  every role combined may never exceed 13 (`MAX_EXPERIENCE_BULLET_GROUPS`);
+  `skills` may never exceed 18 selected (`MAX_SELECTED_SKILLS`). Both
+  are hard ceilings enforced by `ResumeSelectionResponseValidator`,
+  independent of which provider answered and independent of anything
+  the prompt itself says — a response exceeding either is rejected
+  outright, with no silent truncation of low-ranked entries. `V2`'s
+  prompt separately states a *preferred* TARGET range inside each
+  ceiling (10-12 bullet groups, 12-16 Skills) as guidance, not a
+  validator rule. Chosen by inspecting the actual renderer
+  (`resources/views/resume/print.blade.php`: 8.5x11in page, 0.75in
+  margins, 11pt/1.45-line-height, no page-count awareness anywhere in
+  `App\Support\ResumeDocument`) against a real, already-persisted
+  Formic `ResumeVariant` (`resume-selection-v1.5`,
+  `openai:gpt-5.6-terra`) that selected 17 Experience bullet groups + 22
+  Skills and rendered to roughly three pages against a two-page target
+  — notably, one Skill category line alone concatenated 14-15
+  individual Skill names into a single ~340-character wrapped line, a
+  concrete, measured contributor to the overshoot distinct from bullet
+  count. Selected Projects' bullets are deliberately **not** counted
+  toward the Experience ceiling — that section is already
+  independently bounded to at most 3 entries and renders far more
+  compactly per entry. These numbers are the smallest deterministic
+  constraint that would have rejected that exact over-selection
+  outright while remaining generous enough for legitimate tailoring —
+  not a guarantee of an exact rendered page count.
 - **`target_term_usages[].posture`** — `direct` | `qualified` |
   `capability` (`App\Enums\ResumeClaimPosture`). `direct` is rejected
   outright unless `direct_evidence_exists` was `true` for that term —

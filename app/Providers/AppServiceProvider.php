@@ -14,6 +14,7 @@ use App\Support\JobAnalysis\Providers\OllamaJobAnalysisClient;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
 use App\Support\JobMatch\Providers\OllamaJobMatchClient;
 use App\Support\JobMatch\Providers\OpenAIJobMatchClient;
+use App\Support\ResumeVariant\Providers\OllamaResumeSelectionClient;
 use App\Support\ResumeVariant\Providers\OpenAIResumeSelectionClient;
 use App\Support\ResumeVariant\Providers\OpenAIResumeWordingClient;
 use Carbon\CarbonImmutable;
@@ -35,10 +36,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->bind(GeneratesJobMatch::class, fn () => $this->resolveJobMatchProvider());
 
-        $this->app->bind(GeneratesResumeSelection::class, fn () => new OpenAIResumeSelectionClient(
-            apiKey: (string) config('services.openai.key'),
-            model: (string) config('services.openai.model'),
-        ));
+        $this->app->bind(GeneratesResumeSelection::class, fn () => $this->resolveResumeSelectionProvider());
 
         $this->app->bind(GeneratesResumeWording::class, fn () => new OpenAIResumeWordingClient(
             apiKey: (string) config('services.openai.key'),
@@ -114,6 +112,44 @@ class AppServiceProvider extends ServiceProvider
             ),
             default => throw new InvalidArgumentException(
                 "Unsupported AI_JOB_MATCH_PROVIDER value [{$provider}]. Supported values: openai, ollama."
+            ),
+        };
+    }
+
+    /**
+     * The one place GeneratesResumeSelection's provider is chosen —
+     * `services.resume_selection.provider` (AI_RESUME_SELECTION_PROVIDER),
+     * 'ollama' by default (local-first — see
+     * docs/resume-variant-generation.md "Provider boundary"). OpenAI
+     * remains fully supported as an explicitly selectable provider,
+     * never an automatic fallback. Mirrors resolveJobMatchProvider()
+     * exactly, including the fail-fast behavior on an unrecognized
+     * value and the purpose-specific Ollama model/timeout
+     * (`services.ollama.resume_selection_model`/`resume_selection_timeout`)
+     * so evaluating a different local model for this purpose never
+     * silently changes Job Analysis or Job Match. Resolving this
+     * binding only ever constructs a client object — no inference
+     * occurs until something calls ->generate() on the result. Resume
+     * Wording remains OpenAI-only above — no local implementation
+     * exists yet for that stage.
+     */
+    private function resolveResumeSelectionProvider(): GeneratesResumeSelection
+    {
+        $provider = (string) config('services.resume_selection.provider');
+        $provider = $provider === '' ? 'ollama' : $provider;
+
+        return match ($provider) {
+            'openai' => new OpenAIResumeSelectionClient(
+                apiKey: (string) config('services.openai.key'),
+                model: (string) config('services.openai.model'),
+            ),
+            'ollama' => new OllamaResumeSelectionClient(
+                baseUrl: (string) config('services.ollama.base_url'),
+                model: (string) config('services.ollama.resume_selection_model'),
+                timeoutSeconds: (int) config('services.ollama.resume_selection_timeout'),
+            ),
+            default => throw new InvalidArgumentException(
+                "Unsupported AI_RESUME_SELECTION_PROVIDER value [{$provider}]. Supported values: openai, ollama."
             ),
         };
     }

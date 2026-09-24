@@ -12,8 +12,10 @@ use App\Support\ResumeVariant\ResumeSelectionProviderResponse;
  * App\Contracts\GeneratesJobMatch exactly — a deliberately separate
  * interface from GeneratesResumeWording, since the two calls have
  * genuinely different input/output shapes, even though both happen to
- * share the same underlying HTTP transport. See
- * docs/resume-variant-generation.md.
+ * share the same underlying HTTP transport. Two providers implement
+ * this: App\Support\ResumeVariant\Providers\OllamaResumeSelectionClient
+ * (local-first default) and OpenAIResumeSelectionClient (explicitly
+ * selectable). See docs/resume-variant-generation.md.
  */
 interface GeneratesResumeSelection
 {

@@ -15,7 +15,7 @@ use App\Models\ResumeVariant;
 use App\Models\Role;
 use App\Models\Skill;
 use App\Support\JobMatch\JobPayloadBuilder;
-use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV1;
+use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV2;
 use App\Support\ResumeVariant\Prompts\ResumeWordingPromptV1;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -43,7 +43,7 @@ final class GenerateResumeVariant
     public function __construct(
         private readonly GeneratesResumeSelection $selectionProvider,
         private readonly GeneratesResumeWording $wordingProvider,
-        private readonly ResumeSelectionPromptV1 $selectionPrompt,
+        private readonly ResumeSelectionPromptV2 $selectionPrompt,
         private readonly ResumeWordingPromptV1 $wordingPrompt,
         private readonly ResumeCandidatePayloadBuilder $candidateBuilder,
         private readonly JobPayloadBuilder $jobPayloadBuilder,

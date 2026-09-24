@@ -36,7 +36,7 @@ use Illuminate\Support\Collection;
 final class ResumeCandidatePayloadBuilder
 {
     /**
-     * @return array{career_facts: array<int, array<string, mixed>>, education: array<int, array<string, mixed>>, eligible_skills: array<int, array<string, mixed>>}
+     * @return array{career_facts: array<int, array<string, mixed>>, education: array<int, array<string, mixed>>, eligible_skills: array<int, array<string, mixed>>, role_project_map: array<int, array{role_id: int, valid_project_ids: array<int, int>}>}
      */
     public function build(JobMatch $jobMatch): array
     {
@@ -64,6 +64,7 @@ final class ResumeCandidatePayloadBuilder
             'career_facts' => $facts->map(fn (CareerFact $fact) => $this->normalizeCareerFact($fact, $annotationsByFactId[$fact->id] ?? []))->all(),
             'education' => $this->buildEducation($profile),
             'eligible_skills' => $this->buildEligibleSkills($facts),
+            'role_project_map' => $this->buildRoleProjectMap($profile),
         ];
     }
 
@@ -222,5 +223,45 @@ final class ResumeCandidatePayloadBuilder
                 'category' => $skill->category->value,
             ])
             ->all();
+    }
+
+    /**
+     * The deterministic, machine-readable authority for which
+     * `project_id` values are legal for which `role_id` in Resume
+     * Selection's response — added after a live qwen3.8:27b evaluation
+     * showed the model cannot reliably reconstruct role/project
+     * ownership purely by scanning CareerFact attribution across a
+     * large flat corpus (it borrowed a sibling role's project id
+     * across an employer boundary, and the same looseness produced
+     * further same-role cross-project fact mismatches the validator
+     * did not previously check for — see
+     * ResumeSelectionResponseValidator::assertExperienceFactProjectConsistency()).
+     * Every `project_id` listed here for a role is exactly the set
+     * `GenerateResumeVariant`'s own schema construction already treats
+     * as legal for that role (`Role::projects()`, unfiltered by
+     * visibility — matching the schema's existing behavior for
+     * role-owned projects exactly) — this restates data the
+     * application already has with certainty; it does not introduce a
+     * new eligibility rule. `-1` (the existing "no specific project"
+     * sentinel — see `ResumeSelectionPromptV2::jsonSchema()`) always
+     * appears first for every role, including roles with no owned
+     * projects at all, so absence of projects is stated positively
+     * rather than left for the model to infer from never seeing a
+     * project attribution.
+     *
+     * @return array<int, array{role_id: int, valid_project_ids: array<int, int>}>
+     */
+    private function buildRoleProjectMap(CareerProfile $profile): array
+    {
+        $roles = Role::query()
+            ->whereHas('employer', fn ($query) => $query->where('career_profile_id', $profile->id))
+            ->with('projects')
+            ->orderBy('id')
+            ->get();
+
+        return $roles->map(fn (Role $role) => [
+            'role_id' => $role->id,
+            'valid_project_ids' => [-1, ...$role->projects->sortBy('id')->pluck('id')->all()],
+        ])->all();
     }
 }

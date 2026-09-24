@@ -14,12 +14,36 @@ use Illuminate\Validation\Validator;
  * The single authoritative, deterministic check on the Resume Selection
  * provider's decoded response — structure, types, every enum value,
  * referential integrity, title_choice legitimacy per selected role,
- * target-term posture authorization, and structural anti-redundancy.
- * Runs before any Eloquent model exists. Mirrors
- * JobMatchResponseValidator. See docs/resume-variant-generation.md.
+ * role/project binding at both the bullet-group level
+ * (`assertRoleAndProjectValidity()`) and the individual-CareerFact
+ * level (`assertExperienceFactProjectConsistency()`), target-term
+ * posture authorization, structural anti-redundancy, and a
+ * provider-neutral content-volume budget (MAX_EXPERIENCE_BULLET_GROUPS/
+ * MAX_SELECTED_SKILLS — see their own docblocks). Runs before any
+ * Eloquent model exists. Mirrors JobMatchResponseValidator. See
+ * docs/resume-variant-generation.md.
  */
 final class ResumeSelectionResponseValidator
 {
+    /**
+     * Hard content-budget ceilings — deterministic, provider-neutral,
+     * independent of anything either provider's prompt says. Chosen
+     * from direct inspection of resources/views/resume/print.blade.php
+     * (11pt/1.45-line-height, 8.5x11in page, 0.75in margins) against a
+     * real, already-persisted Formic ResumeVariant
+     * (`resume-selection-v1.5`, `openai:gpt-5.6-terra`) that selected 17
+     * Experience bullet groups + 22 Skills and rendered to roughly
+     * three pages against a two-page target — see
+     * docs/resume-variant-contract.md "Resume Selection" for the full
+     * renderer-evidence writeup. Both numbers are the smallest
+     * deterministic constraint that would have rejected that exact
+     * over-selection outright while remaining generous enough for
+     * legitimate tailoring; they are not a page-count guarantee.
+     */
+    private const MAX_EXPERIENCE_BULLET_GROUPS = 13;
+
+    private const MAX_SELECTED_SKILLS = 18;
+
     /**
      * @param  array<string, mixed>  $structuredContent  Untrusted, decoded provider output.
      * @param  array<int, int>  $validRoleIds
@@ -66,6 +90,9 @@ final class ResumeSelectionResponseValidator
             $this->assertRoleAndProjectValidity($validator, $experience, $validRoleIds, $roleIdByProjectId, $titleChoicesByRole);
             $this->assertRoleCompleteness($validator, $experience, $resumeEligibleRoleIds);
             $this->assertNoDuplicateBulletGroups($validator, $experience);
+            $this->assertExperienceFactProjectConsistency($validator, $experience, $projectIdByFactKey);
+            $this->assertExperienceBulletBudget($validator, $experience);
+            $this->assertSkillsBudget($validator, $structuredContent);
             $this->assertSelectedProjects($validator, $selectedProjects, $validFactKeys, $validIndependentProjectIds, $projectIdByFactKey);
             $this->assertTargetTermUsages($validator, $targetTermUsages, $experience, $directEvidenceExistsByTerm);
         });
@@ -329,6 +356,82 @@ final class ResumeSelectionResponseValidator
     }
 
     /**
+     * A bullet group's non-`-1` `project_id` states that bullet's
+     * entire factual scope is that one project — confirmed against the
+     * two real, already-persisted, human-accepted Formic selections
+     * (`resume-selection-v1.5`, `openai:gpt-5.6-terra`): every
+     * project-specific bullet group in that historical data cites only
+     * facts truly attributed to that exact project, and every
+     * role-level (unattributed) fact is instead grouped under its own
+     * `-1` bullet, never mixed into a project-specific one. Mirrors
+     * `assertSelectedProjects()`'s identical rule for Selected
+     * Projects, extended here to Experience bullet groups for the
+     * first time. A role-level (`project_id === null` for the fact)
+     * CareerFact cited under a non-`-1` bullet group is therefore
+     * rejected exactly the same as a sibling-project fact — the
+     * bullet's declared project is a hard claim about every cited
+     * fact's scope, not merely about which role it belongs to.
+     *
+     * `-1` ("no specific project") bullet groups are deliberately NOT
+     * constrained this way — nothing in the schema, prompt, or
+     * historical data requires it, and a role-level claim can
+     * legitimately rest on evidence from more than one project, or
+     * none at all.
+     *
+     * This is the deterministic backstop for the exact failure mode a
+     * live qwen3.8:27b evaluation produced: a bullet group declared
+     * for one project citing a CareerFact truly attributed to a
+     * sibling project (RocketGate Transaction Toolkit tagged as
+     * Verbatim; Pearson Email Marketing Tracker tagged as Marketing
+     * Forecast; Pearson Recruitment Agent Tracking tagged as
+     * Salesforce Migration) — distinct from, and in addition to, the
+     * cross-*role* case `assertRoleAndProjectValidity()` above already
+     * catches.
+     *
+     * @param  array<int, mixed>  $experience
+     * @param  array<string, int>  $projectIdByFactKey
+     */
+    private function assertExperienceFactProjectConsistency(Validator $validator, array $experience, array $projectIdByFactKey): void
+    {
+        foreach ($experience as $roleIndex => $role) {
+            if (! is_array($role)) {
+                continue;
+            }
+
+            $bulletGroups = is_array($role['bullet_groups'] ?? null) ? $role['bullet_groups'] : [];
+
+            foreach ($bulletGroups as $groupIndex => $group) {
+                if (! is_array($group)) {
+                    continue;
+                }
+
+                $projectId = $group['project_id'] ?? null;
+
+                if (! is_int($projectId) || $projectId === -1) {
+                    continue;
+                }
+
+                $keys = is_array($group['career_fact_keys'] ?? null) ? $group['career_fact_keys'] : [];
+
+                foreach ($keys as $keyIndex => $key) {
+                    if (! is_string($key)) {
+                        continue;
+                    }
+
+                    $factProjectId = $projectIdByFactKey[$key] ?? null;
+
+                    if ($factProjectId !== $projectId) {
+                        $validator->errors()->add(
+                            "experience.{$roleIndex}.bullet_groups.{$groupIndex}.career_fact_keys.{$keyIndex}",
+                            "career_fact_key [{$key}] is not attributed to project_id [{$projectId}] declared for this bullet group."
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Relevance controls emphasis, never basic employment-history
      * presence: every resume-eligible role (one with at least one
      * resume-eligible CareerFact attributed to it or to one of its
@@ -472,6 +575,63 @@ final class ResumeSelectionResponseValidator
 
                 $seenSets[] = $signature;
             }
+        }
+    }
+
+    /**
+     * The deterministic replacement for asking the model to infer
+     * appropriate resume length from prose — see
+     * MAX_EXPERIENCE_BULLET_GROUPS's own docblock for the renderer
+     * evidence behind this exact number. Counts every bullet group
+     * across every role combined; distribution across roles is
+     * irrelevant to this check (`assertRoleCompleteness` above already
+     * guarantees every eligible role has at least one). Selected
+     * Projects' single bullet each is deliberately NOT counted here —
+     * that section is already independently bounded to at most 3
+     * entries by `assertSelectedProjects`, and renders far more
+     * compactly per entry than an Experience bullet group (see
+     * docs/resume-variant-contract.md "Resume Selection").
+     *
+     * @param  array<int, mixed>  $experience
+     */
+    private function assertExperienceBulletBudget(Validator $validator, array $experience): void
+    {
+        $total = 0;
+
+        foreach ($experience as $role) {
+            if (! is_array($role)) {
+                continue;
+            }
+
+            $total += is_array($role['bullet_groups'] ?? null) ? count($role['bullet_groups']) : 0;
+        }
+
+        if ($total > self::MAX_EXPERIENCE_BULLET_GROUPS) {
+            $validator->errors()->add(
+                'experience',
+                "Response selects {$total} Experience bullet groups in total, exceeding the hard maximum of ".self::MAX_EXPERIENCE_BULLET_GROUPS
+                .' — reduce to the strongest, most differentiated evidence rather than every applicable fact.'
+            );
+        }
+    }
+
+    /**
+     * See MAX_SELECTED_SKILLS's own docblock for the renderer evidence
+     * behind this exact number.
+     *
+     * @param  array<string, mixed>  $structuredContent
+     */
+    private function assertSkillsBudget(Validator $validator, array $structuredContent): void
+    {
+        $skills = is_array($structuredContent['skills'] ?? null) ? $structuredContent['skills'] : [];
+        $total = count($skills);
+
+        if ($total > self::MAX_SELECTED_SKILLS) {
+            $validator->errors()->add(
+                'skills',
+                "Response selects {$total} Skills, exceeding the hard maximum of ".self::MAX_SELECTED_SKILLS
+                .' — select the strongest, most relevant subset rather than every eligible Skill.'
+            );
         }
     }
 

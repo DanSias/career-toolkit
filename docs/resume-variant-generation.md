@@ -14,7 +14,7 @@ JobMatch
   -> DiscoveryPreflight (optional, deterministic, no provider call)
   -> ResumeCandidatePayloadBuilder + JobPayloadBuilder + TargetTerminologyBuilder
        (full eligible corpus + job findings + target terms, normalized)
-  -> ResumeSelectionPromptV1 (system + user prompt, JSON schema)
+  -> ResumeSelectionPromptV2 (current — system + user prompt, JSON schema)
   -> GeneratesResumeSelection provider (untrusted decoded response)
   -> ResumeSelectionResponseValidator (deterministic — throws on any violation)
   -> ResumeSelectionDraft (trusted, readonly value objects)
@@ -91,57 +91,105 @@ prompt, JSON schema) and returns its own DTO
 (`ResumeSelectionProviderResponse` / `ResumeWordingProviderResponse`,
 each carrying decoded content plus `provider`/`model` identity).
 
-This milestone implements both with thin adapters —
-`App\Support\ResumeVariant\Providers\OpenAIResumeSelectionClient` and
-`OpenAIResumeWordingClient` — over the **same, unchanged** shared
-transport `App\Support\OpenAIResponsesApiClient` that
+Resume Wording is implemented with a thin adapter,
+`App\Support\ResumeVariant\Providers\OpenAIResumeWordingClient`, over
+the **same, unchanged** shared transport
+`App\Support\OpenAIResponsesApiClient` that
 `OpenAIJobAnalysisClient`/`OpenAIJobMatchClient` already use (same
 retry-on-transient-failure behavior, same response-envelope parsing;
 see `docs/job-match-generation.md` "Provider boundary" for the
-extraction history). Reusing it unchanged for a third and fourth
-consumer without modification is itself confirmation it was extracted
-at the right level of abstraction: mechanics only, no domain
-assumptions. Each client still owns its own `MAX_OUTPUT_TOKENS`
-budget (Selection 12,000, Wording 6,000 — Selection's response can
-include a full experience/skills/education/target-term tree; Wording
-produces prose only, for a bounded set of already-approved bullets),
-its own `schemaName`, and catches the shared
-`OpenAIResponsesApiException`, rethrowing as
-`App\Exceptions\ResumeGenerationProviderException`. Both bound to
-their contracts in `AppServiceProvider::register()`, same
+extraction history) — no local implementation exists for Wording yet.
+It owns its own `MAX_OUTPUT_TOKENS` budget (6,000 — prose only, for a
+bounded set of already-approved bullets), its own `schemaName`, and
+catches the shared `OpenAIResponsesApiException`, rethrowing as
+`App\Exceptions\ResumeGenerationProviderException`. Bound to its
+contract in `AppServiceProvider::register()`, the same
 `services.openai.key`/`services.openai.model` configuration keys
-`JobAnalysis`/`JobMatch` generation already use — no separate
-Resume-specific model setting was introduced.
+`JobAnalysis`/`JobMatch` generation already use.
+
+**Resume Selection is local-first, mirroring Job Match exactly**:
+`App\Support\ResumeVariant\Providers\OllamaResumeSelectionClient` and
+`OpenAIResumeSelectionClient` both implement `GeneratesResumeSelection`.
+`AppServiceProvider::resolveResumeSelectionProvider()` picks the bound
+implementation from `services.resume_selection.provider`
+(`AI_RESUME_SELECTION_PROVIDER`), defaulting to `'ollama'` when
+unset/blank — the happy path does not require an OpenAI API key.
+OpenAI remains fully supported as an explicitly selectable provider
+(`AI_RESUME_SELECTION_PROVIDER=openai`), never an automatic fallback
+target if Ollama fails; an unrecognized value fails fast. Resume
+Selection uses its own purpose-specific Ollama model/timeout
+(`OLLAMA_RESUME_SELECTION_MODEL`/`OLLAMA_RESUME_SELECTION_TIMEOUT_SECONDS`,
+under `services.ollama.resume_selection_model`/`resume_selection_timeout`)
+rather than Job Analysis's or Job Match's, so evaluating a different
+local model for this purpose never silently changes either of the
+other two. `qwen3.8:27b` is the current validated local model for this
+purpose too — a configuration default, not an architectural
+dependency. `OllamaResumeSelectionClient` requests a 16,000-token
+output budget — the same number `OllamaJobMatchClient` uses, arrived at
+independently: a first live attempt at 6,000 (sized from historical
+OpenAI output size alone) returned `finish_reason: length` against a
+real, tokenizer-measured 35,030-token input, so the budget was raised
+based on the configured Ollama context (65,536 tokens) instead — see
+`OllamaResumeSelectionClient`'s own docblock for the full reasoning.
+Like `OllamaJobMatchClient`, it never sends `reasoning_effort` for this
+first baseline (the model's own default).
+Resolving either binding only ever constructs a client object — no
+inference occurs until something calls `->generate()` on the result,
+so this default has no effect on application boot or the default test
+suite.
 
 **Deliberate deviation from the JobMatch precedent**: JobMatch gives
 each provider client its own exception type
 (`JobAnalysisProviderException`/`JobMatchProviderException`).
-`ResumeGenerationProviderException` is instead **shared by both**
-`OpenAIResumeSelectionClient` and `OpenAIResumeWordingClient` — a
-deliberate simplification, since both stages fail the same way
-operationally (a transport failure means "resume generation failed,"
-full stop; the controller's error handling never needs to
-distinguish which of the two stages failed) and the extra type would
-carry no behavioral difference in this milestone.
+`ResumeGenerationProviderException` is instead **shared across all
+three provider clients** — `OpenAIResumeSelectionClient`,
+`OllamaResumeSelectionClient`, and `OpenAIResumeWordingClient` — a
+deliberate simplification, since every stage/provider combination
+fails the same way operationally (a transport failure means "resume
+generation failed," full stop; the controller's error handling never
+needs to distinguish which stage or provider failed) and a more
+granular type would carry no behavioral difference in this milestone.
 
 ## Prompt and version semantics
 
-`App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV1` and
-`ResumeWordingPromptV1` each own their own system prompt, per-run user
-prompt, and JSON Schema — versioned **independently** of each other and
-of `JobAnalysis`/`JobMatch`'s own prompt/schema versions. `ResumeVariant`
-persists three version identifiers:
+`App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV2` (current)
+and `ResumeWordingPromptV1` each own their own system prompt, per-run
+user prompt, and JSON Schema — versioned **independently** of each
+other and of `JobAnalysis`/`JobMatch`'s own prompt/schema versions.
+`ResumeVariant` persists three version identifiers:
 
-- **`schema_version`** — currently taken from `ResumeSelectionPromptV1::schemaVersion()`
-  (`"1.0"`); the two stages' contracts are versioned together as one
+- **`schema_version`** — currently taken from `ResumeSelectionPromptV2::schemaVersion()`
+  (`"1.3"`); the two stages' contracts are versioned together as one
   `ResumeVariant` contract version, since Wording's schema is
   structurally simple enough that it has not yet needed independent
   versioning. Revisit this if Wording's contract ever needs to change
   without Selection's.
 - **`selection_prompt_version`** / **`wording_prompt_version`** — the
-  specific prompt implementation each stage used (`resume-selection-v1`
-  / `resume-wording-v1`). Bump the relevant one for a wording-only
-  revision targeting the same schema.
+  specific prompt implementation each stage used (`resume-selection-v2`
+  / `resume-wording-v1.3`, as of the most recent bump of each). Bump
+  the relevant one for a wording-only revision targeting the same
+  schema.
+
+`ResumeSelectionPromptV1` was bumped in place (`resume-selection-v1` through
+`-v1.5`) during its own pre-merge live-evaluation stabilization — a
+deliberate, documented exception to this codebase's normal
+immutable-versioned-prompt convention, given real `ResumeVariant` rows
+already existed under those in-place versions before any of them
+reached production. `ResumeSelectionPromptV2` is the first genuinely
+independent revision after that milestone, and follows the normal
+convention exactly: a new, immutable class, `ResumeSelectionPromptV1`
+untouched in source control. It replaces V1's prose-only "select
+enough differentiated evidence for a two-page resume" framing (which a
+real Formic generation showed insufficient — 17 Experience bullets + 22
+Skills, ~3 rendered pages) with an explicit TARGET/HARD MAXIMUM content
+budget, the hard half enforced by `ResumeSelectionResponseValidator`
+regardless of provider. `schemaVersion()` is unchanged from V1's
+current value (`"1.3"`) — the structured response shape did not change,
+only prompt text and a validator-only invariant — mirroring exactly how
+`JobMatchPromptV2` kept `JobMatchPromptV1`'s `schema_version` unchanged
+for its own prompt-text-only revision. See
+`docs/resume-variant-contract.md` "Resume Selection" for the full
+renderer-evidence writeup behind the specific numbers chosen.
 
 `selection_generated_by`/`wording_generated_by` store
 `"<provider>:<model>"` from each stage's own response, independently
@@ -168,10 +216,12 @@ supplied input), no-duplicate-selection, role/project consistency
 `title_choice` really is one this exact selected role legally offers,
 per its own `role_id => {choice_key: title_string}` map — never a
 choice merely legal for some other role, and never a fallback to
-`full`), exact-duplicate-bullet-group rejection, and the full
-target-term-usage rule set (posture authorization, phrase/posture
-consistency, location/sentinel consistency, at-most-one-qualified-
-per-location).
+`full`), exact-duplicate-bullet-group rejection, a provider-neutral
+content-volume budget (total Experience `bullet_groups` ≤ 13, selected
+`skills` ≤ 18 — see `docs/resume-variant-contract.md` "Field notes —
+Resume Selection"), and the full target-term-usage rule set (posture
+authorization, phrase/posture consistency, location/sentinel
+consistency, at-most-one-qualified-per-location).
 
 **`ResumeWordingResponseValidator`** is the trust boundary for
 Stage 2: completeness against exactly what Selection approved (no

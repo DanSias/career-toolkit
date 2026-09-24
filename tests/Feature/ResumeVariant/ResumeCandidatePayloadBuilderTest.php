@@ -198,6 +198,92 @@ it('grounds the real Pearson roles/projects correctly against the imported canon
         ->and($nexusFact['attribution']['project_id'])->toBe($nexusProject->id);
 });
 
+// --- role_project_map: the deterministic role/project ownership authority --
+//
+// Added after a live qwen3.8:27b evaluation showed the model cannot
+// reliably reconstruct role/project ownership purely by scanning
+// CareerFact attribution across a large flat corpus: it borrowed a
+// sibling role's project id across an employer boundary (role_id=3,
+// zero owned projects, used role_id=2's project — both Pearson roles).
+// These tests use the exact same "two sibling roles at the same
+// employer, one with a project, one without" shape as the fix above,
+// since that is the failure mode actually observed.
+
+it('includes every resume-eligible role in the role_project_map', function () {
+    ['roleA' => $roleA, 'roleB' => $roleB, 'match' => $match] = pearsonSiblingRoleCandidate();
+
+    $payload = (new ResumeCandidatePayloadBuilder)->build($match);
+    $roleIds = collect($payload['role_project_map'])->pluck('role_id');
+
+    expect($roleIds)->toContain($roleA->id)
+        ->and($roleIds)->toContain($roleB->id);
+});
+
+it('lists -1 for every role, including one that owns real projects', function () {
+    ['roleA' => $roleA, 'roleB' => $roleB, 'match' => $match] = pearsonSiblingRoleCandidate();
+
+    $payload = (new ResumeCandidatePayloadBuilder)->build($match);
+    $entryA = collect($payload['role_project_map'])->firstWhere('role_id', $roleA->id);
+    $entryB = collect($payload['role_project_map'])->firstWhere('role_id', $roleB->id);
+
+    expect($entryA['valid_project_ids'])->toContain(-1)
+        ->and($entryB['valid_project_ids'])->toContain(-1);
+});
+
+it('gives a role with zero owned projects exactly [-1] — stated positively, never left to be inferred', function () {
+    ['roleA' => $roleA, 'match' => $match] = pearsonSiblingRoleCandidate();
+
+    $payload = (new ResumeCandidatePayloadBuilder)->build($match);
+    $entryA = collect($payload['role_project_map'])->firstWhere('role_id', $roleA->id);
+
+    expect($entryA['valid_project_ids'])->toBe([-1]);
+});
+
+it('never lets a sibling role\'s owned project appear in another role\'s valid_project_ids', function () {
+    ['roleA' => $roleA, 'roleB' => $roleB, 'projectB' => $projectB, 'match' => $match] = pearsonSiblingRoleCandidate();
+
+    $payload = (new ResumeCandidatePayloadBuilder)->build($match);
+    $entryA = collect($payload['role_project_map'])->firstWhere('role_id', $roleA->id);
+    $entryB = collect($payload['role_project_map'])->firstWhere('role_id', $roleB->id);
+
+    expect($entryA['valid_project_ids'])->not->toContain($projectB->id)
+        ->and($entryB['valid_project_ids'])->toBe([-1, $projectB->id]);
+});
+
+it('orders the role_project_map by role_id and each role\'s valid_project_ids with -1 first, deterministically across two builds', function () {
+    ['match' => $match] = pearsonSiblingRoleCandidate();
+
+    $first = (new ResumeCandidatePayloadBuilder)->build($match)['role_project_map'];
+    $second = (new ResumeCandidatePayloadBuilder)->build($match)['role_project_map'];
+
+    expect($first)->toBe($second)
+        ->and(collect($first)->pluck('role_id')->all())->toBe(collect($first)->pluck('role_id')->sort()->values()->all());
+
+    foreach ($first as $entry) {
+        expect($entry['valid_project_ids'][0])->toBe(-1);
+    }
+});
+
+it('reproduces the exact real Formic failure shape: the SEO Analyst role (zero projects) never sees its sibling Data & Analytics role\'s Nexus project', function () {
+    Artisan::call('career:import');
+
+    $profile = CareerProfile::query()->oldest('id')->firstOrFail();
+    $roleDataAnalyticsLead = Role::where('title', 'Data & Analytics Lead Developer / Data Analyst')->first();
+    $roleSeoAnalyst = Role::where('title', 'Search Engine Optimization Analyst')->first();
+    $nexusProject = Project::where('name', 'Nexus: Analytics Command Center')->first();
+
+    $match = JobMatch::factory()->create(['career_profile_id' => $profile->id]);
+    $payload = (new ResumeCandidatePayloadBuilder)->build($match);
+    $map = collect($payload['role_project_map']);
+
+    $seoEntry = $map->firstWhere('role_id', $roleSeoAnalyst->id);
+    $dataAnalyticsEntry = $map->firstWhere('role_id', $roleDataAnalyticsLead->id);
+
+    expect($seoEntry['valid_project_ids'])->toBe([-1])
+        ->and($seoEntry['valid_project_ids'])->not->toContain($nexusProject->id)
+        ->and($dataAnalyticsEntry['valid_project_ids'])->toContain($nexusProject->id);
+});
+
 /**
  * Proves JobMatch is annotation layered on top of the corpus, never a
  * recall ceiling — the exact question a real JobMatch generated before
