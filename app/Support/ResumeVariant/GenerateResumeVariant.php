@@ -16,7 +16,7 @@ use App\Models\Role;
 use App\Models\Skill;
 use App\Support\JobMatch\JobPayloadBuilder;
 use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV2;
-use App\Support\ResumeVariant\Prompts\ResumeWordingPromptV1;
+use App\Support\ResumeVariant\Prompts\ResumeWordingPromptV2;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -44,7 +44,7 @@ final class GenerateResumeVariant
         private readonly GeneratesResumeSelection $selectionProvider,
         private readonly GeneratesResumeWording $wordingProvider,
         private readonly ResumeSelectionPromptV2 $selectionPrompt,
-        private readonly ResumeWordingPromptV1 $wordingPrompt,
+        private readonly ResumeWordingPromptV2 $wordingPrompt,
         private readonly ResumeCandidatePayloadBuilder $candidateBuilder,
         private readonly JobPayloadBuilder $jobPayloadBuilder,
         private readonly TargetTerminologyBuilder $targetTerminologyBuilder,
@@ -169,6 +169,42 @@ final class GenerateResumeVariant
         $factsByKey = collect($candidatePayload['career_facts'])->keyBy('key');
         $guardrailByFactKey = $factsByKey->map(fn (array $fact) => $fact['metric']['guardrail'] ?? null)->all();
 
+        // For ResumeWordingResponseValidator::assertSkillProvenance() —
+        // see that method's own docblock. $skillIdsByFactKey reuses the
+        // same eligible-corpus facts already loaded above (no new
+        // query); $canonicalSkillsById is the recognition catalog
+        // (every Skill this profile's eligible corpus could ever
+        // legitimately mention), deliberately reusing
+        // $candidatePayload['eligible_skills'] rather than a fresh
+        // Skill::query() — it already respects the same
+        // ResumeEligibility boundary that governs what either provider
+        // can see at all, and Wording's own generation never has a
+        // legitimate reason to name a Skill outside that set.
+        $skillIdsByFactKey = $factsByKey->map(fn (array $fact) => array_column($fact['skills'], 'id'))->all();
+        $canonicalSkillsById = collect($candidatePayload['eligible_skills'])->pluck('name', 'id')->all();
+
+        // The additive fact-local evidence contract established by the
+        // Skill-provenance authority-model investigation — mirroring
+        // JobMatchPromptV3's own evidence boundary ("that fact's own
+        // statement, attached Skills, metric/guardrail/scope_note"): a
+        // canonical Skill name genuinely present in a fact's own
+        // evidence-bearing text is ALSO positive evidence for that
+        // fact, alongside (never instead of) its attached Skill
+        // relations. `metric.unit` is deliberately excluded — a short
+        // value-unit classifier (e.g. "percent_reduction"), not prose
+        // evidence; only `guardrail`/`scope_note` get explicit prompt
+        // treatment alongside the statement itself. Computed once per
+        // fact here (reusing ResumeWordingResponseValidator's own
+        // recognizedSkillIds() — no second recognition algorithm), then
+        // reused by every location that cites that fact — never
+        // re-scanned per generated location. See
+        // docs/resume-variant-generation.md "Skill provenance".
+        $textRecognizedSkillIdsByFactKey = $factsByKey->map(function (array $fact) use ($canonicalSkillsById) {
+            $evidenceText = trim($fact['statement'].' '.($fact['metric']['scope_note'] ?? '').' '.($fact['metric']['guardrail'] ?? ''));
+
+            return $this->wordingValidator->recognizedSkillIds($evidenceText, $canonicalSkillsById);
+        })->all();
+
         $wordingInput = $this->buildWordingInput($selectionDraft, $factsByKey);
         $careerFactKeysByLocation = $this->buildCareerFactKeysByLocation($selectionDraft);
         $denylistTerms = $this->buildDenylistTerms($validTargetTerms, $selectionDraft);
@@ -197,6 +233,9 @@ final class GenerateResumeVariant
             $denylistTerms,
             $careerFactKeysByLocation,
             $guardrailByFactKey,
+            $skillIdsByFactKey,
+            $canonicalSkillsById,
+            $textRecognizedSkillIdsByFactKey,
         );
 
         $wordingDraft = $this->toWordingDraft($validatedWording);

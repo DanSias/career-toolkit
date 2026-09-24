@@ -26,6 +26,9 @@ use Illuminate\Validation\Validator;
  *   independently-implemented facts are cited
  * - "GitHub" wherever a RocketGate-attributed fact is cited without
  *   also citing the distinct personal-GitHub fact
+ * - location-scoped canonical-Skill provenance (see
+ *   assertSkillProvenance()'s own docblock for the precise, narrow
+ *   guarantee this one makes and does not make)
  *
  * Everything else — does a `Qualified` claim overreach in tone, is a
  * merchant-integration bullet phrased as authorship, does "AI" near
@@ -71,6 +74,9 @@ final class ResumeWordingResponseValidator
      * @param  array<int, string>  $denylistTerms
      * @param  array<string, array<int, string>>  $careerFactKeysByLocation  "role_id:index", "project:project_id", or "summary" => career_fact_key[] backing that location.
      * @param  array<string, string|null>  $guardrailByFactKey
+     * @param  array<string, array<int, int>>  $skillIdsByFactKey  career_fact_key => Skill id[] attached to that fact.
+     * @param  array<int, string>  $canonicalSkillsById  Every canonical Skill (id => name) that could legitimately appear anywhere in this profile's eligible corpus — the recognition catalog for assertSkillProvenance(), not a per-location authorization set.
+     * @param  array<string, array<int, int>>  $textRecognizedSkillIdsByFactKey  career_fact_key => Skill id[] recognized (via recognizedSkillIds()) in that fact's own evidence-bearing text (statement + metric scope_note/guardrail) — computed once per fact by the caller, never re-scanned per location. See authorizedSkillIds()'s own docblock.
      * @return array<string, mixed>
      *
      * @throws InvalidResumeVariantResponseException
@@ -83,12 +89,16 @@ final class ResumeWordingResponseValidator
         array $denylistTerms,
         array $careerFactKeysByLocation,
         array $guardrailByFactKey,
+        array $skillIdsByFactKey,
+        array $canonicalSkillsById,
+        array $textRecognizedSkillIdsByFactKey,
     ): array {
         $validator = ValidatorFacade::make($structuredContent, $this->rules());
 
         $validator->after(function (Validator $validator) use (
             $structuredContent, $validRoleIds, $expectedBulletGroupIndexesByRole, $validSelectedProjectIds,
-            $denylistTerms, $careerFactKeysByLocation, $guardrailByFactKey,
+            $denylistTerms, $careerFactKeysByLocation, $guardrailByFactKey, $skillIdsByFactKey, $canonicalSkillsById,
+            $textRecognizedSkillIdsByFactKey,
         ) {
             $experience = is_array($structuredContent['experience'] ?? null) ? $structuredContent['experience'] : [];
             $selectedProjects = is_array($structuredContent['selected_projects'] ?? null) ? $structuredContent['selected_projects'] : [];
@@ -98,6 +108,11 @@ final class ResumeWordingResponseValidator
             $this->assertSelectedProjectsCompleteness($validator, $selectedProjects, $validSelectedProjectIds);
             $this->assertDenylistRespected($validator, 'summary', $summary, $denylistTerms);
             $this->assertGuardrails($validator, 'summary', $summary, $careerFactKeysByLocation['summary'] ?? [], $guardrailByFactKey);
+            $this->assertSkillProvenance(
+                $validator, 'summary', $summary,
+                $this->authorizedSkillIds($careerFactKeysByLocation['summary'] ?? [], $skillIdsByFactKey, $textRecognizedSkillIdsByFactKey),
+                $canonicalSkillsById,
+            );
 
             foreach ($experience as $roleIndex => $role) {
                 if (! is_array($role)) {
@@ -120,6 +135,11 @@ final class ResumeWordingResponseValidator
                     $this->assertDenylistRespected($validator, $field, $text, $denylistTerms);
                     $this->assertGuardrails($validator, $field, $text, $careerFactKeysByLocation[$locationKey] ?? [], $guardrailByFactKey);
                     $this->assertWordCountCeiling($validator, $field, $text);
+                    $this->assertSkillProvenance(
+                        $validator, $field, $text,
+                        $this->authorizedSkillIds($careerFactKeysByLocation[$locationKey] ?? [], $skillIdsByFactKey, $textRecognizedSkillIdsByFactKey),
+                        $canonicalSkillsById,
+                    );
                 }
             }
 
@@ -136,6 +156,11 @@ final class ResumeWordingResponseValidator
                 $this->assertDenylistRespected($validator, $field, $text, $denylistTerms);
                 $this->assertGuardrails($validator, $field, $text, $careerFactKeysByLocation[$locationKey] ?? [], $guardrailByFactKey);
                 $this->assertWordCountCeiling($validator, $field, $text);
+                $this->assertSkillProvenance(
+                    $validator, $field, $text,
+                    $this->authorizedSkillIds($careerFactKeysByLocation[$locationKey] ?? [], $skillIdsByFactKey, $textRecognizedSkillIdsByFactKey),
+                    $canonicalSkillsById,
+                );
             }
         });
 
@@ -363,5 +388,215 @@ final class ResumeWordingResponseValidator
                 }
             }
         }
+    }
+
+    /**
+     * The authorization set assertSkillProvenance() checks a recognized
+     * canonical-Skill mention against, for one prose location: the union
+     * of Skill ids attached to every CareerFact supplied to that
+     * location, PLUS Skill ids recognized (via recognizedSkillIds()) in
+     * those same facts' own evidence-bearing text. A location that cites
+     * no facts authorizes nothing.
+     *
+     * This is the additive fact-local evidence contract established by
+     * the Skill-provenance authority-model investigation, matching
+     * JobMatchPromptV3's own evidence boundary ("that fact's own
+     * statement, attached Skills, metric/guardrail/scope_note"): a
+     * Skill relation is positive evidence, and a canonical Skill name
+     * genuinely present in a fact's own statement/metric text is
+     * ALSO positive evidence — neither is a restriction on the other,
+     * and BOTH remain strictly fact-local. A Skill established only by
+     * a *different* CareerFact (whether cited at another location or
+     * simply not cited here) never enters this set — see
+     * docs/resume-variant-generation.md "Skill provenance" for the full
+     * investigation and why treating the Skill relation as an exhaustive
+     * restriction on statement content contradicted the codebase's own
+     * pre-existing evidence model.
+     *
+     * @param  array<int, string>  $careerFactKeys
+     * @param  array<string, array<int, int>>  $skillIdsByFactKey
+     * @param  array<string, array<int, int>>  $textRecognizedSkillIdsByFactKey
+     * @return array<int, int>
+     */
+    private function authorizedSkillIds(array $careerFactKeys, array $skillIdsByFactKey, array $textRecognizedSkillIdsByFactKey): array
+    {
+        $ids = [];
+
+        foreach ($careerFactKeys as $key) {
+            foreach ($skillIdsByFactKey[$key] ?? [] as $id) {
+                $ids[$id] = true;
+            }
+
+            foreach ($textRecognizedSkillIdsByFactKey[$key] ?? [] as $id) {
+                $ids[$id] = true;
+            }
+        }
+
+        return array_keys($ids);
+    }
+
+    /**
+     * A narrow, location-scoped guarantee: *if generated prose explicitly
+     * names a recognized canonical Skill, that Skill must be authorized
+     * by the CareerFacts supplied to that exact prose location — either
+     * by an attached Skill relation on one of those facts, or by that
+     * same canonical name genuinely appearing in one of those facts' own
+     * evidence-bearing text (see authorizedSkillIds()'s own docblock for
+     * the full additive contract and why both sources count).*
+     *
+     * This is NOT a general technology-provenance guarantee. It exists
+     * specifically to catch the cross-location leakage the first live
+     * qwen3.8:27b Resume Wording evaluation demonstrated: the generated
+     * summary named "React" and "Laravel", technologies genuinely true
+     * of the candidate and genuinely present elsewhere in the very same
+     * Wording request (attached to other roles'/projects' own supplied
+     * CareerFacts), but not authorized by any of the four facts actually
+     * supplied as summary evidence — see
+     * docs/resume-variant-generation.md "Skill provenance" for the full
+     * investigation this check is built from.
+     *
+     * Matching is deliberately conservative: a case-sensitive, whole-
+     * word-bounded (`\b`) literal match of each canonical Skill's exact
+     * `name` string against the generated text — no stemming, no
+     * punctuation stripping, no alias table (none exists — see
+     * App\Models\Skill), no decomposition into generic tokens. Matching
+     * the full canonical name rather than a decomposed token is what
+     * keeps this safe against substring collisions: `\bGit\b` cannot
+     * match inside "GitHub" or "GitLab" because there is no `\b`
+     * boundary between adjacent word characters, so this needs no
+     * special-cased exclusion list for that class of near-miss.
+     *
+     * When two DIFFERENT canonical Skills' exact matches overlap in the
+     * text (e.g. "Salesforce", id 23, matches inside "Salesforce
+     * Marketing Cloud", id 24, because the shorter name is wholly
+     * contained in the longer one) — see recognizedSkillIds() — only
+     * the longer span is kept; the shorter, overlapping match is
+     * suppressed as a sub-match of it. A separate, non-overlapping
+     * occurrence of the shorter name elsewhere in the same text is
+     * unaffected and still recognized independently (e.g. "Salesforce
+     * and Salesforce Marketing Cloud" recognizes both). This is a
+     * generic longest-span-wins overlap rule, not a Salesforce-specific
+     * exclusion — see docs/resume-variant-generation.md "Skill
+     * provenance" for the investigation and the confirmation that no
+     * other overlapping pair exists in the current canonical catalog.
+     *
+     * Known, accepted, INTENTIONAL limitations:
+     *
+     * - This only recognizes the canonical `name` on record. It does
+     *   not know "Node" refers to the canonical Skill "Node.js" — a
+     *   bare "Node" mention is invisible to this check entirely,
+     *   exactly as it was in the live run that motivated this.
+     *   Extending recognition to informal short forms would require an
+     *   alias/normalization table this codebase deliberately does not
+     *   build (see the investigation this check came from) — this is a
+     *   documented gap, not an oversight. This is NOT the same thing as
+     *   the overlap rule above: overlap resolution only ever suppresses
+     *   a match between two Skills that BOTH exactly matched via the
+     *   existing literal rules — it never invents a match "Node" doesn't
+     *   otherwise have against "Node.js".
+     * - Matching is case-sensitive on purpose, so a differently-cased
+     *   mention (e.g. "react" for "React") is likewise invisible.
+     *
+     * @param  array<int, int>  $authorizedSkillIds
+     * @param  array<int, string>  $canonicalSkillsById
+     */
+    private function assertSkillProvenance(Validator $validator, string $field, string $text, array $authorizedSkillIds, array $canonicalSkillsById): void
+    {
+        foreach ($this->recognizedSkillIds($text, $canonicalSkillsById) as $skillId) {
+            if (! in_array($skillId, $authorizedSkillIds, true)) {
+                $validator->errors()->add(
+                    $field,
+                    "Generated text names the canonical Skill [{$canonicalSkillsById[$skillId]}] (Skill id {$skillId}), which is not authorized by the CareerFacts supplied to this location."
+                );
+            }
+        }
+    }
+
+    /**
+     * Every canonical Skill genuinely recognized in $text, applying
+     * longest-span-wins overlap resolution across ALL canonical Skills'
+     * matches at once (not per-pair, not name-specific): every exact,
+     * word-bounded occurrence of every canonical name is first located
+     * with its text position; occurrences are then considered longest
+     * first, and an occurrence is kept only if it does not overlap any
+     * occurrence already kept — which is exactly "the longer span wins,
+     * a shorter span wholly contained within it is suppressed," and
+     * also correctly handles two separate, non-overlapping occurrences
+     * of the same or different names (both kept, since they never
+     * compete for the same text).
+     *
+     * Ties (two overlapping occurrences of exactly equal span length)
+     * are broken by lower Skill id, for full determinism regardless of
+     * PHP's associative-array iteration order. No such tie exists in
+     * the current canonical catalog and, by construction, none ever
+     * can: two Skills can never share one profile's exact `name` string
+     * (name and slug are effectively 1:1, and `slug` is uniquely
+     * constrained per profile — see App\Models\Skill), and an
+     * equal-length overlap between two DIFFERENT literal strings that
+     * isn't an identical span requires one to end where the other
+     * begins mid-word on both sides, which the shared canonical
+     * catalog inspected for this change does not contain anywhere.
+     * This tie-break exists defensively, not because it fires today.
+     *
+     * Public, not private: reused for a second purpose beyond scanning
+     * generated prose — GenerateResumeVariant calls this same method
+     * once per eligible CareerFact, against that fact's own
+     * evidence-bearing text, to compute the fact-local textual-Skill
+     * authorization map. See authorizedSkillIds()'s own docblock for why
+     * that reuse is deliberate rather than a second recognition
+     * algorithm.
+     *
+     * @param  array<int, string>  $canonicalSkillsById
+     * @return array<int, int> Distinct Skill ids recognized, deduplicated.
+     */
+    public function recognizedSkillIds(string $text, array $canonicalSkillsById): array
+    {
+        $occurrences = [];
+
+        foreach ($canonicalSkillsById as $skillId => $skillName) {
+            if ($skillName === '') {
+                continue;
+            }
+
+            $pattern = '/\b'.preg_quote($skillName, '/').'\b/u';
+
+            if (preg_match_all($pattern, $text, $matches, PREG_OFFSET_CAPTURE) < 1) {
+                continue;
+            }
+
+            foreach ($matches[0] as [$matchedText, $start]) {
+                $occurrences[] = [
+                    'skill_id' => $skillId,
+                    'start' => $start,
+                    'end' => $start + strlen($matchedText),
+                ];
+            }
+        }
+
+        usort($occurrences, fn (array $a, array $b) => ($b['end'] - $b['start']) <=> ($a['end'] - $a['start'])
+            ?: $a['skill_id'] <=> $b['skill_id']);
+
+        $acceptedSpans = [];
+        $recognizedSkillIds = [];
+
+        foreach ($occurrences as $occurrence) {
+            $overlapsAnAcceptedSpan = false;
+
+            foreach ($acceptedSpans as $acceptedSpan) {
+                if ($occurrence['start'] < $acceptedSpan['end'] && $occurrence['end'] > $acceptedSpan['start']) {
+                    $overlapsAnAcceptedSpan = true;
+                    break;
+                }
+            }
+
+            if ($overlapsAnAcceptedSpan) {
+                continue;
+            }
+
+            $acceptedSpans[] = $occurrence;
+            $recognizedSkillIds[$occurrence['skill_id']] = true;
+        }
+
+        return array_keys($recognizedSkillIds);
     }
 }

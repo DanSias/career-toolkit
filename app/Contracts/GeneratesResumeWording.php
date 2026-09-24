@@ -9,6 +9,11 @@ use App\Support\ResumeVariant\ResumeWordingProviderResponse;
  * The entire seam between Resume Wording generation and whichever
  * model provider answers it. See App\Contracts\GeneratesResumeSelection
  * for why this is a separate interface rather than a shared one.
+ *
+ * Two implementations: OllamaResumeWordingClient (the local-first
+ * default) and OpenAIResumeWordingClient (explicitly selectable, never
+ * an automatic fallback) — chosen by
+ * AppServiceProvider::resolveResumeWordingProvider().
  */
 interface GeneratesResumeWording
 {

@@ -5,7 +5,7 @@ use App\Contracts\GeneratesResumeWording;
 use App\Support\JobMatch\JobPayloadBuilder;
 use App\Support\ResumeVariant\GenerateResumeVariant;
 use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV2;
-use App\Support\ResumeVariant\Prompts\ResumeWordingPromptV1;
+use App\Support\ResumeVariant\Prompts\ResumeWordingPromptV2;
 use App\Support\ResumeVariant\Providers\OllamaResumeSelectionClient;
 use App\Support\ResumeVariant\Providers\OpenAIResumeSelectionClient;
 use App\Support\ResumeVariant\ResumeCandidatePayloadBuilder;
@@ -123,7 +123,7 @@ it('lets a caller construct GenerateResumeVariant with an explicit OpenAIResumeS
         ),
         wordingProvider: app(GeneratesResumeWording::class),
         selectionPrompt: app(ResumeSelectionPromptV2::class),
-        wordingPrompt: app(ResumeWordingPromptV1::class),
+        wordingPrompt: app(ResumeWordingPromptV2::class),
         candidateBuilder: app(ResumeCandidatePayloadBuilder::class),
         jobPayloadBuilder: app(JobPayloadBuilder::class),
         targetTerminologyBuilder: app(TargetTerminologyBuilder::class),

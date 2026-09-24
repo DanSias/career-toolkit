@@ -48,10 +48,10 @@ return [
     | configured per environment (never a LAN IP baked into application
     | code), and every consumer treats a blank value as "Ollama is not
     | configured here." `model`/`timeout` below are the generic/
-    | Job-Analysis values; `job_match_model`/`job_match_timeout` are
+    | Job-Analysis values; every other `*_model`/`*_timeout` pair is
     | purpose-specific so a future local-model swap for one purpose
     | never silently changes another. `qwen3.8:27b` is the current
-    | validated local model for both purposes — a configuration
+    | validated local model for all purposes — a configuration
     | default, not an architectural dependency; nothing in the
     | Ollama*Client classes or the prompts they call assumes this
     | specific model. See app/Support/OllamaChatCompletionsClient.php.
@@ -64,21 +64,24 @@ return [
         'job_match_timeout' => (int) env('OLLAMA_JOB_MATCH_TIMEOUT_SECONDS', 600),
         'resume_selection_model' => env('OLLAMA_RESUME_SELECTION_MODEL', 'qwen3.8:27b'),
         'resume_selection_timeout' => (int) env('OLLAMA_RESUME_SELECTION_TIMEOUT_SECONDS', 900),
+        'resume_wording_model' => env('OLLAMA_RESUME_WORDING_MODEL', 'qwen3.8:27b'),
+        'resume_wording_timeout' => (int) env('OLLAMA_RESUME_WORDING_TIMEOUT_SECONDS', 900),
     ],
 
     /*
     | Which provider implementation GeneratesJobAnalysis/GeneratesJobMatch/
-    | GeneratesResumeSelection resolve to — 'openai' or 'ollama'.
-    | Local-first: all three default to 'ollama' when unset/blank.
+    | GeneratesResumeSelection/GeneratesResumeWording resolve to —
+    | 'openai' or 'ollama'. Local-first: all four default to 'ollama'
+    | when unset/blank.
     | OpenAI remains fully supported as an explicitly selectable provider
     | (a benchmark/reference path, never an automatic fallback) — set the
-    | relevant AI_*_PROVIDER var to 'openai' to use it. Resume Wording
-    | remains OpenAI-only for now (no local implementation exists yet).
+    | relevant AI_*_PROVIDER var to 'openai' to use it.
     | Provider-specific settings (model, base URL, timeout, API key)
     | stay under 'openai'/'ollama' above — these keys only choose which
     | of those two configurations each purpose uses. See
     | App\Providers\AppServiceProvider::resolveJobAnalysisProvider()/
-    | resolveJobMatchProvider()/resolveResumeSelectionProvider().
+    | resolveJobMatchProvider()/resolveResumeSelectionProvider()/
+    | resolveResumeWordingProvider().
     */
     'job_analysis' => [
         'provider' => env('AI_JOB_ANALYSIS_PROVIDER', 'ollama'),
@@ -90,6 +93,10 @@ return [
 
     'resume_selection' => [
         'provider' => env('AI_RESUME_SELECTION_PROVIDER', 'ollama'),
+    ],
+
+    'resume_wording' => [
+        'provider' => env('AI_RESUME_WORDING_PROVIDER', 'ollama'),
     ],
 
 ];
