@@ -93,10 +93,11 @@ final class GenerateResumeVariant
         // real Public/Restricted-eligible evidence (the same visibility
         // backstop ResumeEligibility already applies at the CareerFact
         // level) — never a professional project's id. Selection may
-        // choose 0-3 of these; a professional Project can never be
-        // converted into a Selected Projects entry, since its id is
-        // structurally absent from this set. See docs/domain-model.md
-        // "ResumeVariant" -> "Selected Projects".
+        // choose at most MAX_SELECTED_PROJECTS of these (see
+        // ResumeSelectionResponseValidator); a professional Project can
+        // never be converted into a Selected Projects entry, since its
+        // id is structurally absent from this set. See
+        // docs/domain-model.md "ResumeVariant" -> "Selected Projects".
         $eligibleProjectIdsFromFacts = array_unique(array_values($projectIdByFactKey));
         $validIndependentProjectIds = Project::query()
             ->where('career_profile_id', $profile->id)

@@ -5,6 +5,7 @@ namespace App\Support\ResumeVariant\Prompts;
 use App\Enums\ResumeClaimPosture;
 use App\Enums\ResumeQualifiedPhrase;
 use App\Enums\ResumeTermUsageLocation;
+use App\Support\ResumeVariant\ResumeSelectionResponseValidator;
 use BackedEnum;
 
 /**
@@ -44,14 +45,33 @@ use BackedEnum;
  * Everything else — evidence selection semantics, role/project binding,
  * title choice, target-term claim posture, "do not invent anything" —
  * is unchanged from V1. Selected Projects gains one new instruction
- * (prefer 0-2, and only when a project adds evidence not already told
- * by Experience) but the schema's 0-3 cardinality itself is unchanged.
- * schemaVersion() stays '1.3': the structured response SHAPE is
- * byte-identical to V1 (no field added/removed/renamed) — the new
- * bullet/skill ceiling is a validator-only invariant, not a schema
- * change, mirroring exactly how JobMatchPromptV2 kept JobMatchPromptV1's
- * schema_version unchanged for a prompt-text-only revision. See
+ * (choose 0 or 1, and only when it adds evidence not already told by
+ * Experience) alongside a lowered schema cardinality — see the
+ * MAX_SELECTED_PROJECTS paragraph below for why the original 0-3
+ * cardinality was tightened further. schemaVersion() stays '1.3': the
+ * structured response SHAPE is byte-identical to V1 (no field added/
+ * removed/renamed) — the bullet/skill/project ceilings are all
+ * validator-only invariants (with `jsonSchema()`'s own `maxItems`
+ * reading the Selected-Projects one directly off the validator, never a
+ * second copy of the number), not a schema change, mirroring exactly
+ * how JobMatchPromptV2 kept JobMatchPromptV1's schema_version unchanged
+ * for a prompt-text-only revision. See
  * docs/resume-variant-generation.md "Prompt and version semantics".
+ *
+ * A further in-place change under this same, still-never-persisted
+ * `resume-selection-v2.1` string (re-verified before this edit — see
+ * docs/resume-variant-generation.md "PDF export"): Selected Projects'
+ * schema cardinality and prompt guidance were tightened from 0-3
+ * (prompt-only "prefer 0-2") to a deterministic maximum of ONE
+ * (`ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS`), after a
+ * read-only investigation measured that the existing
+ * MAX_EXPERIENCE_BULLET_GROUPS ceiling combined with 2 Selected
+ * Projects still renders past the 2-page target, while combined with
+ * at most 1 it does not. Choosing 0 remains completely normal; only
+ * 2-3 are now foreclosed. Semantic redundancy-with-Experience judgment
+ * remains entirely a model/prompt responsibility — the validator only
+ * enforces cardinality (≤1), independent-project provenance, and
+ * evidence citation, never "is this genuinely distinct" semantics.
  *
  * `version()` was bumped in place here (`v2` -> `v2.1`), not split into
  * a new class — the same documented exception V1 itself used for its
@@ -254,23 +274,19 @@ final readonly class ResumeSelectionPromptV2
         You are also given evidence for the candidate's independent/
         personal projects — work done outside any employer, never
         attached to a Role. Each such CareerFact's `attribution` shows
-        `project` with no `employer`/`role`. You may choose 0 to 3 of
+        `project` with no `employer`/`role`. You may choose 0 or 1 of
         these independent projects to feature in a separate Selected
-        Projects section, each with the CareerFact(s) that justify
-        including it.
+        Projects section, with the CareerFact(s) that justify including
+        it.
 
         Choose based on genuine relevance and strength of evidence for
-        this specific job — never to fill space. Omitting all of them
-        is a completely normal, correct outcome when none meaningfully
-        strengthens the case for this job. A project with only thin,
-        generic evidence is not worth a slot merely because it exists.
-        Selected Projects are optional and should only consume space
-        when they add evidence not already told effectively by
-        Experience — do not select an independent project merely
-        because the schema permits up to 3. Prefer 0-2 when that
-        already tells the strongest story; use a third slot only when
-        it offers real, distinct value this job cares about that
-        Experience does not already cover.
+        this specific job — never to fill space. Omitting it entirely
+        is a completely normal, correct outcome when no independent
+        project meaningfully strengthens the case for this job. A
+        project with only thin, generic evidence is not worth the slot
+        merely because it exists. Select one only when it adds evidence
+        not already told effectively by Experience — do not select an
+        independent project merely because the slot exists.
 
         This mechanism is for independent projects ONLY. A project that
         belongs to a Role (one whose CareerFacts show a real `employer`/
@@ -448,7 +464,10 @@ final readonly class ResumeSelectionPromptV2
                 ],
                 'selected_projects' => [
                     'type' => 'array',
-                    'maxItems' => 3,
+                    // Single source of truth for this ceiling — see
+                    // ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS's
+                    // own docblock for why it's 1, not schema-independent here.
+                    'maxItems' => ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS,
                     'items' => [
                         'type' => 'object',
                         'properties' => [

@@ -5,6 +5,7 @@ use App\Http\Controllers\JobAnalysisController;
 use App\Http\Controllers\JobMatchController;
 use App\Http\Controllers\JobPostingController;
 use App\Http\Controllers\ResumeVariantController;
+use App\Http\Controllers\ResumeVariantPdfController;
 use App\Http\Controllers\ResumeVariantPreviewController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,7 +26,11 @@ Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}', [JobM
 Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume', [ResumeVariantController::class, 'store'])->name('jobs.analyses.matches.resume.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume/{resumeVariant}', [ResumeVariantController::class, 'show'])->name('jobs.analyses.matches.resume.show');
 
-// Deterministic, non-Inertia print/preview surface — the eventual
-// single visual source for both browser preview and PDF export. See
+// Deterministic, non-Inertia print/preview surface — the single visual
+// source for both browser preview and PDF export. See
 // App\Http\Controllers\ResumeVariantPreviewController.
 Route::get('/resume-variants/{resumeVariant}/preview', [ResumeVariantPreviewController::class, 'show'])->name('resume-variants.preview');
+
+// PDF export of the same document — see
+// App\Http\Controllers\ResumeVariantPdfController.
+Route::get('/resume-variants/{resumeVariant}/pdf', [ResumeVariantPdfController::class, 'show'])->name('resume-variants.pdf');

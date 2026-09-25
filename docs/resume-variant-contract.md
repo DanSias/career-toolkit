@@ -244,12 +244,17 @@ nullable+enum combinations are avoided throughout.
   individual Skill names into a single ~340-character wrapped line, a
   concrete, measured contributor to the overshoot distinct from bullet
   count. Selected Projects' bullets are deliberately **not** counted
-  toward the Experience ceiling — that section is already
-  independently bounded to at most 3 entries and renders far more
+  toward the Experience ceiling — that section is independently
+  bounded by its own cap (`ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS`,
+  currently 1, lowered from the original 3 after a follow-up
+  investigation measured that the Experience ceiling combined with 2
+  Selected Projects still rendered past two pages) and renders far more
   compactly per entry. These numbers are the smallest deterministic
-  constraint that would have rejected that exact over-selection
-  outright while remaining generous enough for legitimate tailoring —
-  not a guarantee of an exact rendered page count.
+  constraint that would have rejected the over-selection they were each
+  chosen from outright while remaining generous enough for legitimate
+  tailoring — not a guarantee of an exact rendered page count; PDF
+  export's own final acceptance gate (see `docs/resume-variant-generation.md`
+  "PDF export") checks the actual rendered artifact for that.
 - **`target_term_usages[].posture`** — `direct` | `qualified` |
   `capability` (`App\Enums\ResumeClaimPosture`). `direct` is rejected
   outright unless `direct_evidence_exists` was `true` for that term —
@@ -445,9 +450,12 @@ covered by live/human review" split throughout.
 
 ## Deliberately out of scope here
 
-- PDF or any other document rendering — v1 produces only the
-  persisted relational snapshot and a read-only review page. See
-  `docs/resume-variant-generation.md`.
+- PDF or any other document rendering — this contract covers only the
+  two-stage generation pipeline and the persisted relational snapshot
+  it produces. Rendering (HTML preview and PDF export) is a separate,
+  downstream concern over that same persisted `ResumeVariant`,
+  implemented independently of this contract — see
+  `docs/resume-variant-generation.md` "PDF export".
 - Wording-only regeneration (re-running Stage 2 alone against an
   already-approved Selection) — the schema above supports it (the
   input is already exactly what would be replayed), but v1's

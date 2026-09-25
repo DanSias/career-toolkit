@@ -6,11 +6,12 @@ namespace App\Support\ResumeDocument;
  * The complete, presentation-ready content of one rendered resume —
  * immutable value objects only, never an Eloquent model and never a
  * raw provider/model response. Built once by GenerateResumeDocument
- * from one ResumeVariant's frozen snapshot data; an HTML preview and,
- * eventually, a PDF are both expected to be pure, deterministic
- * renderers over this tree and nothing else. See
- * docs/domain-model.md "ResumeVariant" -> "ATS Resume Renderer" for
- * the milestone this belongs to.
+ * from one ResumeVariant's frozen snapshot data; both the HTML preview
+ * (ResumeVariantPreviewController) and PDF export
+ * (ResumeVariantPdfController / GenerateResumePdf) are pure,
+ * deterministic renderers over this tree and nothing else — the same
+ * resources/views/resume/print.blade.php markup for both. See
+ * docs/resume-variant-generation.md "PDF export".
  *
  * Section order (Summary -> Skills -> Experience -> Selected Projects
  * -> Education) is a fixed v1 display convention — not derived from
@@ -30,7 +31,7 @@ final readonly class ResumeDocument
     /**
      * @param  ResumeExperienceRole[]  $experience
      * @param  ResumeSkillGroup[]  $skills  Fixed v1 category groups, in a fixed display order; each group's skill names preserve Selection's own order. See GenerateResumeDocument.
-     * @param  ResumeSelectedProject[]  $selectedProjects  0-3, ordered by Selection's own relevance order; empty when none were selected.
+     * @param  ResumeSelectedProject[]  $selectedProjects  0-1 under the current Selection cap (ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS); a historical variant persisted under the original 0-3 schema may still carry more — this DTO renders whatever was actually persisted, never re-validates it. Ordered by Selection's own relevance order; empty when none were selected.
      * @param  ResumeEducationEntry[]  $education
      */
     public function __construct(

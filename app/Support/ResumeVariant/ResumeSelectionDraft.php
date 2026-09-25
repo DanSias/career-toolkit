@@ -15,7 +15,8 @@ namespace App\Support\ResumeVariant;
  * resume-eligible Education record is included deterministically at
  * persistence time instead. See GenerateResumeVariant::generateFull().
  *
- * `selectedProjects` is independent-Project-only (0-3) — see
+ * `selectedProjects` is independent-Project-only, at most
+ * ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS — see
  * docs/domain-model.md "ResumeVariant" -> "Selected Projects". A
  * professional Project can never appear here; it is structurally
  * absent from this field's legal id space (see

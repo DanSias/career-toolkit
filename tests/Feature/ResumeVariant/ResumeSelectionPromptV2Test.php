@@ -2,6 +2,7 @@
 
 use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV1;
 use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV2;
+use App\Support\ResumeVariant\ResumeSelectionResponseValidator;
 
 it('versions independently of JobAnalysis/JobMatch and of JobMatchPromptV1', function () {
     $prompt = new ResumeSelectionPromptV2;
@@ -18,9 +19,19 @@ it('tells the model to consult role_project_map as the authoritative role/projec
         ->and($systemPrompt)->toContain('Consult this map directly rather than inferring');
 });
 
-it('produces a JSON schema byte-for-byte identical to JobMatchPromptV1 for the same inputs — V2 is prompt-only', function () {
+it('produces a JSON schema identical to JobMatchPromptV1 except the Selected Projects maxItems, now sourced from MAX_SELECTED_PROJECTS', function () {
     $v1Schema = (new ResumeSelectionPromptV1)->jsonSchema([1, 2], [3, 4], ['a', 'b'], [5, 6], [7, 8], ['React'], ['full', 'segment_1'], [9]);
     $v2Schema = (new ResumeSelectionPromptV2)->jsonSchema([1, 2], [3, 4], ['a', 'b'], [5, 6], [7, 8], ['React'], ['full', 'segment_1'], [9]);
+
+    expect($v1Schema['properties']['selected_projects']['maxItems'])->toBe(3)
+        ->and($v2Schema['properties']['selected_projects']['maxItems'])
+        ->toBe(ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS)
+        ->toBe(1);
+
+    // Everything else — every other field, type, enum, and nesting —
+    // remains byte-identical: prove it by neutralizing only the one
+    // known, deliberate difference before comparing the rest.
+    $v1Schema['properties']['selected_projects']['maxItems'] = 1;
 
     expect($v2Schema)->toBe($v1Schema);
 });
@@ -60,19 +71,24 @@ it('repeats the Skills budget inline in the Skills section itself', function () 
     expect($systemPrompt)->toContain("calls for it. Select a TARGET of 12-16 of the strongest, most\nrelevant Skills — never more than the HARD MAXIMUM of 18");
 });
 
-it('discourages selecting a Selected Project merely because the schema permits up to 3', function () {
+it('discourages selecting a Selected Project merely because the slot exists', function () {
     $systemPrompt = (new ResumeSelectionPromptV2)->systemPrompt();
 
-    expect($systemPrompt)->toContain('Selected Projects are optional and should only consume space')
-        ->and($systemPrompt)->toContain("when they add evidence not already told effectively by\nExperience — do not select an independent project merely")
-        ->and($systemPrompt)->toContain('because the schema permits up to 3.')
-        ->and($systemPrompt)->toContain('Prefer 0-2 when that');
+    expect($systemPrompt)->toContain('Select one only when it adds evidence')
+        ->and($systemPrompt)->toContain("not already told effectively by Experience — do not select an\nindependent project merely because the slot exists.")
+        ->and($systemPrompt)->toContain('Omitting it entirely')
+        ->and($systemPrompt)->toContain('is a completely normal, correct outcome');
 });
 
-it('leaves the Selected Projects 0-3 cardinality itself unchanged from V1', function () {
-    $systemPrompt = (new ResumeSelectionPromptV2)->systemPrompt();
+it('lowers the Selected Projects cardinality from V1\'s 0-3 to a deterministic maximum of 1', function () {
+    $v1Prompt = (new ResumeSelectionPromptV1)->systemPrompt();
+    $v2Prompt = (new ResumeSelectionPromptV2)->systemPrompt();
 
-    expect($systemPrompt)->toContain('You may choose 0 to 3 of');
+    expect($v1Prompt)->toContain('You may choose 0 to 3 of')
+        ->and($v2Prompt)->toContain('You may choose 0 or 1 of')
+        ->and($v2Prompt)->not->toContain('0 to 3')
+        ->and($v2Prompt)->not->toContain('prefer 0-2')
+        ->and($v2Prompt)->not->toContain('Prefer 0-2');
 });
 
 it('leaves role/project binding, title choice, target-term posture, and do-not-invent sections byte-identical to V1', function () {

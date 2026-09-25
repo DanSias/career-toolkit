@@ -173,6 +173,87 @@ it('keeps the Skills budget independent of the Experience bullet-group budget', 
         ->and($validated['skills'])->toHaveCount(18);
 });
 
+// --- Selected Projects budget (MAX_SELECTED_PROJECTS) --------------------
+//
+// Lowered from the original 0-3 schema cardinality (prompt-only "prefer
+// 0-2") to a deterministic maximum of 1 after a read-only investigation
+// measured that the existing MAX_EXPERIENCE_BULLET_GROUPS ceiling
+// combined with 2 Selected Projects still renders past the two-page
+// target, while combined with at most 1 it does not — see
+// ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS's own
+// docblock and docs/resume-variant-generation.md "PDF export".
+
+/**
+ * @param  array<int, int>  $independentProjectIds
+ * @return array<int, array<string, mixed>>
+ */
+function selectedProjectsOf(array $independentProjectIds): array
+{
+    return array_map(fn (int $id, int $order) => [
+        'project_id' => $id,
+        'order' => $order + 1,
+        'career_fact_keys' => ["project-fact-{$id}"],
+    ], $independentProjectIds, array_keys($independentProjectIds));
+}
+
+it('accepts 0 Selected Projects', function () {
+    $response = selectionResponseWithBulletGroups([1 => 1]);
+
+    $validated = validateSelectionResponse($response);
+
+    expect($validated['selected_projects'])->toHaveCount(0);
+});
+
+it('accepts exactly the maximum of 1 Selected Project', function () {
+    $response = selectionResponseWithBulletGroups([1 => 1]);
+    $response['selected_projects'] = selectedProjectsOf([100]);
+
+    $validated = validateSelectionResponse($response, [
+        'validFactKeys' => ['fact-1', 'project-fact-100'],
+        'validIndependentProjectIds' => [100],
+        'projectIdByFactKey' => ['project-fact-100' => 100],
+    ]);
+
+    expect($validated['selected_projects'])->toHaveCount(1);
+});
+
+it('rejects 2 Selected Projects — one over the maximum of 1', function () {
+    $response = selectionResponseWithBulletGroups([1 => 1]);
+    $response['selected_projects'] = selectedProjectsOf([100, 101]);
+
+    expect(fn () => validateSelectionResponse($response, [
+        'validFactKeys' => ['fact-1', 'project-fact-100', 'project-fact-101'],
+        'validIndependentProjectIds' => [100, 101],
+        'projectIdByFactKey' => ['project-fact-100' => 100, 'project-fact-101' => 101],
+    ]))->toThrow(InvalidResumeVariantResponseException::class);
+});
+
+it('rejects 3 Selected Projects — the old maximum is no longer accepted', function () {
+    $response = selectionResponseWithBulletGroups([1 => 1]);
+    $response['selected_projects'] = selectedProjectsOf([100, 101, 102]);
+
+    expect(fn () => validateSelectionResponse($response, [
+        'validFactKeys' => ['fact-1', 'project-fact-100', 'project-fact-101', 'project-fact-102'],
+        'validIndependentProjectIds' => [100, 101, 102],
+        'projectIdByFactKey' => ['project-fact-100' => 100, 'project-fact-101' => 101, 'project-fact-102' => 102],
+    ]))->toThrow(InvalidResumeVariantResponseException::class);
+});
+
+it('still rejects a Selected Project whose project_id is not a valid independent Project — pre-existing behavior preserved', function () {
+    $response = selectionResponseWithBulletGroups([1 => 1]);
+    $response['selected_projects'] = selectedProjectsOf([999]);
+
+    expect(fn () => validateSelectionResponse($response, [
+        'validFactKeys' => ['fact-1', 'project-fact-999'],
+        'validIndependentProjectIds' => [100], // 999 is not in this set
+        'projectIdByFactKey' => ['project-fact-999' => 999],
+    ]))->toThrow(InvalidResumeVariantResponseException::class);
+});
+
+it('exposes MAX_SELECTED_PROJECTS as 1, the single source of truth the prompt schema also reads', function () {
+    expect(ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS)->toBe(1);
+});
+
 // --- Experience fact/project consistency --------------------------------
 //
 // Closes the exact gap a live qwen3.8:27b evaluation exposed: the

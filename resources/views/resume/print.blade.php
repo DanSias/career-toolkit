@@ -1,8 +1,15 @@
 {{--
     The single visual source for both the browser preview
-    (GET /resume-variants/{resumeVariant}/preview) and, eventually, PDF
-    export — the same markup renders both, so preview and PDF can never
-    visually drift. Receives only a single `$document` variable, an
+    (GET /resume-variants/{resumeVariant}/preview) and PDF export
+    (GET /resume-variants/{resumeVariant}/pdf) — the same markup
+    renders both, so preview and PDF can never visually drift. PDF
+    export (App\Support\ResumeDocument\GenerateResumePdf) renders this
+    exact Blade output to a string and feeds it to headless Chromium
+    (chrome-php/chrome) via Page::setHtml() + Page::pdf() — Chromium's
+    own real print pipeline, the same engine this document's pagination
+    behavior was always verified against, never a second CSS/layout
+    engine and never a separate PDF-specific template. Receives only a
+    single `$document` variable, an
     App\Support\ResumeDocument\ResumeDocument value-object tree built
     by GenerateResumeDocument — never an Eloquent model, never raw
     domain data. Content order here is a fixed v1 display convention —
@@ -25,21 +32,28 @@
     `page-break-*` rules below for exactly where each invariant lives;
     none of them reference a specific employer, Role, or page number.
 
-    ATS v1 rendering contract: US Letter, single-column, real
+    ATS v1 rendering contract: US Letter (explicit `@page { size:
+    letter; margin: 0 }` below — the one physical-page-geometry source
+    of truth; Chromium's own PDF page-margin options are set to 0 to
+    match it exactly, so the .page div's 0.75in padding stays the only
+    actual visual margin, never doubled), single-column, real
     selectable text, standard `<ul><li>` bullets, conventional heading
     elements, no essential information conveyed only through color/
     icons/position, no essential content in the printed page header/
-    footer, no forced one-page constraint, no tables, no absolute
-    positioning. DOM/text order (what a plain-text extractor or CSS-off
-    view sees) always matches a sane reading order — see .role-header
-    below for the one place layout visually reflows a line (title+date
-    sharing a row) while keeping DOM order title -> company -> date via
-    ordinary flexbox `order`, never floats or absolute positioning. CSS
-    uses a small amount of flexbox for exactly two things — the
-    centered section-heading rule and that role-header line layout —
-    everything else stays plain block/inline; this file still targets
-    an eventual dompdf render, which has partial (not full) flexbox
-    support, so flexbox use here stays intentionally minimal.
+    footer (`displayHeaderFooter` is explicitly disabled for PDF
+    export, so Chromium never injects its own default title/URL/page-
+    number header-footer), no forced one-page constraint, no tables, no
+    absolute positioning. DOM/text order (what a plain-text extractor
+    or CSS-off view sees) always matches a sane reading order — see
+    .role-header below for the one place layout visually reflows a line
+    (title+date sharing a row) while keeping DOM order title -> company
+    -> date via ordinary flexbox `order`, never floats or absolute
+    positioning. CSS uses a small amount of flexbox for exactly two
+    things — the centered section-heading rule and that role-header
+    line layout — everything else stays plain block/inline; this
+    predates the Chromium PDF decision and was originally kept minimal
+    for a since-abandoned dompdf target, but is left as-is here since
+    it works correctly and this milestone is not a layout redesign.
 
     Visual design: one restrained dark accent color (--accent, a single
     CSS custom property below) is used for section-heading text/rules
@@ -72,6 +86,19 @@
 
         * {
             box-sizing: border-box;
+        }
+
+        /* The single source of truth for physical page geometry: US
+           Letter, zero page margin. The .page div's own 0.75in padding
+           below is the ONLY visual margin in this document — Chromium's
+           own PDF page-margin options are set to 0 to match exactly
+           (see App\Support\ResumeDocument\GenerateResumePdf), so the
+           two can never silently double up. This rule also governs an
+           interactive browser's own print dialog when "Default margins"
+           is selected. */
+        @page {
+            size: letter;
+            margin: 0;
         }
 
         html, body {

@@ -709,3 +709,133 @@ additionally prints each generated sentence paired with the exact
 evidence supplied for it, and the historical OpenAI wording for the
 same approved plan — a comparison point, explicitly not a ground
 truth.
+
+## PDF export
+
+Downstream of everything above: once a `ResumeVariant` is persisted,
+`resources/views/resume/print.blade.php` is the single visual source
+for both the browser preview (`GET /resume-variants/{id}/preview`) and
+PDF export (`GET /resume-variants/{id}/pdf`) — the same Blade markup
+renders both, so they can never visually drift. Both routes build a
+`ResumeDocument` from the `ResumeVariant` via
+`App\Support\ResumeDocument\GenerateResumeDocument` (pure, deterministic,
+no provider call, no live Employer/Role/Skill/Education re-resolution
+beyond the one documented CareerProfile-contact-info exception) and
+pass only that value-object tree to the view.
+
+**Rendering engine: headless Chromium, not dompdf.** An earlier
+version of this codebase's comments described dompdf as the intended
+future PDF backend, but dompdf never actually rendered or validated
+this document — every real pagination/fidelity check this print view
+has ever had was performed against Chromium's own print pipeline (see
+the "Improve resume print pagination" and "Refine resume typography
+and visual hierarchy" commits). PDF export
+(`App\Support\ResumeDocument\GenerateResumePdf`) automates that same,
+already-observed engine via `chrome-php/chrome` — a pure-PHP client for
+Chrome's DevTools Protocol, not a Node/Puppeteer/Playwright dependency:
+it launches the local Chrome/Chromium binary directly (auto-discovered,
+overridable via the `CHROME_PATH` environment variable), feeds it the
+rendered `print.blade.php` HTML in-process via `Page::setHtml()` (never
+an HTTP round trip to this app's own preview route), and calls
+`Page::pdf()` — the same DevTools `Page.printToPDF` an interactive
+"Print to PDF" uses.
+
+**Page geometry — one source of truth.** `print.blade.php` declares
+`@page { size: letter; margin: 0; }`, and `GenerateResumePdf` passes
+matching explicit options (`paperWidth: 8.5`, `paperHeight: 11`,
+`marginTop/Bottom/Left/Right: 0`, `preferCSSPageSize: true`). Both
+agree on zero page margin so the `.page` div's own pre-existing 0.75in
+padding remains the *only* actual visual margin, never doubled by a
+second, independently-configured margin. `displayHeaderFooter: false`
+ensures Chromium never injects its own default title/URL/page-number
+header-footer. `printBackground: true` preserves the section-heading
+accent color and rule.
+
+**PDF page-count regression** (the rendering-layer safety primitive
+for dynamic Wording content — see "Metric-quantity separation" above
+for the analogous per-bullet concern): `smalot/pdfparser`
+(`Smalot\PdfParser\Parser::parseContent()`) parses the generated PDF
+bytes and reports `count($document->getPages())` directly — no shelling
+out to an external `pdfinfo`-style binary, no custom binary PDF
+parsing. `tests/Feature/ResumeDocument/GenerateResumePdfTest.php`
+asserts an exact expected page count against the real, human-reviewed
+Pearly fixture (`Tests\Support\PearlyResumeVariantFixture`) and fails
+the moment that count changes — the first automated tripwire against a
+resume silently growing pages as generated content varies. This is
+measurement only, not a layout-budget algorithm or a "resumes must be
+exactly N pages" rule — no such constraint has been imposed.
+
+**The layout risk this primitive found, and how it was closed.**
+Rendering the real, currently-persisted Formic `ResumeVariant` (id 2)
+produced 3 pages, with the 3rd page carrying only the tail two
+Education entries and otherwise blank — not a CSS defect (every
+individual bullet/Education-entry/heading-glue rule fired exactly as
+designed), but an inherent consequence of "content flows freely across
+pages, no forced page count" applied to a longer resume (17 Experience
+bullets + 1 Selected Project) whose natural break point stranded a
+small section's tail. A follow-up read-only investigation measured,
+using the real renderer, that the existing `MAX_EXPERIENCE_BULLET_GROUPS`
+ceiling (13) combined with 2 Selected Projects *still* renders past 2
+pages, while combined with at most 1 it does not — see
+`ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS`'s own
+docblock. That measurement, not a general layout-budget algorithm, is
+why Selected Projects was capped at 1 rather than inventing a shared
+numerical Experience/Project budget: the evidence supported a small,
+targeted fix, not a bigger one. Selecting 0 remains completely
+normal — semantic distinctness/relevance-vs-Experience judgment stays
+entirely a model/prompt responsibility; the validator only ever
+enforces cardinality (≤1), independent-project provenance, and
+citation, never "is this genuinely distinct" semantics, which cannot
+be checked deterministically.
+
+**Final artifact-acceptance gate: `App\Support\ResumeDocument\ResumePdfValidator`.**
+A deterministic ceiling on the upstream Selection/Wording content
+narrows the *likelihood* of overflow but was never claimed to
+guarantee an outcome about the actual rendered artifact (see
+"measurement only" above) — so PDF export additionally gates on the
+real, measured result. `ResumePdfValidator::validate(string $pdfBytes)`
+parses the generated bytes with the same `smalot/pdfparser` primitive,
+accepts 1-2 pages, and throws `App\Exceptions\ResumePdfPageBudgetExceededException`
+(carrying the actual measured page count) above that, or
+`App\Exceptions\InvalidResumePdfException` if the bytes cannot be
+parsed as a PDF at all — malformed input is never silently treated as
+acceptable. Deliberately a separate class from `GenerateResumePdf`
+(which only renders) — `ResumeVariantPdfController` orchestrates
+generate → validate → respond, mirroring exactly how
+`ResumeVariantController::store()` already catches a Selection/Wording
+validation failure rather than embedding that policy in the generator
+itself.
+
+**On overflow**: the oversized PDF is never streamed/downloaded; the
+controller returns a clear failure naming the actual page count and
+the 2-page target — never an automatic Selection/Wording regeneration,
+never a provider call, never silent content trimming, never a
+ResumeVariant mutation. The HTML preview remains available regardless
+of whether PDF export would be accepted, since it is a diagnostic
+surface, not an export.
+
+**Historical persisted variants are never retroactively validated.**
+The `ResumePdfValidator` gate applies only at PDF-export request time,
+never to persistence or to already-persisted rows. Formic `ResumeVariant`
+id 2 remains valid, unmutated, and fully previewable; requesting its
+PDF now correctly fails the gate (3 pages) instead of silently
+producing an oversized PDF — the historical over-selection surfaces
+itself through the new gate rather than being retroactively fixed or
+hidden.
+
+**This exact-Pearly-count regression and the universal ≤2-page gate
+serve different purposes, deliberately kept separate**: the Pearly
+test in `GenerateResumePdfTest.php` is a renderer/layout regression
+tripwire for one specific, known-good fixture (fails if that fixture's
+own expected count ever changes, in *either* direction — including
+down to 1). `ResumePdfValidator` is a universal runtime rule applied to
+any variant's real export request (fails only when a real result
+exceeds the target). Neither test collapses into the other, and
+neither responsibility lives in the other's class.
+
+**Filename**: `App\Support\ResumeDocument\ResumePdfFilename` builds a
+deterministic, sanitized (letters/digits/hyphens only) name from data
+already on the pipeline — the owning CareerProfile's name and the
+target JobPosting's company, via `ResumeVariant -> JobMatch ->
+JobAnalysis -> JobPosting`. No permanent PDF storage: every request
+regenerates and streams the PDF fresh.

@@ -20,9 +20,9 @@ use Illuminate\Validation\Validator;
  * posture authorization, target-term location/evidence locality
  * (`assertUsageEvidenceIsLocal()`), structural anti-redundancy, and a
  * provider-neutral content-volume budget (MAX_EXPERIENCE_BULLET_GROUPS/
- * MAX_SELECTED_SKILLS — see their own docblocks). Runs before any
- * Eloquent model exists. Mirrors JobMatchResponseValidator. See
- * docs/resume-variant-generation.md.
+ * MAX_SELECTED_SKILLS/MAX_SELECTED_PROJECTS — see their own docblocks).
+ * Runs before any Eloquent model exists. Mirrors JobMatchResponseValidator.
+ * See docs/resume-variant-generation.md.
  */
 final class ResumeSelectionResponseValidator
 {
@@ -44,6 +44,23 @@ final class ResumeSelectionResponseValidator
     private const MAX_EXPERIENCE_BULLET_GROUPS = 13;
 
     private const MAX_SELECTED_SKILLS = 18;
+
+    /**
+     * Hard cap on Selected Projects — public, and the single source of
+     * truth `ResumeSelectionPromptV2::jsonSchema()` reads directly for
+     * its own `selected_projects.maxItems`, rather than each class
+     * independently maintaining the same number. Lowered from the
+     * original 0-3 schema cardinality (prompt-only "prefer 0-2"
+     * guidance, no deterministic ceiling) after a read-only investigation
+     * measured that a real, current-pipeline-legal combination — the
+     * existing MAX_EXPERIENCE_BULLET_GROUPS ceiling plus 2 Selected
+     * Projects — still renders past the 2-page target (1 Selected
+     * Project at that same bullet ceiling does not). Selecting 0 remains
+     * completely normal; this only forecloses 2 or 3. See
+     * docs/resume-variant-generation.md "PDF export" and "Selected
+     * Projects".
+     */
+    public const MAX_SELECTED_PROJECTS = 1;
 
     /**
      * @param  array<string, mixed>  $structuredContent  Untrusted, decoded provider output.
@@ -497,8 +514,11 @@ final class ResumeSelectionResponseValidator
         array $validIndependentProjectIds,
         array $projectIdByFactKey,
     ): void {
-        if (count($selectedProjects) > 3) {
-            $validator->errors()->add('selected_projects', 'At most 3 Selected Projects are allowed.');
+        if (count($selectedProjects) > self::MAX_SELECTED_PROJECTS) {
+            $validator->errors()->add(
+                'selected_projects',
+                'At most '.self::MAX_SELECTED_PROJECTS.' Selected Project(s) are allowed.'
+            );
         }
 
         foreach ($selectedProjects as $i => $item) {

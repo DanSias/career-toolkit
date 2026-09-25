@@ -18,10 +18,13 @@ use Tests\Support\ResumeVariantFixtures;
 
 /**
  * Selected Projects: independent (role_id-null) Projects only, chosen
- * 0-3 by Selection, worded by Wording as exactly one bullet each, and
- * frozen onto ResumeVariantProject/ResumeVariantProjectBullet/
- * ResumeVariantProjectBulletCitation. See docs/domain-model.md
- * "ResumeVariant" -> "Selected Projects".
+ * 0-1 by Selection (ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS
+ * — lowered from 0-3 after a read-only investigation found 2+ Selected
+ * Projects could still push a resume past its 2-page PDF export target;
+ * see docs/resume-variant-generation.md "PDF export"), worded by Wording
+ * as exactly one bullet, and frozen onto ResumeVariantProject/
+ * ResumeVariantProjectBullet/ResumeVariantProjectBulletCitation. See
+ * docs/domain-model.md "ResumeVariant" -> "Selected Projects".
  */
 function bindSelectedProjectsProviders(): array
 {
@@ -136,7 +139,7 @@ it('persists one selected Project with its one frozen bullet and citation', func
         ->and($bullet->citations->first()->career_fact_id)->toBe($candidate['factIndependentProject']->id);
 });
 
-it('persists three selected Projects, preserving Selection relevance order', function () {
+it('rejects a second selected Project — max 1 — and persists nothing', function () {
     [$candidate, , $jobMatch] = selectedProjectsFixtureSetup();
 
     $projectB = Project::factory()->create([
@@ -152,68 +155,10 @@ it('persists three selected Projects, preserving Selection relevance order', fun
         'visibility' => Visibility::Public,
     ]);
 
-    $projectC = Project::factory()->create([
-        'role_id' => null,
-        'career_profile_id' => $candidate['profile']->id,
-        'name' => 'Well Applied',
-    ]);
-    $factC = CareerFact::factory()->create([
-        'career_profile_id' => $candidate['profile']->id,
-        'key' => 'fixture-well-applied-what-it-is',
-        'attributable_type' => (new Project)->getMorphClass(),
-        'attributable_id' => $projectC->id,
-        'visibility' => Visibility::Public,
-    ]);
-
-    $content = baseSelectionContent($candidate);
-    $content['selected_projects'] = [
-        ['project_id' => $projectC->id, 'order' => 1, 'career_fact_keys' => [$factC->key]],
-        ['project_id' => $candidate['independentProject']->id, 'order' => 2, 'career_fact_keys' => [$candidate['factIndependentProject']->key]],
-        ['project_id' => $projectB->id, 'order' => 3, 'career_fact_keys' => [$factB->key]],
-    ];
-
-    $wordingContent = baseWordingContent($candidate);
-    $wordingContent['selected_projects'] = [
-        ['project_id' => $projectC->id, 'text' => 'Well Applied bullet.'],
-        ['project_id' => $candidate['independentProject']->id, 'text' => 'Well Prompted bullet.'],
-        ['project_id' => $projectB->id, 'text' => 'PromptWorks bullet.'],
-    ];
-
-    [$selection, $wording] = bindSelectedProjectsProviders();
-    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
-    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', $wordingContent));
-
-    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
-
-    expect($variant->projects)->toHaveCount(3)
-        ->and($variant->projects->sortBy('display_order')->pluck('name')->all())
-        ->toBe(['Well Applied', 'Well Prompted', 'PromptWorks']);
-});
-
-it('rejects a fourth selected Project — max 3 — and persists nothing', function () {
-    [$candidate, , $jobMatch] = selectedProjectsFixtureSetup();
-
-    $extraProjects = collect(range(1, 3))->map(function (int $i) use ($candidate) {
-        $project = Project::factory()->create([
-            'role_id' => null,
-            'career_profile_id' => $candidate['profile']->id,
-            'name' => "Extra Project {$i}",
-        ]);
-        $fact = CareerFact::factory()->create([
-            'career_profile_id' => $candidate['profile']->id,
-            'key' => "fixture-extra-{$i}",
-            'attributable_type' => (new Project)->getMorphClass(),
-            'attributable_id' => $project->id,
-            'visibility' => Visibility::Public,
-        ]);
-
-        return [$project, $fact];
-    });
-
     $content = baseSelectionContent($candidate);
     $content['selected_projects'] = [
         ['project_id' => $candidate['independentProject']->id, 'order' => 1, 'career_fact_keys' => [$candidate['factIndependentProject']->key]],
-        ...$extraProjects->map(fn (array $pair) => ['project_id' => $pair[0]->id, 'order' => 2, 'career_fact_keys' => [$pair[1]->key]])->all(),
+        ['project_id' => $projectB->id, 'order' => 2, 'career_fact_keys' => [$factB->key]],
     ];
 
     [$selection, $wording] = bindSelectedProjectsProviders();
