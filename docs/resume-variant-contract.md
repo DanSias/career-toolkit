@@ -268,6 +268,16 @@ nullable+enum combinations are avoided throughout.
   the same location.
 - **`target_term_usages[].career_fact_keys`** must never be empty — a
   claim posture always rests on cited evidence, direct or comparative.
+- **`target_term_usages[].career_fact_keys` must be evidence already
+  declared at the usage's own `location`** — never borrowed from a
+  sibling bullet group, a different role, a Selected Project, or (in
+  either direction) the Summary. Enforced by
+  `ResumeSelectionResponseValidator::assertUsageEvidenceIsLocal()`,
+  independently of (and in addition to) the pre-existing check that
+  each key exists somewhere in the supplied corpus at all. See
+  `docs/resume-variant-generation.md` "Target-term location integrity"
+  for the real historical inconsistency (`ResumeVariant` id 1) that
+  motivated this.
 - Every id/key referenced anywhere in the response (`career_fact_key`,
   `education_id`, `skill_id`, `role_id`, `project_id`,
   `job_analysis_finding_id`, `term`) is enum-constrained in the JSON
@@ -288,6 +298,8 @@ string).
 ```json
 {
   "summary_evidence": [{ "key": "...", "statement": "...", "...": "..." }],
+  "summary_authorized_skills": ["BigQuery", "Google Analytics", "Salesforce"],
+  "summary_direct_target_terms": ["Azure"],
   "experience": [
     {
       "role_id": 7,
@@ -295,7 +307,8 @@ string).
       "bullet_groups": [
         {
           "bullet_group_index": 0,
-          "career_facts": [{ "key": "...", "statement": "...", "...": "..." }]
+          "career_facts": [{ "key": "...", "statement": "...", "...": "..." }],
+          "direct_target_terms": []
         }
       ]
     }
@@ -303,10 +316,45 @@ string).
 }
 ```
 
+`summary_direct_target_terms` and each bullet group's own
+`direct_target_terms` carry exactly the `direct`-posture
+`target_term_usages` Selection approved at that exact location — see
+"Target-term location integrity" in `docs/resume-variant-generation.md`.
+Deliberately built from `term`/`location` alone, never from a usage's
+own `career_fact_keys` — that would open a second, independent
+evidence channel alongside the fact-local `career_facts` already
+shown above. Selected Projects never receive this field:
+`ResumeTermUsageLocation` has no "project" case, so a target-term
+usage can never be located at one.
+
+`summary_authorized_skills` is a different mechanism entirely — see
+"Summary authorized-Skills allow-list" in
+`docs/resume-variant-generation.md`. It is the closed-world set of
+canonical Skill names the Summary's own supplied CareerFacts actually
+authorize (attached Skills ∪ Skills recognized in those same facts'
+own statement/metric text) — the exact set
+`ResumeWordingResponseValidator::assertSkillProvenance()` will check
+the generated summary against, computed via that validator's own
+`authorizedSkillIds()` (no second definition). It is provider *input*
+only, never part of the output JSON schema, and it grants no
+authorization the validator doesn't already independently grant — it
+exists so the model can execute the pre-existing evidence-locality
+rule directly instead of inferring it from prose while seeing every
+other location's evidence in the same request. Scoped to the Summary
+only in this milestone; Experience bullet groups and Selected Projects
+receive no equivalent field.
+
 Alongside this input, a `denylist_terms` array is supplied separately
 — every target term from the Selection stage **except** those with an
-approved `direct`-posture usage anywhere in this variant. See
-"The qualified-clause mechanism" below.
+approved `direct`-posture usage anywhere in this variant. This
+predates, and is unrelated to, the per-location `direct_target_terms`
+fields above — `denylist_terms` only ever removes a blanket
+prohibition variant-wide; `direct_target_terms` is what tells Wording
+*where* a term is actually desired, and
+`ResumeWordingResponseValidator::assertTargetTermLocationScope()` (see
+"Target-term location integrity") is what prevents a `direct` term
+from leaking to a location it was never approved for. See also "The
+qualified-clause mechanism" below.
 
 ### Structured provider response contract
 

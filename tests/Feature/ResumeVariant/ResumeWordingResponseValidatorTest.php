@@ -56,6 +56,7 @@ function minimalValidWordingContent(array $overrides = []): array
  * @param  array<string, array<int, int>>  $skillIdsByFactKey
  * @param  array<int, string>  $canonicalSkillsById
  * @param  array<string, array<int, int>>  $textRecognizedSkillIdsByFactKey
+ * @param  array<string, array<int, string>>  $directTargetTermsByLocation
  * @return array<string, mixed>
  */
 function validateWordingContent(
@@ -65,6 +66,7 @@ function validateWordingContent(
     array $skillIdsByFactKey = [],
     array $canonicalSkillsById = [],
     array $textRecognizedSkillIdsByFactKey = [],
+    array $directTargetTermsByLocation = [],
 ): array {
     return (new ResumeWordingResponseValidator)->validate(
         $structuredContent,
@@ -77,6 +79,7 @@ function validateWordingContent(
         skillIdsByFactKey: $skillIdsByFactKey,
         canonicalSkillsById: $canonicalSkillsById,
         textRecognizedSkillIdsByFactKey: $textRecognizedSkillIdsByFactKey,
+        directTargetTermsByLocation: $directTargetTermsByLocation,
     );
 }
 
@@ -133,6 +136,7 @@ it('rejects a Selected Project bullet one word over the 40-word ceiling', functi
         skillIdsByFactKey: [],
         canonicalSkillsById: [],
         textRecognizedSkillIdsByFactKey: [],
+        directTargetTermsByLocation: [],
     ))->toThrow(InvalidResumeVariantResponseException::class, 'over the 40-word structural ceiling');
 });
 
@@ -154,6 +158,7 @@ it('accepts a Selected Project bullet at exactly the 40-word ceiling', function 
         skillIdsByFactKey: [],
         canonicalSkillsById: [],
         textRecognizedSkillIdsByFactKey: [],
+        directTargetTermsByLocation: [],
     );
 
     expect($validated)->toBeArray();
@@ -497,6 +502,7 @@ it('evaluates skill provenance independently of denylist/guardrail checks — an
             skillIdsByFactKey: ['fact-a' => []],
             canonicalSkillsById: realisticCanonicalSkills(),
             textRecognizedSkillIdsByFactKey: [],
+            directTargetTermsByLocation: [],
         );
         test()->fail('Expected InvalidResumeVariantResponseException to be thrown.');
     } catch (InvalidResumeVariantResponseException $e) {
@@ -805,6 +811,357 @@ it('no longer fails the real historical OpenAI Selected Project bullet solely fo
         canonicalSkillsById: $canonicalSkillsById,
         textRecognizedSkillIdsByFactKey: ['well-prompted-what-it-is' => $textRecognizedSkillIds],
     );
+
+    expect($validated)->toBeArray();
+});
+
+// --- Real-data regression: the recurring Formic Summary leak (ResumeVariant id 2) ---
+//
+// Uses the real four summary_evidence CareerFacts, their real Skill
+// ids/names, and the real Skill ids that leaked (React 8, Node.js 10,
+// Laravel 1, TypeScript 4) — deterministically reconstructed, zero
+// inference, from the real dev database during the recurring-Summary-
+// failure investigation. Proves the new summary_authorized_skills
+// affordance is a generation-time aid only: it did not, and must not,
+// weaken what assertSkillProvenance() actually authorizes. See
+// docs/resume-variant-generation.md "Skill provenance".
+
+function formicSummaryRealCanonicalSkills(): array
+{
+    return [
+        1 => 'Laravel',
+        2 => 'PHP',
+        4 => 'TypeScript',
+        8 => 'React',
+        10 => 'Node.js',
+        23 => 'Salesforce',
+        24 => 'Salesforce Marketing Cloud',
+        25 => 'BigQuery',
+        26 => 'Google Analytics',
+        41 => 'Deterministic AI boundaries',
+        44 => 'AI-assisted development',
+        59 => 'Marketing analytics',
+        60 => 'Campaign attribution',
+        61 => 'Marketing automation',
+    ];
+}
+
+/**
+ * The real, current summary_evidence CareerFacts for ResumeVariant id
+ * 2 (Formic) — key => [statement, attached Skill ids].
+ */
+function formicSummaryRealFacts(): array
+{
+    return [
+        'pearson-data-analytics-lead-marketing-analytics-martech' => [
+            'statement' => 'Worked across marketing analytics and marketing-technology systems spanning campaign '
+                .'tracking, attribution, budget forecasting, and marketing automation — integrating Salesforce, '
+                .'BigQuery, Google Analytics, Salesforce Marketing Cloud, and advertising-platform data into '
+                .'unified reporting for marketing and business stakeholders.',
+            'attached' => [23, 25, 26, 59, 60, 61],
+        ],
+        'profile-ai-assisted-development-pattern' => [
+            'statement' => 'Consistently uses AI-assisted development workflows to move from prototype to '
+                .'production more quickly, while keeping AI out of the computation/decision path for the systems '
+                .'it builds (deterministic metrics and results, AI limited to explanation or synthesis).',
+            'attached' => [41, 44],
+        ],
+        'liquid-gravity-what-they-did' => [
+            'statement' => 'Founded and led a marketing technology consultancy, building custom web applications, '
+                .'CRM integrations, automation tools, and conversion-focused solutions for clients across '
+                .'multiple industries.',
+            'attached' => [2],
+        ],
+        'rocketgate-independently-implemented-from-team-requirements' => [
+            'statement' => 'Independently designed and implemented the technical solution for each major '
+                .'RocketGate initiative (Workflow Intelligence, Verbatim, Transaction Toolkit, Knowledge '
+                .'Exporter, and the transaction remediation tooling) from team-defined business requirements '
+                .'and operational needs — the team provided requirements, context, documentation, tickets, '
+                .'feedback, and access; the technical implementation was owned independently.',
+            'attached' => [],
+        ],
+    ];
+}
+
+/**
+ * @return array{skillIdsByFactKey: array<string, array<int, int>>, textRecognizedSkillIdsByFactKey: array<string, array<int, int>>}
+ */
+function formicSummaryRealAuthorizationData(): array
+{
+    $canonicalSkillsById = formicSummaryRealCanonicalSkills();
+    $validator = new ResumeWordingResponseValidator;
+    $skillIdsByFactKey = [];
+    $textRecognizedSkillIdsByFactKey = [];
+
+    foreach (formicSummaryRealFacts() as $key => $fact) {
+        $skillIdsByFactKey[$key] = $fact['attached'];
+        $textRecognizedSkillIdsByFactKey[$key] = $validator->recognizedSkillIds($fact['statement'], $canonicalSkillsById);
+    }
+
+    return compact('skillIdsByFactKey', 'textRecognizedSkillIdsByFactKey');
+}
+
+const FORMIC_FAILED_QWEN_SUMMARY = 'Senior full-stack developer who translates team-defined business requirements '
+    .'into production systems — marketing analytics platforms, developer tooling, workflow automation, and '
+    .'high-risk data remediation. Breadth across React, Node.js, Laravel, TypeScript, and marketing-technology '
+    .'integrations (Salesforce, BigQuery, Google Analytics), with deterministic, evidence-linked architecture '
+    .'and AI-assisted workflows bounded to explanation rather than computation.';
+
+const FORMIC_CLEAN_QWEN_SUMMARY = 'Senior full-stack developer and data analytics lead building '
+    .'marketing-technology platforms, developer tools, and AI-assisted systems with deterministic computation. '
+    .'Integrates Salesforce, BigQuery, and CRM data into unified analytics, keeping AI limited to explanation '
+    .'and synthesis. Founded a consultancy delivering custom web applications, CRM integrations, and '
+    .'conversion-optimization tooling across industries.';
+
+it('still rejects the real, latest failed qwen3.8:27b Summary — React/Node.js/Laravel/TypeScript remain unauthorized under the real Formic summary evidence', function () {
+    $canonicalSkillsById = formicSummaryRealCanonicalSkills();
+    $authorization = formicSummaryRealAuthorizationData();
+    $content = minimalValidWordingContent(['summary' => FORMIC_FAILED_QWEN_SUMMARY]);
+
+    try {
+        validateWordingContent(
+            $content,
+            careerFactKeysByLocation: ['summary' => array_keys(formicSummaryRealFacts())],
+            skillIdsByFactKey: $authorization['skillIdsByFactKey'],
+            canonicalSkillsById: $canonicalSkillsById,
+            textRecognizedSkillIdsByFactKey: $authorization['textRecognizedSkillIdsByFactKey'],
+        );
+        test()->fail('Expected InvalidResumeVariantResponseException to be thrown.');
+    } catch (InvalidResumeVariantResponseException $e) {
+        expect($e->getMessage())
+            ->toContain('[React] (Skill id 8)')
+            ->toContain('[Node.js] (Skill id 10)')
+            ->toContain('[Laravel] (Skill id 1)')
+            ->toContain('[TypeScript] (Skill id 4)');
+    }
+});
+
+it('still accepts the real, prior clean qwen3.8:27b Summary under the same real Formic summary evidence', function () {
+    $canonicalSkillsById = formicSummaryRealCanonicalSkills();
+    $authorization = formicSummaryRealAuthorizationData();
+    $content = minimalValidWordingContent(['summary' => FORMIC_CLEAN_QWEN_SUMMARY]);
+
+    $validated = validateWordingContent(
+        $content,
+        careerFactKeysByLocation: ['summary' => array_keys(formicSummaryRealFacts())],
+        skillIdsByFactKey: $authorization['skillIdsByFactKey'],
+        canonicalSkillsById: $canonicalSkillsById,
+        textRecognizedSkillIdsByFactKey: $authorization['textRecognizedSkillIdsByFactKey'],
+    );
+
+    expect($validated)->toBeArray();
+});
+
+// --- Target-term location scope (the target_term_usages -> Wording handoff) ---
+//
+// Established by the target_term_usages -> Resume Wording handoff
+// investigation: a `direct`-posture target term is authorized only at
+// the exact location Selection approved it for — never anywhere else
+// in the same variant, even though `buildDenylistTerms()` removes it
+// from the denylist variant-wide (that removal alone is what let the
+// leak go unnoticed: nothing else ever checked WHERE the term
+// appeared). This is purely a leakage check — it never requires an
+// approved term to appear at all. See
+// ResumeWordingResponseValidator::assertTargetTermLocationScope()'s
+// own docblock and docs/resume-variant-generation.md "Target-term
+// location integrity".
+
+/**
+ * Bypasses validateWordingContent()'s fixed validRoleIds:[1]/
+ * expectedBulletGroupIndexesByRole:[1=>[0]] — several tests below need
+ * more than one role or more than one bullet group.
+ *
+ * @param  array<string, mixed>  $structuredContent
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function validateWordingContentCustom(array $structuredContent, array $overrides = []): array
+{
+    return (new ResumeWordingResponseValidator)->validate(
+        $structuredContent,
+        validRoleIds: $overrides['validRoleIds'] ?? [1],
+        expectedBulletGroupIndexesByRole: $overrides['expectedBulletGroupIndexesByRole'] ?? [1 => [0]],
+        validSelectedProjectIds: $overrides['validSelectedProjectIds'] ?? [],
+        denylistTerms: $overrides['denylistTerms'] ?? [],
+        careerFactKeysByLocation: $overrides['careerFactKeysByLocation'] ?? [],
+        guardrailByFactKey: $overrides['guardrailByFactKey'] ?? [],
+        skillIdsByFactKey: $overrides['skillIdsByFactKey'] ?? [],
+        canonicalSkillsById: $overrides['canonicalSkillsById'] ?? [],
+        textRecognizedSkillIdsByFactKey: $overrides['textRecognizedSkillIdsByFactKey'] ?? [],
+        directTargetTermsByLocation: $overrides['directTargetTermsByLocation'] ?? [],
+    );
+}
+
+it('accepts an approved direct target term appearing at its exact bullet location', function () {
+    $content = minimalValidWordingContent([
+        'experience' => [
+            ['role_id' => 1, 'bullets' => [
+                ['bullet_group_index' => 0, 'text' => 'Delivered outreach automation using Kubernetes at scale.'],
+            ]],
+        ],
+    ]);
+
+    $validated = validateWordingContentCustom($content, [
+        'directTargetTermsByLocation' => ['1:0' => ['Kubernetes']],
+    ]);
+
+    expect($validated)->toBeArray();
+});
+
+it('rejects the same direct target term appearing in a DIFFERENT bullet than the one it was approved for', function () {
+    $content = minimalValidWordingContent([
+        'experience' => [
+            ['role_id' => 1, 'bullets' => [
+                ['bullet_group_index' => 0, 'text' => wordsOfLength(20)],
+                ['bullet_group_index' => 1, 'text' => 'Delivered outreach automation using Kubernetes at scale.'],
+            ]],
+        ],
+    ]);
+
+    expect(fn () => validateWordingContentCustom($content, [
+        'expectedBulletGroupIndexesByRole' => [1 => [0, 1]],
+        'directTargetTermsByLocation' => ['1:0' => ['Kubernetes']], // approved at bullet 0; text names it at bullet 1
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'names the direct target term [Kubernetes], which Selection did not approve at this location');
+});
+
+it('rejects the same direct target term appearing under a DIFFERENT role than the one it was approved for', function () {
+    $content = [
+        'summary' => 'A concise professional summary.',
+        'experience' => [
+            ['role_id' => 1, 'bullets' => [['bullet_group_index' => 0, 'text' => wordsOfLength(20)]]],
+            ['role_id' => 2, 'bullets' => [['bullet_group_index' => 0, 'text' => 'Delivered outreach automation using Kubernetes at scale.']]],
+        ],
+        'selected_projects' => [],
+    ];
+
+    expect(fn () => validateWordingContentCustom($content, [
+        'validRoleIds' => [1, 2],
+        'expectedBulletGroupIndexesByRole' => [1 => [0], 2 => [0]],
+        'directTargetTermsByLocation' => ['1:0' => ['Kubernetes']], // approved for role 1, not role 2
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'names the direct target term [Kubernetes]');
+});
+
+it('rejects a bullet-approved direct target term appearing in the Summary instead', function () {
+    $content = minimalValidWordingContent(['summary' => 'Uses Kubernetes across the stack.']);
+
+    expect(fn () => validateWordingContentCustom($content, [
+        'directTargetTermsByLocation' => ['1:0' => ['Kubernetes']], // approved for the bullet, not the summary
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'names the direct target term [Kubernetes]');
+});
+
+it('rejects a Summary-approved direct target term appearing in a bullet instead', function () {
+    $content = minimalValidWordingContent([
+        'experience' => [
+            ['role_id' => 1, 'bullets' => [
+                ['bullet_group_index' => 0, 'text' => 'Delivered outreach automation using Kubernetes at scale.'],
+            ]],
+        ],
+    ]);
+
+    expect(fn () => validateWordingContentCustom($content, [
+        'directTargetTermsByLocation' => ['summary' => ['Kubernetes']], // approved for the summary, not the bullet
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'names the direct target term [Kubernetes]');
+});
+
+it('accepts an approved direct target term appearing in the exact Summary it was approved for', function () {
+    $content = minimalValidWordingContent(['summary' => 'Uses Kubernetes across the stack.']);
+
+    $validated = validateWordingContentCustom($content, [
+        'directTargetTermsByLocation' => ['summary' => ['Kubernetes']],
+    ]);
+
+    expect($validated)->toBeArray();
+});
+
+it('keeps two different direct target terms approved at two different locations fully isolated when each appears only at its own location', function () {
+    $content = minimalValidWordingContent([
+        'summary' => 'Uses Kubernetes across the stack.',
+        'experience' => [
+            ['role_id' => 1, 'bullets' => [
+                ['bullet_group_index' => 0, 'text' => 'Delivered outreach automation with Terraform.'],
+            ]],
+        ],
+    ]);
+
+    $validated = validateWordingContentCustom($content, [
+        'directTargetTermsByLocation' => ['summary' => ['Kubernetes'], '1:0' => ['Terraform']],
+    ]);
+
+    expect($validated)->toBeArray();
+});
+
+it('rejects when two approved direct terms are swapped between their own approved locations', function () {
+    $content = minimalValidWordingContent([
+        'summary' => 'Uses Terraform across the stack.', // Terraform was approved for the bullet, not here
+        'experience' => [
+            ['role_id' => 1, 'bullets' => [
+                ['bullet_group_index' => 0, 'text' => 'Delivered outreach automation with Kubernetes.'], // Kubernetes was approved for the summary, not here
+            ]],
+        ],
+    ]);
+
+    expect(fn () => validateWordingContentCustom($content, [
+        'directTargetTermsByLocation' => ['summary' => ['Kubernetes'], '1:0' => ['Terraform']],
+    ]))->toThrow(InvalidResumeVariantResponseException::class);
+});
+
+it('still prohibits a capability/qualified-posture term via the unchanged denylist — the new location-scope check plays no role for non-direct postures', function () {
+    $content = minimalValidWordingContent(['summary' => 'Familiar with Kubernetes-style orchestration.']);
+
+    expect(fn () => validateWordingContentCustom($content, [
+        'denylistTerms' => ['Kubernetes'], // capability/qualified terms stay denylisted, exactly as before this milestone
+        'directTargetTermsByLocation' => [], // never surfaced as direct guidance
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'denylisted target term [Kubernetes]');
+});
+
+it('is a complete no-op when no direct target terms are approved anywhere in the variant', function () {
+    $content = minimalValidWordingContent(['summary' => 'Mentions Kubernetes casually with no approval anywhere.']);
+
+    $validated = validateWordingContentCustom($content, [
+        'directTargetTermsByLocation' => [], // empty catalog -> assertTargetTermLocationScope() returns immediately
+    ]);
+
+    expect($validated)->toBeArray();
+});
+
+it('still evaluates Skill provenance independently of, and simultaneously with, the new target-term location-scope check', function () {
+    $content = minimalValidWordingContent(['summary' => 'Uses React and Kubernetes across the stack.']);
+
+    try {
+        validateWordingContentCustom($content, [
+            'careerFactKeysByLocation' => ['summary' => ['fact-a']],
+            'skillIdsByFactKey' => ['fact-a' => []], // React not authorized as a Skill here
+            'canonicalSkillsById' => realisticCanonicalSkills(),
+            'directTargetTermsByLocation' => ['1:0' => ['Kubernetes']], // Kubernetes approved elsewhere, not here
+        ]);
+        test()->fail('Expected InvalidResumeVariantResponseException to be thrown.');
+    } catch (InvalidResumeVariantResponseException $e) {
+        expect($e->getMessage())
+            ->toContain('names the canonical Skill [React] (Skill id 1)')
+            ->toContain('names the direct target term [Kubernetes]');
+    }
+});
+
+it('rejects a term that is both an approved direct target term AND a canonical Skill when Skill provenance alone is unsatisfied — approval as a target term does not bypass it', function () {
+    $content = minimalValidWordingContent(['summary' => 'Uses React across the stack.']);
+
+    expect(fn () => validateWordingContentCustom($content, [
+        'careerFactKeysByLocation' => ['summary' => ['fact-a']],
+        'skillIdsByFactKey' => ['fact-a' => []], // React NOT attached/recognized as a Skill at this location
+        'canonicalSkillsById' => realisticCanonicalSkills(),
+        'directTargetTermsByLocation' => ['summary' => ['React']], // approved AS A TARGET TERM at this exact location
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'names the canonical Skill [React] (Skill id 1)');
+});
+
+it('accepts a term that is both an approved direct target term AND a canonical Skill when it satisfies BOTH contracts', function () {
+    $content = minimalValidWordingContent(['summary' => 'Uses React across the stack.']);
+
+    $validated = validateWordingContentCustom($content, [
+        'careerFactKeysByLocation' => ['summary' => ['fact-a']],
+        'skillIdsByFactKey' => ['fact-a' => [1]], // React IS attached here
+        'canonicalSkillsById' => realisticCanonicalSkills(),
+        'directTargetTermsByLocation' => ['summary' => ['React']], // AND approved as a direct target term at this exact location
+    ]);
 
     expect($validated)->toBeArray();
 });

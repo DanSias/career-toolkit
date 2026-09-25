@@ -15,11 +15,12 @@ namespace App\Support\ResumeVariant\Prompts;
  * so both were made in place, on this same class, rather than each
  * requiring its own new class.
  *
- * Two semantic changes from V1, both in the `## Summary` and
- * `## Never invent, never compute, never overstate` sections
- * respectively — everything else (userPrompt(), jsonSchema(), every
- * other system-prompt section) is byte-identical to
- * ResumeWordingPromptV1:
+ * Four semantic changes from V1, all in `systemPrompt()`'s text —
+ * `userPrompt()`'s own code and `jsonSchema()` are both byte-identical
+ * to ResumeWordingPromptV1's. (The *data* `userPrompt()` is called
+ * with now carries new fields — see changes 3 and 4 below — but the
+ * method itself does not change: it still just JSON-encodes whatever
+ * `$approvedSelection` it's given.)
  *
  * 1. One clarifying sentence in `## Summary`, added after the first
  *    live qwen3.8:27b Resume Wording evaluation showed a generated
@@ -47,10 +48,48 @@ namespace App\Support\ResumeVariant\Prompts;
  *    quantified figures unambiguously attached to their own outcome —
  *    it does not name the specific fact, figure, or CareerFact key
  *    that motivated it.
+ * 3. A new `## Direct target-term guidance` section, added once the
+ *    target_term_usages → Resume Wording handoff investigation
+ *    established that Wording previously received no signal at all
+ *    about which target terms Selection had specifically approved as
+ *    `direct`-posture claims, and at which exact location — Wording
+ *    could only ever discover this indirectly (a term simply wasn't on
+ *    `denylist_terms`), which in every real persisted example produced
+ *    no effect: the term never actually appeared. The new section
+ *    explains the new fact-local `direct_target_terms`/
+ *    `summary_direct_target_terms` input fields (see change 3's own
+ *    builder in `GenerateResumeVariant::buildDirectTargetTermsByLocation()`)
+ *    as encouragement/authorization at that exact location, explicitly
+ *    not a requirement to use them, and explicitly not a second
+ *    evidence channel — a listed term is never license to state
+ *    anything the location's own supplied CareerFacts don't already
+ *    establish.
+ * 4. A new paragraph in `## Summary`, added after a corrected live
+ *    qwen3.8:27b run again leaked cross-location canonical Skills
+ *    into the summary (this time "React"/"Node.js"/"Laravel"/
+ *    "TypeScript") despite change 1 above already stating the
+ *    fact-local evidence rule in prose — the recurrence, deterministically
+ *    investigated, showed 2 of 3 known qwen runs violating the same
+ *    rule under byte-identical prompt text, i.e. stochastic, not
+ *    reliable, prompt-only compliance. Rather than restating the rule
+ *    more forcefully in prose again, this change gives the model the
+ *    same authorization the validator itself computes: a new
+ *    `summary_authorized_skills` input field (see
+ *    `GenerateResumeVariant::buildWordingInput()`, which now reuses
+ *    `ResumeWordingResponseValidator::authorizedSkillIds()` directly —
+ *    no second definition of Skill authorization exists) naming the
+ *    exact closed-world set of canonical Skills the summary evidence
+ *    itself authorizes. The new paragraph also resolves a real
+ *    competing pressure the investigation identified: the existing
+ *    "unmistakably read as a senior full-stack/software candidate"
+ *    sentence, combined with summary evidence that doesn't always
+ *    include a named full-stack technology, invited exactly this kind
+ *    of borrowing — the new paragraph tells the model to satisfy that
+ *    positioning qualitatively instead when no authorized Skill fits.
  *
- * See docs/resume-variant-generation.md "Skill provenance" and
- * "Metric-quantity separation" for the full investigations behind
- * each.
+ * See docs/resume-variant-generation.md "Skill provenance",
+ * "Metric-quantity separation", and "Target-term location integrity"
+ * for the full investigations behind each.
  *
  * schemaVersion() is unchanged (`1.1`) — the JSON schema itself is
  * byte-identical to V1; only prompt text changed. See
@@ -178,6 +217,20 @@ final readonly class ResumeWordingPromptV2
         highly specific systems in one sentence merely because they
         are all supported by evidence.
 
+        A `summary_authorized_skills` list is supplied alongside the
+        summary evidence — the exact, closed-world set of canonical
+        Skill names you may name in the summary. Never name a
+        canonical Skill absent from that list, even when it appears
+        elsewhere in this same request and is genuinely true of the
+        candidate; seeing it elsewhere tells you what other locations
+        describe, not what you may borrow. If establishing the
+        candidate's full-stack/software positioning would otherwise
+        tempt you to name a specific technology that list doesn't
+        include, describe that breadth qualitatively instead — for
+        example "full-stack developer," "software systems," or "web
+        applications" — rather than reaching for a named technology
+        from another location.
+
         Prefer direct candidate-positioning language over broad
         self-sufficiency claims. Do not generalize project-specific
         independent ownership into a career-wide statement such as
@@ -189,6 +242,27 @@ final readonly class ResumeWordingPromptV2
         CareerFacts explicitly authorize it — the concern is only
         stretching a narrower, project-scoped claim into a sweeping
         career-wide one the evidence doesn't actually establish.
+
+        ## Direct target-term guidance
+
+        A location may include a `direct_target_terms` list (for the
+        summary, `summary_direct_target_terms`) — specific tailoring
+        terminology this location's own supplied evidence already
+        supports naming directly. Use one only when it can be stated
+        naturally and accurately from that exact location's own
+        supplied evidence, the same way you would choose any other
+        word. This is not a separate evidence source: it never
+        authorizes importing a fact, technology, ownership claim,
+        depth, duration, scale, or metric from anywhere else, and it
+        never overrides any other rule in this prompt. A term listed
+        for one location is not authorized at any other location, even
+        one where the same term happens to be listed too — treat each
+        location's list as its own. Using a listed term is encouraged
+        when it genuinely fits; it is not required, and a location
+        with no natural way to use one should simply not use it.
+        Terms handled through a qualified comparison, or terms that
+        must never appear at all, are handled through separate
+        mechanisms and are never included in these lists.
 
         ## Never invent, never compute, never overstate
 

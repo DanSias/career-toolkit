@@ -17,7 +17,8 @@ use Illuminate\Validation\Validator;
  * role/project binding at both the bullet-group level
  * (`assertRoleAndProjectValidity()`) and the individual-CareerFact
  * level (`assertExperienceFactProjectConsistency()`), target-term
- * posture authorization, structural anti-redundancy, and a
+ * posture authorization, target-term location/evidence locality
+ * (`assertUsageEvidenceIsLocal()`), structural anti-redundancy, and a
  * provider-neutral content-volume budget (MAX_EXPERIENCE_BULLET_GROUPS/
  * MAX_SELECTED_SKILLS — see their own docblocks). Runs before any
  * Eloquent model exists. Mirrors JobMatchResponseValidator. See
@@ -84,6 +85,7 @@ final class ResumeSelectionResponseValidator
             $experience = is_array($structuredContent['experience'] ?? null) ? $structuredContent['experience'] : [];
             $selectedProjects = is_array($structuredContent['selected_projects'] ?? null) ? $structuredContent['selected_projects'] : [];
             $targetTermUsages = is_array($structuredContent['target_term_usages'] ?? null) ? $structuredContent['target_term_usages'] : [];
+            $summaryEvidenceFactKeys = is_array($structuredContent['summary_evidence'] ?? null) ? $structuredContent['summary_evidence'] : [];
 
             $this->assertReferentialIntegrity($validator, $structuredContent, $validFactKeys, $validSkillIds, $validFindingIds);
             $this->assertNoDuplicateSelections($validator, $structuredContent, $experience);
@@ -94,7 +96,7 @@ final class ResumeSelectionResponseValidator
             $this->assertExperienceBulletBudget($validator, $experience);
             $this->assertSkillsBudget($validator, $structuredContent);
             $this->assertSelectedProjects($validator, $selectedProjects, $validFactKeys, $validIndependentProjectIds, $projectIdByFactKey);
-            $this->assertTargetTermUsages($validator, $targetTermUsages, $experience, $directEvidenceExistsByTerm);
+            $this->assertTargetTermUsages($validator, $targetTermUsages, $experience, $directEvidenceExistsByTerm, $summaryEvidenceFactKeys);
         });
 
         if ($validator->fails()) {
@@ -639,12 +641,14 @@ final class ResumeSelectionResponseValidator
      * @param  array<int, mixed>  $targetTermUsages
      * @param  array<int, mixed>  $experience
      * @param  array<string, bool>  $directEvidenceExistsByTerm
+     * @param  array<int, string>  $summaryEvidenceFactKeys  The exact CareerFact keys Selection assigned to the Summary — the only evidence a summary-location usage may cite.
      */
     private function assertTargetTermUsages(
         Validator $validator,
         array $targetTermUsages,
         array $experience,
         array $directEvidenceExistsByTerm,
+        array $summaryEvidenceFactKeys,
     ): void {
         // location key ("summary" or "role_id:index") => count of qualified usages there.
         $qualifiedCountByLocation = [];
@@ -700,14 +704,23 @@ final class ResumeSelectionResponseValidator
                     }
                 }
 
-                $groupCount = $resolvedRole !== null && is_array($resolvedRole['bullet_groups'] ?? null)
-                    ? count($resolvedRole['bullet_groups'])
-                    : 0;
+                $bulletGroups = $resolvedRole !== null && is_array($resolvedRole['bullet_groups'] ?? null)
+                    ? $resolvedRole['bullet_groups']
+                    : [];
+                $groupCount = count($bulletGroups);
 
                 if ($resolvedRole === null || ! is_int($bulletGroupIndex) || $bulletGroupIndex < 0 || $bulletGroupIndex >= $groupCount) {
                     $validator->errors()->add(
                         "target_term_usages.{$i}.bullet_group_index",
                         "location role_id [{$roleId}] / bullet_group_index [{$bulletGroupIndex}] does not refer to an actually-declared bullet group."
+                    );
+                } else {
+                    $resolvedGroup = $bulletGroups[$bulletGroupIndex];
+                    $locationFactKeys = is_array($resolvedGroup['career_fact_keys'] ?? null) ? $resolvedGroup['career_fact_keys'] : [];
+
+                    $this->assertUsageEvidenceIsLocal(
+                        $validator, $i, $usage, $locationFactKeys,
+                        "role_id [{$roleId}] bullet_group_index [{$bulletGroupIndex}]"
                     );
                 }
 
@@ -718,6 +731,8 @@ final class ResumeSelectionResponseValidator
                         "target_term_usages.{$i}.location_type",
                         'A summary-location usage must use the -1/-1 sentinel for role_id and bullet_group_index.'
                     );
+                } else {
+                    $this->assertUsageEvidenceIsLocal($validator, $i, $usage, $summaryEvidenceFactKeys, 'the Summary');
                 }
 
                 $locationKey = 'summary';
@@ -733,6 +748,54 @@ final class ResumeSelectionResponseValidator
                 $validator->errors()->add(
                     'target_term_usages',
                     "location [{$location}] has {$count} qualified target-term usages — at most one qualified usage is allowed per bullet/summary."
+                );
+            }
+        }
+    }
+
+    /**
+     * A target-term usage's own `career_fact_keys` must be evidence
+     * already declared at its own `location` — never borrowed from a
+     * sibling bullet group in the same role, a different role, a
+     * Selected Project, the Summary (for a bullet usage), or a bullet
+     * (for a summary usage). This is deliberately stricter than
+     * `assertReferentialIntegrity()`'s own check, which only confirms a
+     * key exists *somewhere* in the supplied corpus — that check stays
+     * unchanged and still runs independently; this one additionally
+     * requires the key to belong to the exact location this usage
+     * claims.
+     *
+     * Added after a real, already-persisted Formic `ResumeVariant`
+     * (`resume-selection-v1.5`) was found, on inspection, to have done
+     * exactly this: a `target_term_usages` entry located at one bullet
+     * group while citing a CareerFact that actually belonged to a
+     * different bullet group entirely. Nothing in the schema or prior
+     * validator caught it, because location referential integrity
+     * (does this role_id/bullet_group_index exist) and evidence
+     * referential integrity (does this career_fact_key exist anywhere)
+     * were checked independently, never against each other. That row
+     * is left as historically invalid under this new rule — this
+     * validator governs future generation only. See
+     * docs/resume-variant-generation.md "Target-term location
+     * integrity".
+     *
+     * Silently skipped when the location itself failed to resolve (an
+     * unknown role_id/bullet_group_index, or a malformed summary
+     * sentinel) — that failure is already reported by the caller, and
+     * there is no valid location evidence set to compare against.
+     *
+     * @param  array<string, mixed>  $usage
+     * @param  array<int, string>  $locationFactKeys  The exact CareerFact keys already declared at this usage's own location.
+     */
+    private function assertUsageEvidenceIsLocal(Validator $validator, int|string $index, array $usage, array $locationFactKeys, string $locationDescription): void
+    {
+        $keys = is_array($usage['career_fact_keys'] ?? null) ? $usage['career_fact_keys'] : [];
+
+        foreach ($keys as $j => $key) {
+            if (is_string($key) && ! in_array($key, $locationFactKeys, true)) {
+                $validator->errors()->add(
+                    "target_term_usages.{$index}.career_fact_keys.{$j}",
+                    "career_fact_key [{$key}] is not part of the evidence already declared at {$locationDescription} — a target-term usage may only cite evidence belonging to its own declared location."
                 );
             }
         }

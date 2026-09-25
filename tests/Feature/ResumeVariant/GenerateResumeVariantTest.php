@@ -2,6 +2,9 @@
 
 use App\Contracts\GeneratesResumeSelection;
 use App\Contracts\GeneratesResumeWording;
+use App\Enums\JobAnalysisEmphasis;
+use App\Enums\JobAnalysisFindingCategory;
+use App\Enums\JobAnalysisRequirementStrength;
 use App\Enums\ResumeClaimPosture;
 use App\Enums\Visibility;
 use App\Exceptions\InvalidResumeVariantResponseException;
@@ -9,10 +12,13 @@ use App\Exceptions\ResumeGenerationProviderException;
 use App\Models\CareerFact;
 use App\Models\Education;
 use App\Models\Employer;
+use App\Models\JobAnalysisFinding;
+use App\Models\Metric;
 use App\Models\Project;
 use App\Models\ResumeVariant;
 use App\Models\ResumeVariantExperienceBullet;
 use App\Models\Role;
+use App\Models\Skill;
 use App\Support\ResumeVariant\GenerateResumeVariant;
 use App\Support\ResumeVariant\ResumeSelectionProviderResponse;
 use App\Support\ResumeVariant\ResumeWordingProviderResponse;
@@ -108,6 +114,54 @@ function fullFixtureSetup(): array
     );
 
     return [$candidate, $job, $jobMatch];
+}
+
+/**
+ * A real Technology-category JobAnalysisFinding whose extracted target
+ * term is exactly $term, authorized for a `direct` posture claim via
+ * DirectEvidenceAuthorization's Skill-fallback path — $term attached as
+ * a real canonical Skill to $evidenceFact, which must already be
+ * attributed to real work history (Employer/Role/Project). Mirrors
+ * TargetTerminologyBuilder's own structural label-extraction rule: a
+ * single-token label matching $term as a case-insensitive whole word in
+ * the statement, so $term is extracted verbatim.
+ */
+function directTargetTermFinding(array $job, CareerFact $evidenceFact, string $term): JobAnalysisFinding
+{
+    $skill = Skill::factory()->create([
+        'career_profile_id' => $evidenceFact->career_profile_id,
+        'name' => $term,
+    ]);
+    $evidenceFact->skills()->attach($skill);
+
+    return JobAnalysisFinding::factory()->create([
+        'job_analysis_id' => $job['analysis']->id,
+        'category' => JobAnalysisFindingCategory::Technology,
+        'label' => mb_strtolower($term),
+        'statement' => "{$term} is directly relevant to this role.",
+        'requirement_strength' => JobAnalysisRequirementStrength::Required,
+        'emphasis' => JobAnalysisEmphasis::High,
+    ]);
+}
+
+/**
+ * A `direct`-posture target_term_usages entry for $term at either a
+ * bullet ($roleId/$bulletGroupIndex) or the Summary (leave both null).
+ *
+ * @return array<string, mixed>
+ */
+function directTargetTermUsage(JobAnalysisFinding $finding, string $term, ?int $roleId, ?int $bulletGroupIndex, array $careerFactKeys): array
+{
+    return [
+        'term' => $term,
+        'job_analysis_finding_id' => $finding->id,
+        'posture' => 'direct',
+        'location_type' => $roleId === null ? 'summary' : 'bullet',
+        'role_id' => $roleId ?? -1,
+        'bullet_group_index' => $bulletGroupIndex ?? -1,
+        'relationship_phrase_key' => 'not_applicable',
+        'career_fact_keys' => $careerFactKeys,
+    ];
 }
 
 it('persists the full graph from a valid two-stage response', function () {
@@ -671,5 +725,443 @@ it('never persists any years-of-experience computation anywhere in the generated
         expect($column)->not->toContain('years')
             ->and($column)->not->toContain('tenure')
             ->and($column)->not->toContain('duration');
+    }
+});
+
+// ---- Direct target-term guidance placement in the persisted Wording
+// ---- input (GenerateResumeVariant::buildWordingInput()/
+// ---- buildDirectTargetTermsByLocation()) ----
+//
+// These exercise the real production payload-building path end to end
+// (fake providers, real GenerateResumeVariant::generateFull(), real
+// wording_input_snapshot persisted) rather than re-implementing
+// buildDirectTargetTermsByLocation()'s logic in the test — added after
+// discovering that tests/Llm/OllamaResumeWordingFormicLiveTest.php had
+// its own, incomplete reconstruction of this same data that no
+// deterministic test would have caught. See
+// docs/resume-variant-generation.md "Target-term location integrity".
+
+it('places a direct target term only in its approved bullet location — never a sibling bullet, never another role', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $terraformFinding = directTargetTermFinding($job, $candidate['factAws'], 'Terraform');
+
+    $secondRole = Role::factory()->create(['employer_id' => $candidate['employer']->id, 'title' => 'Support Engineer']);
+    CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-second-role-fact',
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $secondRole->id,
+        'visibility' => Visibility::Public,
+    ]);
+
+    $content = validSelectionContent($candidate, $job);
+    $content['experience'][] = [
+        'role_id' => $secondRole->id,
+        'title_choice' => 'full',
+        'bullet_groups' => [[
+            'project_id' => -1,
+            'order' => 1,
+            'career_fact_keys' => ['fixture-second-role-fact'],
+            'job_analysis_finding_ids' => [],
+        ]],
+    ];
+    $content['target_term_usages'] = [
+        directTargetTermUsage($terraformFinding, 'Terraform', $candidate['role']->id, 0, [$candidate['factAws']->key]),
+    ];
+
+    $wordingContent = validWordingContent($candidate);
+    $wordingContent['experience'][] = [
+        'role_id' => $secondRole->id,
+        'bullets' => [
+            ['bullet_group_index' => 0, 'text' => 'Provided support engineering for a legacy platform.'],
+        ],
+    ];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', $wordingContent));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    $roleInputsById = collect($variant->wording_input_snapshot['experience'])->keyBy('role_id');
+
+    expect($roleInputsById[$candidate['role']->id]['bullet_groups'][0]['direct_target_terms'])->toBe(['Terraform'])
+        ->and($roleInputsById[$candidate['role']->id]['bullet_groups'][1]['direct_target_terms'])->toBe([])
+        ->and($roleInputsById[$secondRole->id]['bullet_groups'][0]['direct_target_terms'])->toBe([])
+        ->and($variant->wording_input_snapshot['summary_direct_target_terms'])->toBe([]);
+});
+
+it('places a Summary-approved direct target term only in summary_direct_target_terms, never in any bullet', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $terraformFinding = directTargetTermFinding($job, $candidate['factAws'], 'Terraform');
+
+    $content = validSelectionContent($candidate, $job);
+    $content['target_term_usages'] = [
+        directTargetTermUsage($terraformFinding, 'Terraform', null, null, [$candidate['factIndependent']->key]),
+    ];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+    $snapshot = $variant->wording_input_snapshot;
+
+    expect($snapshot['summary_direct_target_terms'])->toBe(['Terraform']);
+
+    foreach ($snapshot['experience'] as $role) {
+        foreach ($role['bullet_groups'] as $group) {
+            expect($group['direct_target_terms'])->toBe([]);
+        }
+    }
+});
+
+it('excludes a qualified-posture target term from direct_target_terms guidance', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    // validSelectionContent()'s default usage is Azure/qualified at
+    // role/bullet_group_index 0 — unchanged here.
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', validSelectionContent($candidate, $job)));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['experience'][0]['bullet_groups'][0]['direct_target_terms'])->toBe([]);
+});
+
+it('excludes a capability-posture target term from direct_target_terms guidance', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = validSelectionContent($candidate, $job);
+    $content['target_term_usages'][0]['posture'] = 'capability';
+    $content['target_term_usages'][0]['relationship_phrase_key'] = 'not_applicable';
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['experience'][0]['bullet_groups'][0]['direct_target_terms'])->toBe([]);
+});
+
+it('produces empty direct_target_terms/summary_direct_target_terms guidance everywhere when Selection approves no target-term usages', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = validSelectionContent($candidate, $job);
+    $content['target_term_usages'] = [];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+    $snapshot = $variant->wording_input_snapshot;
+
+    expect($snapshot['summary_direct_target_terms'])->toBe([]);
+
+    foreach ($snapshot['experience'] as $role) {
+        foreach ($role['bullet_groups'] as $group) {
+            expect($group['direct_target_terms'])->toBe([]);
+        }
+    }
+});
+
+it('represents multiple direct target terms approved for the same location together, in order', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $awsFinding = directTargetTermFinding($job, $candidate['factAws'], 'AWS');
+    $terraformFinding = directTargetTermFinding($job, $candidate['factAws'], 'Terraform');
+
+    $content = validSelectionContent($candidate, $job);
+    $content['target_term_usages'] = [
+        directTargetTermUsage($awsFinding, 'AWS', $candidate['role']->id, 0, [$candidate['factAws']->key]),
+        directTargetTermUsage($terraformFinding, 'Terraform', $candidate['role']->id, 0, [$candidate['factAws']->key]),
+    ];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['experience'][0]['bullet_groups'][0]['direct_target_terms'])
+        ->toBe(['AWS', 'Terraform']);
+});
+
+it('never attaches a direct-target-term field to a Selected Project, since ResumeTermUsageLocation has no project case', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $terraformFinding = directTargetTermFinding($job, $candidate['factAws'], 'Terraform');
+
+    $content = validSelectionContent($candidate, $job);
+    $content['selected_projects'] = [[
+        'project_id' => $candidate['independentProject']->id,
+        'order' => 1,
+        'career_fact_keys' => [$candidate['factIndependentProject']->key],
+    ]];
+    $content['target_term_usages'] = [
+        directTargetTermUsage($terraformFinding, 'Terraform', $candidate['role']->id, 0, [$candidate['factAws']->key]),
+    ];
+
+    $wordingContent = validWordingContent($candidate);
+    $wordingContent['selected_projects'] = [[
+        'project_id' => $candidate['independentProject']->id,
+        'text' => 'Built a structured prompt library for reusable AI-assisted development workflows.',
+    ]];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', $wordingContent));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['selected_projects'])->toHaveCount(1)
+        ->and($variant->wording_input_snapshot['selected_projects'][0])->not->toHaveKey('direct_target_terms');
+});
+
+// ---- Summary authorized-Skills allow-list in the persisted Wording
+// ---- input (GenerateResumeVariant::buildWordingInput()'s new
+// ---- summary_authorized_skills field, reusing
+// ---- ResumeWordingResponseValidator::authorizedSkillIds() directly) ----
+//
+// Added after a deterministic investigation of a recurring qwen3.8:27b
+// Resume Wording Summary failure — the model stochastically named
+// canonical Skills (React/Node.js/Laravel/TypeScript) that were
+// genuinely visible elsewhere in the same request but not authorized by
+// the Summary's own supplied CareerFacts, despite an existing prose
+// rule against it. These exercise the real production payload-building
+// path end to end (fake providers, real
+// GenerateResumeVariant::generateFull(), real wording_input_snapshot
+// persisted), never a second implementation of the authorization
+// algorithm. See docs/resume-variant-generation.md "Skill provenance".
+
+it('includes a Skill attached directly to a summary CareerFact in summary_authorized_skills', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $djangoSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'Django']);
+    $candidate['factIndependent']->skills()->attach($djangoSkill);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', validSelectionContent($candidate, $job)));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['summary_authorized_skills'])->toContain('Django');
+});
+
+it('includes a canonical Skill recognized from a summary CareerFact\'s own statement text, even when never attached via the pivot', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    // Attached to an unrelated, non-summary fact only so it's a real
+    // eligible/canonical Skill (ResumeCandidatePayloadBuilder's
+    // eligible_skills is built only from attached Skills) — the point
+    // of this test is that the summary-cited fact's own text is
+    // recognized independent of that same fact's own attachments.
+    $graphqlSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'GraphQL']);
+    $candidate['factAws']->skills()->attach($graphqlSkill);
+    $graphqlFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-summary-graphql-text',
+        'statement' => 'Used GraphQL for the public API layer.',
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $candidate['role']->id,
+        'visibility' => Visibility::Public,
+    ]);
+
+    $content = validSelectionContent($candidate, $job);
+    $content['summary_evidence'] = [$candidate['factIndependent']->key, $graphqlFact->key];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['summary_authorized_skills'])->toContain('GraphQL');
+});
+
+it('includes a canonical Skill recognized from a summary CareerFact\'s own metric scope_note or guardrail text', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    // Attached to an unrelated, non-summary fact only — see the
+    // GraphQL test above for why (eligible_skills requires a real
+    // attachment somewhere to exist as a canonical Skill at all).
+    $snowflakeSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'Snowflake']);
+    $redshiftSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'Redshift']);
+    $candidate['factAws']->skills()->attach([$snowflakeSkill->id, $redshiftSkill->id]);
+    Metric::factory()->create([
+        'career_fact_id' => $candidate['factIndependent']->id,
+        'scope_note' => 'Migrated reporting off Snowflake.',
+        'guardrail' => 'Do not conflate with the separate Redshift migration.',
+    ]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', validSelectionContent($candidate, $job)));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['summary_authorized_skills'])
+        ->toContain('Snowflake')
+        ->toContain('Redshift');
+});
+
+it('excludes a Skill that belongs only to an Experience CareerFact, never the Summary', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    // factAws's own 'AWS' Skill is cited only by bullet_groups[0] in
+    // validSelectionContent() — never part of summary_evidence.
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', validSelectionContent($candidate, $job)));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['summary_authorized_skills'])->not->toContain('AWS');
+});
+
+it('excludes a Skill that belongs only to a Selected Project CareerFact, never the Summary', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    // factIndependentProject's own 'Prisma' Skill is cited only by the
+    // Selected Project entry below — never part of summary_evidence.
+    $content = validSelectionContent($candidate, $job);
+    $content['selected_projects'] = [[
+        'project_id' => $candidate['independentProject']->id,
+        'order' => 1,
+        'career_fact_keys' => [$candidate['factIndependentProject']->key],
+    ]];
+
+    $wordingContent = validWordingContent($candidate);
+    $wordingContent['selected_projects'] = [[
+        'project_id' => $candidate['independentProject']->id,
+        'text' => 'Built a structured prompt library for reusable AI-assisted development workflows.',
+    ]];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', $wordingContent));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['summary_authorized_skills'])->not->toContain('Prisma');
+});
+
+it('unions authorized Skills across multiple Summary CareerFacts', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $firstSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'Terraform']);
+    $secondSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'Kubernetes']);
+
+    $firstFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-summary-union-first',
+        'statement' => 'Provisioned infrastructure as code.',
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $candidate['role']->id,
+        'visibility' => Visibility::Public,
+    ]);
+    $firstFact->skills()->attach($firstSkill);
+
+    $secondFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-summary-union-second',
+        'statement' => 'Orchestrated containerized workloads.',
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $candidate['role']->id,
+        'visibility' => Visibility::Public,
+    ]);
+    $secondFact->skills()->attach($secondSkill);
+
+    $content = validSelectionContent($candidate, $job);
+    $content['summary_evidence'] = [$firstFact->key, $secondFact->key];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['summary_authorized_skills'])
+        ->toContain('Terraform')
+        ->toContain('Kubernetes');
+});
+
+it('produces exactly one canonical name when a Skill is authorized through both attachment and text recognition', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $djangoSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'Django']);
+    $candidate['factIndependent']->skills()->attach($djangoSkill);
+    $candidate['factIndependent']->update([
+        'statement' => 'Independently implemented the technical solution in Django from team-provided requirements.',
+    ]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', validSelectionContent($candidate, $job)));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(array_count_values($variant->wording_input_snapshot['summary_authorized_skills'])['Django'])->toBe(1);
+});
+
+it('preserves longest-span overlap resolution when building summary_authorized_skills', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    // Attached to an unrelated, non-summary fact only — see the
+    // GraphQL test above for why.
+    $salesforceSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'Salesforce']);
+    $salesforceMarketingCloudSkill = Skill::factory()->create(['career_profile_id' => $candidate['profile']->id, 'name' => 'Salesforce Marketing Cloud']);
+    $candidate['factAws']->skills()->attach([$salesforceSkill->id, $salesforceMarketingCloudSkill->id]);
+    $candidate['factIndependent']->update([
+        'statement' => 'Independently implemented reporting on Salesforce Marketing Cloud.',
+    ]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', validSelectionContent($candidate, $job)));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['summary_authorized_skills'])
+        ->toContain('Salesforce Marketing Cloud')
+        ->not->toContain('Salesforce');
+});
+
+it('produces an empty summary_authorized_skills when Selection approves no summary evidence', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = validSelectionContent($candidate, $job);
+    $content['summary_evidence'] = [];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->wording_input_snapshot['summary_authorized_skills'])->toBe([]);
+});
+
+it('never attaches an authorized-Skills field to an Experience bullet group or a Selected Project, only the Summary', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = validSelectionContent($candidate, $job);
+    $content['selected_projects'] = [[
+        'project_id' => $candidate['independentProject']->id,
+        'order' => 1,
+        'career_fact_keys' => [$candidate['factIndependentProject']->key],
+    ]];
+
+    $wordingContent = validWordingContent($candidate);
+    $wordingContent['selected_projects'] = [[
+        'project_id' => $candidate['independentProject']->id,
+        'text' => 'Built a structured prompt library for reusable AI-assisted development workflows.',
+    ]];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', $wordingContent));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    $snapshot = $variant->wording_input_snapshot;
+    foreach ($snapshot['experience'] as $role) {
+        foreach ($role['bullet_groups'] as $group) {
+            expect($group)->not->toHaveKey('authorized_skills')
+                ->and($group)->not->toHaveKey('summary_authorized_skills');
+        }
+    }
+    foreach ($snapshot['selected_projects'] as $project) {
+        expect($project)->not->toHaveKey('authorized_skills')
+            ->and($project)->not->toHaveKey('summary_authorized_skills');
     }
 });

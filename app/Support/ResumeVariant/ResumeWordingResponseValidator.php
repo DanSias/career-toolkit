@@ -29,6 +29,10 @@ use Illuminate\Validation\Validator;
  * - location-scoped canonical-Skill provenance (see
  *   assertSkillProvenance()'s own docblock for the precise, narrow
  *   guarantee this one makes and does not make)
+ * - location-scoped direct target-term usage (see
+ *   assertTargetTermLocationScope()'s own docblock) — a `direct`
+ *   target term may appear only at the exact location Selection
+ *   approved it for, never elsewhere in the same variant
  *
  * Everything else — does a `Qualified` claim overreach in tone, is a
  * merchant-integration bullet phrased as authorship, does "AI" near
@@ -77,6 +81,7 @@ final class ResumeWordingResponseValidator
      * @param  array<string, array<int, int>>  $skillIdsByFactKey  career_fact_key => Skill id[] attached to that fact.
      * @param  array<int, string>  $canonicalSkillsById  Every canonical Skill (id => name) that could legitimately appear anywhere in this profile's eligible corpus — the recognition catalog for assertSkillProvenance(), not a per-location authorization set.
      * @param  array<string, array<int, int>>  $textRecognizedSkillIdsByFactKey  career_fact_key => Skill id[] recognized (via recognizedSkillIds()) in that fact's own evidence-bearing text (statement + metric scope_note/guardrail) — computed once per fact by the caller, never re-scanned per location. See authorizedSkillIds()'s own docblock.
+     * @param  array<string, array<int, string>>  $directTargetTermsByLocation  "summary" or "role_id:index" => direct-posture target term[] Selection approved at that exact location. See assertTargetTermLocationScope()'s own docblock.
      * @return array<string, mixed>
      *
      * @throws InvalidResumeVariantResponseException
@@ -92,13 +97,16 @@ final class ResumeWordingResponseValidator
         array $skillIdsByFactKey,
         array $canonicalSkillsById,
         array $textRecognizedSkillIdsByFactKey,
+        array $directTargetTermsByLocation,
     ): array {
         $validator = ValidatorFacade::make($structuredContent, $this->rules());
+
+        $allDirectTargetTerms = array_values(array_unique(array_merge([], ...array_values($directTargetTermsByLocation))));
 
         $validator->after(function (Validator $validator) use (
             $structuredContent, $validRoleIds, $expectedBulletGroupIndexesByRole, $validSelectedProjectIds,
             $denylistTerms, $careerFactKeysByLocation, $guardrailByFactKey, $skillIdsByFactKey, $canonicalSkillsById,
-            $textRecognizedSkillIdsByFactKey,
+            $textRecognizedSkillIdsByFactKey, $directTargetTermsByLocation, $allDirectTargetTerms,
         ) {
             $experience = is_array($structuredContent['experience'] ?? null) ? $structuredContent['experience'] : [];
             $selectedProjects = is_array($structuredContent['selected_projects'] ?? null) ? $structuredContent['selected_projects'] : [];
@@ -112,6 +120,11 @@ final class ResumeWordingResponseValidator
                 $validator, 'summary', $summary,
                 $this->authorizedSkillIds($careerFactKeysByLocation['summary'] ?? [], $skillIdsByFactKey, $textRecognizedSkillIdsByFactKey),
                 $canonicalSkillsById,
+            );
+            $this->assertTargetTermLocationScope(
+                $validator, 'summary', $summary,
+                $directTargetTermsByLocation['summary'] ?? [],
+                $allDirectTargetTerms,
             );
 
             foreach ($experience as $roleIndex => $role) {
@@ -140,9 +153,18 @@ final class ResumeWordingResponseValidator
                         $this->authorizedSkillIds($careerFactKeysByLocation[$locationKey] ?? [], $skillIdsByFactKey, $textRecognizedSkillIdsByFactKey),
                         $canonicalSkillsById,
                     );
+                    $this->assertTargetTermLocationScope(
+                        $validator, $field, $text,
+                        $directTargetTermsByLocation[$locationKey] ?? [],
+                        $allDirectTargetTerms,
+                    );
                 }
             }
 
+            // Selected Projects deliberately never receive a
+            // assertTargetTermLocationScope() call: ResumeTermUsageLocation
+            // has no "project" case, so a target-term usage can never be
+            // located at one — there is nothing to authorize or check.
             foreach ($selectedProjects as $projectIndex => $project) {
                 if (! is_array($project)) {
                     continue;
@@ -413,12 +435,26 @@ final class ResumeWordingResponseValidator
      * restriction on statement content contradicted the codebase's own
      * pre-existing evidence model.
      *
+     * Public, and also called by
+     * `GenerateResumeVariant::buildWordingInput()` to compute
+     * `summary_authorized_skills` — the model-facing allow-list surfaced
+     * to Wording so it can execute this exact authorization rule without
+     * having to infer it from prose while seeing the whole request's
+     * evidence at once. That is deliberately the ONLY caller of this
+     * method outside this class: there is exactly one definition of
+     * Skill authorization, and the model-facing list and this validator
+     * both resolve to it — see docs/resume-variant-generation.md "Skill
+     * provenance". Surfacing a name in that list is a generation-time
+     * affordance only; it grants no authorization of its own; this
+     * method (and assertSkillProvenance()) remain the sole, fail-closed
+     * authority over what generated prose may actually name.
+     *
      * @param  array<int, string>  $careerFactKeys
      * @param  array<string, array<int, int>>  $skillIdsByFactKey
      * @param  array<string, array<int, int>>  $textRecognizedSkillIdsByFactKey
      * @return array<int, int>
      */
-    private function authorizedSkillIds(array $careerFactKeys, array $skillIdsByFactKey, array $textRecognizedSkillIdsByFactKey): array
+    public function authorizedSkillIds(array $careerFactKeys, array $skillIdsByFactKey, array $textRecognizedSkillIdsByFactKey): array
     {
         $ids = [];
 
@@ -538,16 +574,23 @@ final class ResumeWordingResponseValidator
      * catalog inspected for this change does not contain anywhere.
      * This tie-break exists defensively, not because it fires today.
      *
-     * Public, not private: reused for a second purpose beyond scanning
-     * generated prose — GenerateResumeVariant calls this same method
-     * once per eligible CareerFact, against that fact's own
-     * evidence-bearing text, to compute the fact-local textual-Skill
-     * authorization map. See authorizedSkillIds()'s own docblock for why
-     * that reuse is deliberate rather than a second recognition
-     * algorithm.
+     * Public, not private: reused for two further purposes beyond
+     * scanning generated prose against canonical Skills — (1)
+     * GenerateResumeVariant calls this same method once per eligible
+     * CareerFact, against that fact's own evidence-bearing text, to
+     * compute the fact-local textual-Skill authorization map (see
+     * authorizedSkillIds()'s own docblock), and (2)
+     * assertTargetTermLocationScope() calls it again with a target-term
+     * catalog instead of a Skill catalog — a self-keyed `term => term`
+     * map works identically, since nothing here assumes the key is a
+     * Skill id specifically; it is only ever used as an opaque
+     * identifier returned to the caller. In both reuses this is the
+     * same recognition algorithm, never a second one.
      *
-     * @param  array<int, string>  $canonicalSkillsById
-     * @return array<int, int> Distinct Skill ids recognized, deduplicated.
+     * @template TCatalogKey of int|string
+     *
+     * @param  array<TCatalogKey, string>  $canonicalSkillsById  Recognition catalog: opaque id/key => exact name to match. Usually a canonical Skill's `id => name`, but assertTargetTermLocationScope() passes a self-keyed `term => term` map instead.
+     * @return array<int, TCatalogKey> Distinct catalog keys recognized, deduplicated — Skill ids when called with a Skill catalog, term strings when called with a term catalog.
      */
     public function recognizedSkillIds(string $text, array $canonicalSkillsById): array
     {
@@ -598,5 +641,63 @@ final class ResumeWordingResponseValidator
         }
 
         return array_keys($recognizedSkillIds);
+    }
+
+    /**
+     * A narrow, location-scoped guarantee, structurally identical in
+     * shape to assertSkillProvenance(): *if generated prose explicitly
+     * names a direct-posture target term, that term must be one
+     * Selection approved at this exact location.*
+     *
+     * Closes the leak `buildDenylistTerms()` alone could not:
+     * `denylistTerms` correctly keeps a `capability`/`qualified` term
+     * out of free text everywhere (unchanged by this check), but a
+     * `direct`-posture term is simply absent from that list — variant-
+     * wide, not scoped to the one location it was actually approved
+     * for. Before this check, nothing prevented (or even noticed) a
+     * direct term appearing at a location Selection never approved it
+     * for. This check is purely negative (leakage prevention) — it
+     * does NOT require an approved term to appear at all; whether
+     * Wording actually uses one remains encouraged, never mandated
+     * (see `## Direct target-term guidance` in
+     * `ResumeWordingPromptV2::systemPrompt()`).
+     *
+     * Reuses recognizedSkillIds() unchanged for matching — a term
+     * catalog is just a self-keyed map (`term => term`) passed where
+     * that method expects `Skill id => Skill name`; its return value
+     * (the "ids") are then simply the term strings themselves. This is
+     * the same case-sensitive, whole-word-bounded, longest-span-wins
+     * matching already used for Skills — no second recognition
+     * algorithm, and the existing overlap resolution already protects
+     * against one target term being a genuine substring of another,
+     * exactly as it does for canonical Skills, with no term-specific
+     * exceptions needed.
+     *
+     * A term that happens to also be a canonical Skill name is
+     * unaffected: this check and assertSkillProvenance() run as two
+     * fully independent passes over the same text, each against its
+     * own catalog and its own authorization set. An occurrence must
+     * satisfy both — this check never substitutes for, or bypasses,
+     * Skill provenance.
+     *
+     * @param  array<int, string>  $authorizedTermsAtThisLocation
+     * @param  array<int, string>  $allDirectTargetTerms  Every direct-posture term approved anywhere in this variant — the recognition catalog, not a per-location authorization set.
+     */
+    private function assertTargetTermLocationScope(Validator $validator, string $field, string $text, array $authorizedTermsAtThisLocation, array $allDirectTargetTerms): void
+    {
+        if ($allDirectTargetTerms === []) {
+            return;
+        }
+
+        $termCatalog = array_combine($allDirectTargetTerms, $allDirectTargetTerms);
+
+        foreach ($this->recognizedSkillIds($text, $termCatalog) as $term) {
+            if (! in_array($term, $authorizedTermsAtThisLocation, true)) {
+                $validator->errors()->add(
+                    $field,
+                    "Generated text names the direct target term [{$term}], which Selection did not approve at this location."
+                );
+            }
+        }
     }
 }

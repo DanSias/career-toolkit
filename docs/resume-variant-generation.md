@@ -206,13 +206,16 @@ production use (two real `ResumeVariant` rows). `ResumeWordingPromptV2`
 is a new, immutable class rather than an in-place bump of that string,
 following the same convention `ResumeSelectionPromptV2` already
 established — see that class's own docblock. `resume-wording-v2`
-itself has never been persisted, so both of its semantic changes were
-made in place on this same class rather than each requiring a new one:
-a clarifying sentence in the `## Summary` section addressing the
+itself has never been persisted, so all three of its semantic changes
+were made in place on this same class rather than each requiring a new
+one: a clarifying sentence in the `## Summary` section addressing the
 cross-location canonical-Skill leakage described under "Skill
-provenance" below, and a bullet in its metric/guardrail guidance
+provenance" below; a bullet in its metric/guardrail guidance
 addressing quantified-figure ambiguity, described under
-"Metric-quantity separation" below. `schemaVersion()` is unchanged
+"Metric-quantity separation" below; and a `## Direct target-term
+guidance` section surfacing Selection's approved direct target terms
+fact-locally, described under "Target-term location integrity" below.
+`schemaVersion()` is unchanged
 (`"1.1"`) — the JSON schema is byte-identical to V1.
 
 `ResumeSelectionPromptV1` was bumped in place (`resume-selection-v1` through
@@ -266,7 +269,8 @@ content-volume budget (total Experience `bullet_groups` ≤ 13, selected
 `skills` ≤ 18 — see `docs/resume-variant-contract.md` "Field notes —
 Resume Selection"), and the full target-term-usage rule set (posture
 authorization, phrase/posture consistency, location/sentinel
-consistency, at-most-one-qualified-per-location).
+consistency, at-most-one-qualified-per-location, and location/evidence
+locality — see "Target-term location integrity" below).
 
 **`ResumeWordingResponseValidator`** is the trust boundary for
 Stage 2: completeness against exactly what Selection approved (no
@@ -274,8 +278,9 @@ missing bullets, no duplicates, no invented ones — computed from
 `role_id => [approved bullet_group_index, ...]`, mirroring
 `JobMatchResponseValidator`'s own finding-completeness check
 generalized to compound keys), the target-term deny list, the named
-guardrail checks, and location-scoped canonical-Skill provenance (see
-"Skill provenance" below).
+guardrail checks, location-scoped canonical-Skill provenance (see
+"Skill provenance" below), and location-scoped direct target-term
+usage (see "Target-term location integrity" below).
 
 If even one rule fails anywhere in a stage's response, that **entire**
 stage's response is rejected — nothing is filtered, nothing is
@@ -423,6 +428,79 @@ constructor-style parameters to
 `ResumeWordingResponseValidator::validate()` — no new abstraction, no
 new query, no schema change.
 
+### Summary authorized-Skills allow-list
+
+A deterministic investigation of a recurring qwen3.8:27b Resume
+Wording failure — the Summary stochastically naming canonical Skills
+(first "React"/"Node.js"/"Laravel", later also "TypeScript") that were
+genuinely visible elsewhere in the same request but not authorized by
+the Summary's own supplied CareerFacts — found the failure recurring
+under byte-identical `ResumeWordingPromptV2` text: 2 of 3 known qwen
+runs violated the existing prose rule, one did not. That is stochastic
+prompt-only compliance, not a reliable guarantee, even though the
+prose rule is explicit and the validator's rejection of every one of
+these runs was, in every case, correct — not a false positive.
+
+Rather than restating the prose rule more forcefully again,
+`GenerateResumeVariant::buildWordingInput()` now computes a
+`summary_authorized_skills` field — an ordered list of canonical Skill
+names — and supplies it to Wording alongside `summary_evidence`. It is
+computed by calling
+`ResumeWordingResponseValidator::authorizedSkillIds()` directly (now
+public) with the Summary's own `summaryEvidenceFactKeys`, the same
+`$skillIdsByFactKey`/`$textRecognizedSkillIdsByFactKey` Stage 2 already
+builds, then resolving each returned Skill id to its canonical name via
+the same `$canonicalSkillsById` catalog. **This is deliberately not a
+second definition of Skill authorization** — it is the exact
+authorization set `assertSkillProvenance()` will check the generated
+summary against, computed once and handed to the model as a
+generation-time affordance instead of leaving it to infer the same set
+from prose while looking at the whole request's evidence at once.
+
+Two things this is **not**:
+
+- **Not a change in what evidence is considered valid.** The
+  underlying fact-local, additive authorization rule (attached Skills
+  ∪ text-recognized Skills, per Summary CareerFact) is completely
+  unchanged — this field only *exposes* that existing rule's result
+  more directly. `ResumeWordingResponseValidator` remains the sole,
+  fail-closed authority over what generated prose may actually name; a
+  name appearing in `summary_authorized_skills` grants no authorization
+  of its own that the validator doesn't independently already grant.
+- **Not proof that qwen will comply.** This is a model-execution
+  reliability aid, not a guarantee — whether it measurably improves
+  compliance is an empirical question for a later controlled live
+  evaluation, not something this change asserts on its own.
+
+`ResumeWordingPromptV2` (still unpersisted, so refined in place) adds
+one new paragraph in `## Summary` explaining `summary_authorized_skills`
+as a closed-world list and explicitly resolving a competing pressure
+the investigation identified: the prompt's own neighboring
+"unmistakably read as a senior full-stack/software candidate"
+instruction, combined with summary evidence that doesn't always
+include a named full-stack technology, invited exactly this kind of
+cross-location borrowing. The new paragraph tells the model to satisfy
+that positioning qualitatively (e.g. "full-stack developer," "software
+systems," "web applications") instead of reaching for an unauthorized
+named technology — generically, naming none of the specific
+technologies or the specific candidate/job that motivated it.
+
+Scoped deliberately to the Summary only in this milestone: Experience
+bullets and Selected Projects have never been observed to leak a
+cross-location Skill, only the Summary (which is uniquely asked to
+describe technical/capability *breadth* — the other locations are
+explicitly asked to stay narrow to one accomplishment). No analogous
+`authorized_skills` field was added to either.
+
+The live-eval harness (`tests/Llm/OllamaResumeWordingFormicLiveTest.php`)
+replays a historical `wording_input_snapshot` that predates this field,
+exactly the same gap the direct-target-term fix above already
+encountered once — it now merges `summary_authorized_skills` in the
+same way, and independently re-derives the expected set from a fresh
+query against the real database (not by reusing the same computation
+twice) as a pre-inference assertion, so a future live run fails before
+any call is made if the two ever diverge.
+
 ## Metric-quantity separation
 
 A qualitative comparison of two independent live qwen3.8:27b Resume
@@ -451,6 +529,80 @@ non-deterministic concern already documented there). The instruction
 deliberately names no specific figure, CareerFact, or example — it
 generalizes the pattern rather than special-casing the one real
 occurrence that surfaced it.
+
+## Target-term location integrity
+
+`target_term_usages` (see `docs/resume-variant-contract.md`
+"Target-terminology input contract") is **location-scoped**, not a
+global decision: every usage declares exactly one `location`
+(`summary`, or a specific `role_id`+`bullet_group_index`) and cites the
+`career_fact_keys` its claim rests on. This section documents two
+things added after the target_term_usages → Resume Wording handoff
+investigation found the location/evidence data was already present but
+never fully trusted or used.
+
+**1. Selection-side integrity.** `ResumeSelectionResponseValidator`
+already checked location referential integrity (does this `role_id`/
+`bullet_group_index` refer to an actually-declared bullet group) and
+evidence referential integrity (does this `career_fact_key` exist
+somewhere in the supplied corpus) — but never checked the two
+*against* each other. Inspecting the two real, already-persisted
+Formic `ResumeVariant` rows found exactly this gap in practice:
+`ResumeVariant` id 1's `target_term_usages` cited a `career_fact_key`
+that genuinely existed, but belonged to a *different* bullet group
+than the one the usage's own `location` declared. Neither existing
+check caught it, because neither ever compared the two.
+`assertUsageEvidenceIsLocal()` closes this: a usage's own
+`career_fact_keys` must be a subset of the evidence already declared
+at its own location (the bullet group's own `career_fact_keys` for a
+bullet usage, `summary_evidence` for a summary usage) — never
+borrowed from a sibling bullet, a different role, a Selected Project,
+or (for a bullet usage) the Summary and vice versa. `ResumeVariant`
+id 1 remains historically invalid under this rule — it is not
+migrated or mutated; this validator governs future generation only.
+
+**2. Direct-term guidance reaches Wording, fact-locally.** Previously,
+Wording received no signal at all about which target terms Selection
+approved as `direct`-posture claims, or where — the only live effect
+was `buildDenylistTerms()` removing the term from `denylist_terms`
+*variant-wide*, which let Wording write it anywhere, and in every real
+historical case, Wording simply never did. `GenerateResumeVariant::buildDirectTargetTermsByLocation()`
+now extracts, from the already-validated Selection result, exactly the
+`direct`-posture terms approved at each location, and
+`buildWordingInput()` attaches them to that same location's existing
+evidence structure: `summary_direct_target_terms` alongside
+`summary_evidence`, and `direct_target_terms` inside each bullet
+group. `qualified`-posture terms are never included (the term is
+appended deterministically after generation — see "Qualified-clause
+rendering" below); `capability`-posture terms are never included
+either (they remain fully prohibited via the unchanged denylist).
+Deliberately does **not** use a usage's own `career_fact_keys` as a
+second evidence channel — only `term` and `location` are used; the
+evidence a term may be grounded in is whatever that location's own
+`buildWordingInput()` entry already supplies, nothing more.
+
+**3. Wording-side leakage prevention.** `buildDenylistTerms()` itself
+is unchanged — it still correctly keeps every `capability`/`qualified`
+term out of free text everywhere. What was missing is the complementary
+check for `direct` terms specifically:
+`ResumeWordingResponseValidator::assertTargetTermLocationScope()`
+recognizes a `direct` term (via the same `recognizedSkillIds()`
+longest-span matching already used for canonical Skills — a term
+catalog is just a self-keyed `term => term` map, so this is the same
+algorithm, not a second one) and rejects it if it appears anywhere
+other than the exact location Selection approved it for. A term that
+happens to also be a canonical Skill name must satisfy both checks
+independently — approval as a target term never substitutes for Skill
+provenance.
+
+**4. Still not a mandatory-emission guarantee.** None of the above
+requires an approved `direct` term to actually appear. `direct`
+posture remains authorization/encouragement at its location, not an
+obligation — `ResumeWordingPromptV2`'s own `## Direct target-term
+guidance` section says so explicitly. Whether stronger positive
+enforcement (a term must appear somewhere) is ever worth adding is an
+open question left for a future milestone with its own evidence, not
+decided here.
 
 ## Persistence
 

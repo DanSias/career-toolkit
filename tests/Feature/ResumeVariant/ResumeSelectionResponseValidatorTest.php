@@ -307,3 +307,199 @@ it('rejects a project-specific bullet group citing a role-level (unattributed) f
         'projectIdByFactKey' => [], // role-level: no project attribution at all
     ]))->toThrow(InvalidResumeVariantResponseException::class, 'is not attributed to project_id [2]');
 });
+
+// --- Target-term location/evidence integrity --------------------------
+//
+// Added after a real, already-persisted Formic ResumeVariant
+// (resume-selection-v1.5, id 1) was found, on inspection, to have a
+// target_term_usages entry located at one bullet group while citing a
+// CareerFact that actually belonged to a different bullet group
+// entirely — undetected because location referential integrity and
+// evidence referential integrity were checked independently, never
+// against each other. See
+// ResumeSelectionResponseValidator::assertUsageEvidenceIsLocal()'s own
+// docblock and docs/resume-variant-generation.md "Target-term location
+// integrity". That historical row remains historically invalid under
+// this new rule — this validator governs future generation only.
+
+/**
+ * Builds an experience tree with explicit control over exactly which
+ * CareerFact keys back each bullet group — unlike
+ * selectionResponseWithBulletGroups() above (one fact per bullet,
+ * sequentially numbered), this lets a test declare multiple facts per
+ * bullet group, needed for the "multiple local facts" / "mixed
+ * local+foreign" cases below.
+ *
+ * @param  array<int, array<int, array<int, string>>>  $factKeysByRoleAndBulletIndex  role_id => [bullet_group_index => career_fact_key[]]
+ * @return array<string, mixed>
+ */
+function selectionResponseWithBulletFacts(array $factKeysByRoleAndBulletIndex, array $summaryEvidence = []): array
+{
+    $experience = [];
+
+    foreach ($factKeysByRoleAndBulletIndex as $roleId => $bulletFactKeys) {
+        $bulletGroups = [];
+
+        foreach ($bulletFactKeys as $index => $keys) {
+            $bulletGroups[] = [
+                'project_id' => -1,
+                'order' => $index + 1,
+                'career_fact_keys' => $keys,
+                'job_analysis_finding_ids' => [],
+            ];
+        }
+
+        $experience[] = ['role_id' => $roleId, 'title_choice' => 'full', 'bullet_groups' => $bulletGroups];
+    }
+
+    return [
+        'summary_evidence' => $summaryEvidence,
+        'skills' => [],
+        'experience' => $experience,
+        'selected_projects' => [],
+        'target_term_usages' => [],
+    ];
+}
+
+/**
+ * Every CareerFact key referenced anywhere in a response built by
+ * selectionResponseWithBulletFacts() — used to build a validFactKeys
+ * override wide enough to cover deliberately "foreign" keys a test
+ * wants to exist globally but reject locally.
+ *
+ * @param  array<string, mixed>  $response
+ * @return array<int, string>
+ */
+function allFactKeysIn(array $response): array
+{
+    $keys = $response['summary_evidence'];
+
+    foreach ($response['experience'] as $role) {
+        foreach ($role['bullet_groups'] as $group) {
+            $keys = [...$keys, ...$group['career_fact_keys']];
+        }
+    }
+
+    return array_values(array_unique($keys));
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function targetTermUsage(array $overrides = []): array
+{
+    return array_merge([
+        'term' => 'Azure',
+        'job_analysis_finding_id' => 1,
+        'posture' => 'capability', // avoids needing directEvidenceExistsByTerm for tests that aren't about that check
+        'location_type' => 'bullet',
+        'role_id' => 1,
+        'bullet_group_index' => 0,
+        'relationship_phrase_key' => 'not_applicable',
+        'career_fact_keys' => [],
+    ], $overrides);
+}
+
+it('accepts a bullet-location target-term usage citing only evidence declared at that exact bullet group', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a']]]);
+    $response['target_term_usages'] = [targetTermUsage(['role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['fact-a']])];
+
+    $validated = validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response), 'validFindingIds' => [1]]);
+
+    expect($validated)->toBeArray();
+});
+
+it('rejects a target-term usage citing evidence from ANOTHER bullet group in the same role', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a'], ['fact-b']]]);
+    $response['target_term_usages'] = [targetTermUsage(['role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['fact-b']])];
+
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is not part of the evidence already declared at role_id [1] bullet_group_index [0]');
+});
+
+it('rejects a target-term usage citing evidence from a DIFFERENT role entirely', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a']], 2 => [['fact-b']]]);
+    $response['target_term_usages'] = [targetTermUsage(['role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['fact-b']])];
+
+    expect(fn () => validateSelectionResponse($response, [
+        'validFactKeys' => allFactKeysIn($response),
+        'resumeEligibleRoleIds' => [1, 2],
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'is not part of the evidence already declared at role_id [1] bullet_group_index [0]');
+});
+
+it('accepts a target-term usage citing multiple facts that are ALL local to the declared bullet group', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a', 'fact-b', 'fact-c']]]);
+    $response['target_term_usages'] = [targetTermUsage(['role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['fact-a', 'fact-c']])];
+
+    $validated = validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response), 'validFindingIds' => [1]]);
+
+    expect($validated)->toBeArray();
+});
+
+it('rejects a target-term usage mixing one local fact with one foreign fact', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a'], ['fact-foreign']]]);
+    $response['target_term_usages'] = [targetTermUsage(['role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['fact-a', 'fact-foreign']])];
+
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'career_fact_key [fact-foreign] is not part of the evidence already declared at role_id [1] bullet_group_index [0]');
+});
+
+it('accepts a summary-location target-term usage citing only evidence declared as Summary evidence', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a']]], summaryEvidence: ['fact-summary']);
+    $response['target_term_usages'] = [targetTermUsage([
+        'location_type' => 'summary', 'role_id' => -1, 'bullet_group_index' => -1, 'career_fact_keys' => ['fact-summary'],
+    ])];
+
+    $validated = validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response), 'validFindingIds' => [1]]);
+
+    expect($validated)->toBeArray();
+});
+
+it('rejects a summary-location target-term usage borrowing evidence that only a bullet group declared', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a']]], summaryEvidence: ['fact-summary']);
+    $response['target_term_usages'] = [targetTermUsage([
+        'location_type' => 'summary', 'role_id' => -1, 'bullet_group_index' => -1, 'career_fact_keys' => ['fact-a'],
+    ])];
+
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is not part of the evidence already declared at the Summary');
+});
+
+it('rejects a bullet-location target-term usage borrowing evidence that only Summary declared', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a']]], summaryEvidence: ['fact-summary']);
+    $response['target_term_usages'] = [targetTermUsage(['role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['fact-summary']])];
+
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is not part of the evidence already declared at role_id [1] bullet_group_index [0]');
+});
+
+it('still rejects a target-term usage citing a CareerFact key that does not exist anywhere — pre-existing referential-integrity check preserved', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a']]]);
+    $response['target_term_usages'] = [targetTermUsage(['role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['never-supplied']])];
+
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'career_fact_key [never-supplied] was not supplied in the provider input.');
+});
+
+it('still rejects an unauthorized direct posture alongside the new locality check — both checks run independently', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a']]]);
+    $response['target_term_usages'] = [targetTermUsage([
+        'posture' => 'direct', 'role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['fact-a'],
+    ])];
+
+    // No entry in directEvidenceExistsByTerm for 'Azure' => not authorized.
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is not authorized for a direct claim');
+});
+
+it('still enforces qualified/capability relationship_phrase_key consistency alongside the new locality check', function () {
+    $response = selectionResponseWithBulletFacts([1 => [['fact-a']]]);
+    $response['target_term_usages'] = [targetTermUsage([
+        'posture' => 'qualified', 'relationship_phrase_key' => 'not_applicable', // invalid: qualified needs a real phrase
+        'role_id' => 1, 'bullet_group_index' => 0, 'career_fact_keys' => ['fact-a'],
+    ])];
+
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'A qualified usage must supply a real relationship phrase');
+});

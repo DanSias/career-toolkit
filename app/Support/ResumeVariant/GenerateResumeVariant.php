@@ -205,7 +205,35 @@ final class GenerateResumeVariant
             return $this->wordingValidator->recognizedSkillIds($evidenceText, $canonicalSkillsById);
         })->all();
 
-        $wordingInput = $this->buildWordingInput($selectionDraft, $factsByKey);
+        // The target_term_usages -> Resume Wording handoff, designed as
+        // location-scoped guidance rather than a global list or a
+        // second evidence channel — see
+        // buildDirectTargetTermsByLocation()'s own docblock and
+        // docs/resume-variant-generation.md "Target-term location
+        // integrity". Deliberately built from $selectionDraft->targetTermUsages
+        // (already validated by ResumeSelectionResponseValidator,
+        // including the new location/evidence-locality check) rather
+        // than re-deriving anything — no new query, no re-validation.
+        $directTargetTermsByLocation = $this->buildDirectTargetTermsByLocation($selectionDraft);
+
+        // The Summary's own closed-world Skill allow-list, surfaced to
+        // Wording as a generation-time affordance after a deterministic
+        // investigation found qwen3.8:27b stochastically borrowing
+        // canonical Skills from Experience/Selected-Project evidence
+        // into the summary despite an existing prose rule against it —
+        // see docs/resume-variant-generation.md "Skill provenance".
+        // Reuses ResumeWordingResponseValidator::authorizedSkillIds()
+        // directly (now public) rather than a second definition of
+        // Skill authorization: this is exactly the same set the
+        // validator itself will check the generated summary against.
+        // Deliberately scoped to the Summary only — no Experience/
+        // Selected-Project equivalent, since only the Summary has ever
+        // been observed to leak.
+        $summaryAuthorizedSkillNames = collect($this->wordingValidator->authorizedSkillIds(
+            $selectionDraft->summaryEvidenceFactKeys, $skillIdsByFactKey, $textRecognizedSkillIdsByFactKey,
+        ))->map(fn (int $id) => $canonicalSkillsById[$id])->all();
+
+        $wordingInput = $this->buildWordingInput($selectionDraft, $factsByKey, $directTargetTermsByLocation, $summaryAuthorizedSkillNames);
         $careerFactKeysByLocation = $this->buildCareerFactKeysByLocation($selectionDraft);
         $denylistTerms = $this->buildDenylistTerms($validTargetTerms, $selectionDraft);
 
@@ -236,6 +264,7 @@ final class GenerateResumeVariant
             $skillIdsByFactKey,
             $canonicalSkillsById,
             $textRecognizedSkillIdsByFactKey,
+            $directTargetTermsByLocation,
         );
 
         $wordingDraft = $this->toWordingDraft($validatedWording);
@@ -621,21 +650,37 @@ final class GenerateResumeVariant
     /**
      * Re-hydrates Stage 1's fact-key references with their real
      * canonical text for Stage 2's prompt — Stage 2 never sees raw
-     * keys it would need to look anything up from.
+     * keys it would need to look anything up from. Also attaches each
+     * location's own approved direct target terms (`direct_target_terms`/
+     * `summary_direct_target_terms`) — see
+     * buildDirectTargetTermsByLocation()'s own docblock — and the
+     * Summary's own closed-world canonical-Skill allow-list
+     * (`summary_authorized_skills`) — see the call site in
+     * generateFull() for how it's computed. Selected Projects never
+     * receive either field: `ResumeTermUsageLocation` has no "project"
+     * case, so a target-term usage can never be located at one, and
+     * `summary_authorized_skills` is deliberately scoped to the
+     * Summary only in this milestone — nothing to attach at a Selected
+     * Project for either.
      *
      * @param  Collection<string, array<string, mixed>>  $factsByKey
+     * @param  array<string, array<int, string>>  $directTargetTermsByLocation
+     * @param  array<int, string>  $summaryAuthorizedSkillNames
      * @return array<string, mixed>
      */
-    private function buildWordingInput(ResumeSelectionDraft $draft, Collection $factsByKey): array
+    private function buildWordingInput(ResumeSelectionDraft $draft, Collection $factsByKey, array $directTargetTermsByLocation, array $summaryAuthorizedSkillNames): array
     {
         return [
             'summary_evidence' => collect($draft->summaryEvidenceFactKeys)->map(fn (string $key) => $factsByKey->get($key))->values()->all(),
+            'summary_authorized_skills' => $summaryAuthorizedSkillNames,
+            'summary_direct_target_terms' => $directTargetTermsByLocation['summary'] ?? [],
             'experience' => collect($draft->experience)->map(fn (RoleSelectionDraft $role) => [
                 'role_id' => $role->roleId,
                 'display_title' => $role->displayTitle,
                 'bullet_groups' => collect($role->bulletGroups)->map(fn (BulletGroupDraft $group, int $index) => [
                     'bullet_group_index' => $index,
                     'career_facts' => collect($group->careerFactKeys)->map(fn (string $key) => $factsByKey->get($key))->values()->all(),
+                    'direct_target_terms' => $directTargetTermsByLocation["{$role->roleId}:{$index}"] ?? [],
                 ])->values()->all(),
             ])->values()->all(),
             'selected_projects' => collect($draft->selectedProjects)->map(fn (ProjectSelectionDraft $project) => [
@@ -643,6 +688,48 @@ final class GenerateResumeVariant
                 'career_facts' => collect($project->careerFactKeys)->map(fn (string $key) => $factsByKey->get($key))->values()->all(),
             ])->values()->all(),
         ];
+    }
+
+    /**
+     * The target_term_usages -> Resume Wording handoff, designed as
+     * fact-local, location-scoped guidance rather than a global list —
+     * see the target_term_usages investigation and
+     * docs/resume-variant-generation.md "Target-term location
+     * integrity". Only `direct`-posture usages are represented:
+     * `qualified` terms are never surfaced to Wording at all (the term
+     * is appended deterministically after generation by
+     * appendQualifiedClause() — Wording never writes it), and
+     * `capability` terms remain fully prohibited via `denylistTerms`
+     * (see buildDenylistTerms()) — neither belongs in a list meant to
+     * encourage a term's appearance.
+     *
+     * Deliberately does NOT use each usage's own `careerFactKeys` —
+     * that would open a second, independent evidence channel alongside
+     * the fact-local evidence Wording already receives per location,
+     * which is exactly the risk this design avoids. Only `term` and
+     * `location` are used: the location says WHERE a term is
+     * authorized: the evidence already supplied there (via
+     * buildWordingInput()) says WHAT the model may draw on to use it.
+     *
+     * @return array<string, array<int, string>> "summary" or "role_id:index" => term[] approved there.
+     */
+    private function buildDirectTargetTermsByLocation(ResumeSelectionDraft $draft): array
+    {
+        $byLocation = [];
+
+        foreach ($draft->targetTermUsages as $usage) {
+            if ($usage->posture !== ResumeClaimPosture::Direct) {
+                continue;
+            }
+
+            $key = $usage->location === ResumeTermUsageLocation::Bullet
+                ? "{$usage->roleId}:{$usage->bulletGroupIndex}"
+                : 'summary';
+
+            $byLocation[$key][] = $usage->term;
+        }
+
+        return $byLocation;
     }
 
     /**

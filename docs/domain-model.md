@@ -1139,6 +1139,31 @@ posture/term/qualified fields anywhere in its schema at all (structural
 absence, not a runtime check) and is rendered directly from canonical
 `Skill` names/categories, direct-evidence-only.
 
+`denylist_terms` is a blanket, variant-wide list — removing a
+`direct`-posture term from it says nothing about *where* Wording
+should actually use it. `direct` posture itself means the term is
+authorized/desired terminology at the one location Selection approved
+it for, never a requirement to emit it, and never authorization at any
+other location — a separate, additive mechanism (fact-local
+`direct_target_terms` guidance to Wording, plus a location-scoped
+deterministic leakage check) exists specifically for this; see
+`docs/resume-variant-generation.md` "Target-term location integrity"
+for the full mechanism, including the real historical
+`target_term_usages`/bullet-group mismatch that motivated it.
+
+A related but distinct mechanism addresses canonical Skills rather
+than target terms: the Summary is additionally given
+`summary_authorized_skills`, the closed-world set of canonical Skill
+names its own supplied CareerFacts actually authorize — see
+`docs/resume-variant-generation.md` "Summary authorized-Skills
+allow-list" for why (a recurring, stochastic qwen3.8:27b failure
+naming canonical Skills genuinely visible elsewhere in the same
+request but not authorized for the Summary). It is a generation-time
+affordance only, computed from the same authorization
+`ResumeWordingResponseValidator::assertSkillProvenance()` already
+enforces — it changes nothing about what is actually authorized, and
+is scoped to the Summary alone.
+
 ### Discovery preflight
 
 `App\Support\ResumeVariant\DiscoveryPreflight::run()` is a
