@@ -8,6 +8,7 @@ use App\Enums\ResumeClaimPosture;
 use App\Enums\ResumeQualifiedPhrase;
 use App\Enums\ResumeTermUsageLocation;
 use App\Models\CareerFact;
+use App\Models\CareerProfile;
 use App\Models\Education;
 use App\Models\JobMatch;
 use App\Models\Project;
@@ -15,7 +16,7 @@ use App\Models\ResumeVariant;
 use App\Models\Role;
 use App\Models\Skill;
 use App\Support\JobMatch\JobPayloadBuilder;
-use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV2;
+use App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV3;
 use App\Support\ResumeVariant\Prompts\ResumeWordingPromptV2;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -36,14 +37,23 @@ use Illuminate\Support\Facades\DB;
  * v1 implements full generation only — regenerateWording() (reusing an
  * existing ResumeVariant's approved selection to reword without
  * re-selecting) is deliberately deferred until this base path is
- * proven. See docs/resume-variant-generation.md.
+ * proven.
+ *
+ * As of ResumeSelectionPromptV3, Selection no longer declares which
+ * Project (if any) an Experience bullet group belongs to — this class
+ * derives that deterministically instead, from each bullet's own
+ * approved career_fact_keys (see deriveBulletGroupProjectId()), since
+ * canonical CareerFact-to-Project attribution already determines it
+ * with certainty. The LLM selects evidence; canonical application data
+ * determines evidence provenance. See docs/resume-variant-generation.md
+ * "Design boundary: selection vs. provenance".
  */
 final class GenerateResumeVariant
 {
     public function __construct(
         private readonly GeneratesResumeSelection $selectionProvider,
         private readonly GeneratesResumeWording $wordingProvider,
-        private readonly ResumeSelectionPromptV2 $selectionPrompt,
+        private readonly ResumeSelectionPromptV3 $selectionPrompt,
         private readonly ResumeWordingPromptV2 $wordingPrompt,
         private readonly ResumeCandidatePayloadBuilder $candidateBuilder,
         private readonly JobPayloadBuilder $jobPayloadBuilder,
@@ -113,18 +123,20 @@ final class GenerateResumeVariant
             ->get();
 
         $validRoleIds = $roles->pluck('id')->all();
-        $validProjectIds = $roles->flatMap(fn (Role $role) => $role->projects)->pluck('id')->all();
 
-        // Built with an explicit loop, not flatMap/collapse: Collection::
-        // collapse() merges sub-arrays with array_merge(), which
-        // renumbers integer keys — it would silently destroy this
-        // project_id => role_id mapping.
-        $roleIdByProjectId = [];
-        foreach ($roles as $role) {
-            foreach ($role->projects as $project) {
-                $roleIdByProjectId[$project->id] = $role->id;
-            }
-        }
+        // role_id => the set of CareerFact keys eligible as Experience-
+        // bullet evidence for that role — Role-direct facts, facts
+        // attributed to one of that role's own Projects, and facts
+        // attributed to the Employer that owns that role. Deliberately
+        // computed from fresh, raw attribution data (attributable_type/
+        // attributable_id), independent of $candidatePayload — this is
+        // internal eligibility bookkeeping only, never serialized into
+        // the provider-facing payload. CareerProfile-attributed facts
+        // are never included here: see
+        // ResumeSelectionResponseValidator::assertBulletGroupCareerFactsAreEligibleForRole()
+        // and docs/resume-variant-generation.md "Design boundary:
+        // selection vs. provenance".
+        $eligibleFactKeysForRole = $this->eligibleFactKeysForRole($roles, $profile);
 
         $titleChoicesByRole = $roles->mapWithKeys(
             fn (Role $role) => [(string) $role->id => $this->titleChoices($role->title)]
@@ -135,7 +147,6 @@ final class GenerateResumeVariant
         // ---- Stage 1: Selection ----
         $selectionSchema = $this->selectionPrompt->jsonSchema(
             $validRoleIds,
-            $validProjectIds,
             $validFactKeys,
             $validSkillIds,
             $validFindingIds,
@@ -155,7 +166,7 @@ final class GenerateResumeVariant
             $validRoleIds,
             $validFactKeys,
             $validSkillIds,
-            $roleIdByProjectId,
+            $eligibleFactKeysForRole,
             $validFindingIds,
             $titleChoicesByRole,
             $directEvidenceExistsByTerm,
@@ -164,7 +175,7 @@ final class GenerateResumeVariant
             $projectIdByFactKey,
         );
 
-        $selectionDraft = $this->toSelectionDraft($validatedSelection, $titleChoicesByRole);
+        $selectionDraft = $this->toSelectionDraft($validatedSelection, $titleChoicesByRole, $projectIdByFactKey);
 
         // ---- Build Stage 2 input from exactly what Selection approved ----
         $factsByKey = collect($candidatePayload['career_facts'])->keyBy('key');
@@ -573,10 +584,71 @@ final class GenerateResumeVariant
     }
 
     /**
+     * Every CareerFact eligible as Experience-bullet evidence for each
+     * Role, computed from real, raw attribution — never inferred from
+     * fact text, names, themes, or model output. A fact is eligible for
+     * a given Role iff it is attributed directly to that Role, directly
+     * to one of that Role's own Projects, or directly to the Employer
+     * that owns that Role (an Employer-level fact is therefore eligible
+     * for every Role at that Employer, not just one). CareerProfile-
+     * attributed facts are deliberately never included in any Role's
+     * eligibility set — see docs/resume-variant-generation.md "Design
+     * boundary: selection vs. provenance" for why: the current canonical
+     * model cannot distinguish a universally-reusable career-wide fact
+     * from one describing personal/independent work that would mislead
+     * if presented as evidence for paid employment. This has no effect
+     * on CareerProfile-attributed facts' eligibility for
+     * `summary_evidence` or Skills — both remain governed entirely by
+     * `ResumeEligibility`, unrelated to this method.
+     *
+     * @param  Collection<int, Role>  $roles  Already loaded with their own `projects`.
+     * @return array<int, array<string, true>> role_id => set of eligible CareerFact keys.
+     */
+    private function eligibleFactKeysForRole(Collection $roles, CareerProfile $profile): array
+    {
+        $eligibleFactKeysForRole = [];
+        $roleIdByProjectId = [];
+        $roleIdsByEmployerId = [];
+
+        foreach ($roles as $role) {
+            $eligibleFactKeysForRole[$role->id] = [];
+            $roleIdsByEmployerId[$role->employer_id][] = $role->id;
+
+            foreach ($role->projects as $project) {
+                $roleIdByProjectId[$project->id] = $role->id;
+            }
+        }
+
+        $facts = CareerFact::query()
+            ->where('career_profile_id', $profile->id)
+            ->get(['key', 'attributable_type', 'attributable_id']);
+
+        foreach ($facts as $fact) {
+            $roleIds = match ($fact->attributable_type) {
+                'role' => [$fact->attributable_id],
+                'project' => isset($roleIdByProjectId[$fact->attributable_id]) ? [$roleIdByProjectId[$fact->attributable_id]] : [],
+                'employer' => $roleIdsByEmployerId[$fact->attributable_id] ?? [],
+                // 'career_profile' (and any future attributable type)
+                // is never eligible for Experience-bullet evidence.
+                default => [],
+            };
+
+            foreach ($roleIds as $roleId) {
+                if (array_key_exists($roleId, $eligibleFactKeysForRole)) {
+                    $eligibleFactKeysForRole[$roleId][$fact->key] = true;
+                }
+            }
+        }
+
+        return $eligibleFactKeysForRole;
+    }
+
+    /**
      * @param  array<string, mixed>  $validated
      * @param  array<int, array<string, string>>  $titleChoicesByRole
+     * @param  array<string, int>  $projectIdByFactKey
      */
-    private function toSelectionDraft(array $validated, array $titleChoicesByRole): ResumeSelectionDraft
+    private function toSelectionDraft(array $validated, array $titleChoicesByRole, array $projectIdByFactKey): ResumeSelectionDraft
     {
         /** @var array<int, string> $summaryEvidence */
         $summaryEvidence = $validated['summary_evidence'];
@@ -601,7 +673,7 @@ final class GenerateResumeVariant
                 // text (it never supplied any).
                 displayTitle: $titleChoicesByRole[$r['role_id']][$r['title_choice']],
                 bulletGroups: array_map(fn (array $g) => new BulletGroupDraft(
-                    projectId: $g['project_id'] === -1 ? null : $g['project_id'],
+                    projectId: $this->deriveBulletGroupProjectId($g['career_fact_keys'], $projectIdByFactKey),
                     order: $g['order'],
                     careerFactKeys: $g['career_fact_keys'],
                     jobAnalysisFindingIds: $g['job_analysis_finding_ids'],
@@ -623,6 +695,44 @@ final class GenerateResumeVariant
                 careerFactKeys: $u['career_fact_keys'],
             ), $targetTermUsages),
         );
+    }
+
+    /**
+     * The deterministic replacement for a model-declared bullet-group
+     * `project_id` (removed from the schema as of
+     * ResumeSelectionPromptV3 — see that class's own docblock and
+     * docs/resume-variant-generation.md "Design boundary: selection vs.
+     * provenance"): every CareerFact already carries its own real,
+     * canonical Project attribution, so a bullet's project is fully
+     * determined by which facts Selection grouped into it — never
+     * guessed from names, themes, role membership, ordering, or
+     * similarity.
+     *
+     * - Every cited fact shares the same non-null project -> that project.
+     * - Any cited fact is role-level (no project), or the cited facts
+     *   span more than one project -> no specific project (`null`, the
+     *   same internal representation the old `-1` sentinel resolved to).
+     *
+     * `assertBulletGroupCareerFactsAreEligibleForRole()` has already
+     * confirmed every key here is eligible evidence for this bullet's
+     * role by the time this runs; this method only narrows further, to
+     * at most one project within that role.
+     *
+     * @param  array<int, string>  $careerFactKeys
+     * @param  array<string, int>  $projectIdByFactKey
+     */
+    private function deriveBulletGroupProjectId(array $careerFactKeys, array $projectIdByFactKey): ?int
+    {
+        $projectIds = array_unique(array_map(
+            fn (string $key) => $projectIdByFactKey[$key] ?? null,
+            $careerFactKeys,
+        ));
+
+        if (count($projectIds) === 1 && $projectIds[0] !== null) {
+            return $projectIds[0];
+        }
+
+        return null;
     }
 
     /**

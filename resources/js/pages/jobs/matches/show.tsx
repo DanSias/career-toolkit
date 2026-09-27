@@ -1,5 +1,6 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import { GenerationStatus } from '@/components/generation-status';
+import { useGenerationAttemptPolling } from '@/hooks/use-generation-attempt-polling';
 import AppShell from '@/layouts/app-shell';
 import { show as jobsShow } from '@/routes/jobs';
 import { show as analysesShow } from '@/routes/jobs/analyses';
@@ -7,6 +8,7 @@ import {
     show as resumeShow,
     store as resumeStore,
 } from '@/routes/jobs/analyses/matches/resume';
+import type { GenerationAttempt } from '@/types/generation-attempt';
 import type {
     CareerFactMatchDetail,
     DiscoveryPreflightCandidate,
@@ -15,25 +17,29 @@ import type {
     JobMatchShowProps,
 } from '@/types/job-match';
 
-type PageErrors = { errors?: { resume_generation?: string } };
-
 function GenerateResumeAction({
     jobId,
     analysisId,
     matchId,
+    initialAttempt,
 }: {
     jobId: number;
     analysisId: number;
     matchId: number;
+    initialAttempt: GenerationAttempt | null;
 }) {
     const form = useForm({});
-    const { errors } = usePage<PageErrors>().props;
+    const attempt = useGenerationAttemptPolling(initialAttempt);
+    const isActive =
+        attempt !== null &&
+        (attempt.status === 'queued' || attempt.status === 'running');
+    const disabled = form.processing || isActive;
 
     return (
         <div>
             <button
                 type="button"
-                disabled={form.processing}
+                disabled={disabled}
                 onClick={() =>
                     form.post(
                         resumeStore.url({
@@ -46,18 +52,21 @@ function GenerateResumeAction({
                 }
                 className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
             >
-                {form.processing ? 'Generating…' : 'Generate Resume'}
+                {disabled ? 'Generating…' : 'Generate Resume'}
             </button>
             <GenerationStatus
-                active={form.processing}
+                active={isActive}
                 label="Generating resume"
+                queued={attempt?.status === 'queued'}
+                queuedLabel="Resume queued…"
+                startedAt={attempt?.started_at}
             />
-            {errors?.resume_generation && (
+            {attempt?.status === 'failed' && attempt.failure_message && (
                 <p
                     role="alert"
                     className="mt-2 text-sm text-red-600 dark:text-red-400"
                 >
-                    {errors.resume_generation}
+                    {attempt.failure_message}
                 </p>
             )}
         </div>
@@ -382,6 +391,7 @@ export default function JobMatchesShow({
                         jobId={job.id}
                         analysisId={analysis.id}
                         matchId={match.id}
+                        initialAttempt={match.latest_resume_attempt}
                     />
                 </div>
 

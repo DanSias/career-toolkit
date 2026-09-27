@@ -59,13 +59,11 @@ function validSelectionContent(array $candidate, array $job): array
             'title_choice' => 'segment_1',
             'bullet_groups' => [
                 [
-                    'project_id' => $candidate['project']->id,
                     'order' => 1,
                     'career_fact_keys' => [$candidate['factAws']->key],
                     'job_analysis_finding_ids' => [$job['azureFinding']->id],
                 ],
                 [
-                    'project_id' => -1,
                     'order' => 2,
                     'career_fact_keys' => [$candidate['factIndependent']->key],
                     'job_analysis_finding_ids' => [$job['ownershipFinding']->id],
@@ -179,8 +177,8 @@ it('persists the full graph from a valid two-stage response', function () {
         ->and($variant->summaryEvidence)->toHaveCount(1)
         ->and($variant->targetTermUsages)->toHaveCount(1)
         ->and($variant->summary)->not->toBeNull()
-        ->and($variant->schema_version)->toBe('1.3')
-        ->and($variant->selection_prompt_version)->toBe('resume-selection-v2.1')
+        ->and($variant->schema_version)->toBe('2.0')
+        ->and($variant->selection_prompt_version)->toBe('resume-selection-v3')
         ->and($variant->wording_prompt_version)->toBe('resume-wording-v2')
         ->and($variant->selection_generated_by)->toBe('openai:gpt-test')
         ->and($variant->wording_generated_by)->toBe('openai:gpt-test');
@@ -440,22 +438,29 @@ it('resolves title_choice segment_2 to the exact canonical segment string, never
     expect($variant->experienceRoles->first()->display_title)->toBe('Platform Lead');
 });
 
-it('rejects a project_id that belongs to a different role than its bullet group', function () {
+it('rejects a bullet group citing a CareerFact that genuinely belongs to a different role entirely', function () {
     [$candidate, $job, $jobMatch] = fullFixtureSetup();
 
     $otherEmployer = Employer::factory()->create(['career_profile_id' => $candidate['profile']->id]);
     $otherRole = Role::factory()->create(['employer_id' => $otherEmployer->id]);
-    $otherProject = Project::factory()->create(['role_id' => $otherRole->id]);
+    $otherRoleFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-other-role-fact',
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $otherRole->id,
+    ]);
 
     $content = validSelectionContent($candidate, $job);
-    $content['experience'][0]['bullet_groups'][0]['project_id'] = $otherProject->id; // belongs to $otherRole, not $candidate['role']
+    // A fact genuinely attributed to $otherRole, cited under
+    // $candidate['role']'s own bullet group.
+    $content['experience'][0]['bullet_groups'][0]['career_fact_keys'][] = $otherRoleFact->key;
 
     [$selection, $wording] = bindFakeResumeProviders();
     $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
     $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
 
     expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
-        ->toThrow(InvalidResumeVariantResponseException::class);
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is not eligible Experience evidence for role_id');
     expect(ResumeVariant::count())->toBe(0);
 });
 
@@ -463,7 +468,6 @@ it('rejects an exact duplicate bullet-group evidence set', function () {
     [$candidate, $job, $jobMatch] = fullFixtureSetup();
     $content = validSelectionContent($candidate, $job);
     $content['experience'][0]['bullet_groups'][] = [
-        'project_id' => $candidate['project']->id,
         'order' => 3,
         'career_fact_keys' => [$candidate['factAws']->key], // exact duplicate of bullet_groups[0]
         'job_analysis_finding_ids' => [],
@@ -476,6 +480,408 @@ it('rejects an exact duplicate bullet-group evidence set', function () {
 
     expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
         ->toThrow(InvalidResumeVariantResponseException::class);
+    expect(ResumeVariant::count())->toBe(0);
+});
+
+it('rejects a bullet group citing the same CareerFact twice in its own career_fact_keys, before Wording is ever called, persisting nothing', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = validSelectionContent($candidate, $job);
+    // The real TRM regression shape: one bullet group's own
+    // career_fact_keys array repeats the same key.
+    $content['experience'][0]['bullet_groups'][1]['career_fact_keys'] = [
+        $candidate['factIndependent']->key,
+        $candidate['factIndependent']->key,
+    ];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', validWordingContent($candidate)));
+
+    expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is selected more than once within bullet group');
+    expect($wording->callCount)->toBe(0);
+    expect(ResumeVariant::count())->toBe(0);
+});
+
+// --- Deterministic project attribution derivation ------------------------
+//
+// As of ResumeSelectionPromptV3, Selection never declares a bullet
+// group's project_id at all — GenerateResumeVariant derives it
+// deterministically from the bullet's own approved career_fact_keys
+// instead (see deriveBulletGroupProjectId()'s own docblock and
+// docs/resume-variant-generation.md "Design boundary: selection vs.
+// provenance"). Motivated by a real TRM Labs async Resume run that
+// failed because the model incorrectly declared a role-level CareerFact
+// (pearson-data-analytics-lead-stakeholder-partnership) as belonging to
+// a specific sibling project — a class of failure this derivation makes
+// structurally impossible, since there is no longer any model-declared
+// project_id to get wrong.
+
+/**
+ * @param  array<int, string>  $factKeys
+ * @return array<string, mixed>
+ */
+function singleBulletSelectionContent(array $candidate, array $factKeys): array
+{
+    return [
+        'summary_evidence' => [],
+        'skills' => [],
+        'experience' => [[
+            'role_id' => $candidate['role']->id,
+            'title_choice' => 'full',
+            'bullet_groups' => [[
+                'order' => 1,
+                'career_fact_keys' => $factKeys,
+                'job_analysis_finding_ids' => [],
+            ]],
+        ]],
+        'selected_projects' => [],
+        'target_term_usages' => [],
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function singleBulletWordingContent(array $candidate): array
+{
+    return [
+        'summary' => 'A resume summary.',
+        'experience' => [[
+            'role_id' => $candidate['role']->id,
+            'bullets' => [['bullet_group_index' => 0, 'text' => 'A generated bullet.']],
+        ]],
+        'selected_projects' => [],
+    ];
+}
+
+function firstPersistedBullet(ResumeVariant $variant): ResumeVariantExperienceBullet
+{
+    return $variant->experienceRoles->first()->bullets->sole();
+}
+
+it('derives the bullet\'s real project when it cites one CareerFact attributed to that project', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = singleBulletSelectionContent($candidate, [$candidate['factAws']->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(firstPersistedBullet($variant)->project_id)->toBe($candidate['project']->id);
+});
+
+it('derives the same project when multiple cited CareerFacts all genuinely belong to it', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $secondProjectFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-second-project-fact',
+        'attributable_type' => (new Project)->getMorphClass(),
+        'attributable_id' => $candidate['project']->id,
+    ]);
+    $content = singleBulletSelectionContent($candidate, [$candidate['factAws']->key, $secondProjectFact->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(firstPersistedBullet($variant)->project_id)->toBe($candidate['project']->id);
+});
+
+it('derives no specific project when the cited CareerFact is role-level', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = singleBulletSelectionContent($candidate, [$candidate['factIndependent']->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(firstPersistedBullet($variant)->project_id)->toBeNull();
+});
+
+it('derives no specific project when a role-level fact is mixed with a project-attributed fact in the same bullet', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = singleBulletSelectionContent($candidate, [$candidate['factIndependent']->key, $candidate['factAws']->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(firstPersistedBullet($variant)->project_id)->toBeNull();
+});
+
+it('derives no specific project when the cited CareerFacts span two different projects under the same role', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $projectB = Project::factory()->create(['role_id' => $candidate['role']->id, 'name' => 'Project B']);
+    $projectBFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-project-b-fact',
+        'attributable_type' => (new Project)->getMorphClass(),
+        'attributable_id' => $projectB->id,
+    ]);
+    $content = singleBulletSelectionContent($candidate, [$candidate['factAws']->key, $projectBFact->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(firstPersistedBullet($variant)->project_id)->toBeNull();
+});
+
+it('rejects a bullet group citing a CareerFact key never supplied to the provider at all', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = singleBulletSelectionContent($candidate, ['never-supplied-fact-key']);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'was not supplied in the provider input');
+    expect(ResumeVariant::count())->toBe(0);
+});
+
+it('reproduces and rejects the exact real TRM Labs regression shape: a role-level fact incorrectly reachable as a specific project — proving it can no longer be mis-persisted', function () {
+    // The real key from the incident, attributed here exactly as it was
+    // in production: role-level, not tied to any project. Selection
+    // never gets the opportunity to mis-declare a project for it at
+    // all, since the field no longer exists — this test proves the
+    // derived outcome is correctly project-unscoped rather than crashing
+    // or silently attaching a project.
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $realKeyFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'pearson-data-analytics-lead-stakeholder-partnership',
+        'attributable_type' => (new Role)->getMorphClass(),
+        'attributable_id' => $candidate['role']->id,
+    ]);
+    $content = singleBulletSelectionContent($candidate, [$realKeyFact->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(firstPersistedBullet($variant)->project_id)->toBeNull()
+        ->and($selection->capturedSchema)->not->toHaveKey('project_id');
+});
+
+it('never sends a bullet-group project_id to Resume Wording — Wording remains fully independent of bullet-group project attribution', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = singleBulletSelectionContent($candidate, [$candidate['factAws']->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    // wording_input_snapshot freezes exactly what Wording's own prompt
+    // was built from (see GenerateResumeVariant::buildWordingInput()) —
+    // each bullet-group entry there carries only bullet_group_index,
+    // career_facts, and direct_target_terms, never a project_id key,
+    // even though each cited fact's own attribution (a different,
+    // pre-existing, legitimate concern) does mention its real project.
+    $bulletGroupEntry = $variant->wording_input_snapshot['experience'][0]['bullet_groups'][0];
+    expect($bulletGroupEntry)->not->toHaveKey('project_id')
+        ->and(array_keys($bulletGroupEntry))->toBe(['bullet_group_index', 'career_facts', 'direct_target_terms']);
+});
+
+// --- Experience CareerFact eligibility -----------------------------------
+//
+// GenerateResumeVariant::eligibleFactKeysForRole() computes, for each
+// Role, the deterministic set of CareerFact keys eligible as Experience-
+// bullet evidence: Role-direct, that Role's Project-direct, and that
+// Role's Employer-direct. CareerProfile-direct facts never enter any
+// role's set. See docs/resume-variant-generation.md "Design boundary:
+// selection vs. provenance". Motivated by a real TRM Labs run that cited
+// two CareerProfile-direct facts (profile-ai-assisted-development-pattern,
+// profile-github-personal-projects) under an employer Role — this section
+// reproduces both exact real keys, plus the Role/Project/Employer routes
+// the fix introduces or preserves.
+
+it('accepts a Project-direct CareerFact under that Project\'s owning Role (existing route, unaffected)', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $content = singleBulletSelectionContent($candidate, [$candidate['factAws']->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(ResumeVariant::count())->toBe(1);
+    expect(firstPersistedBullet($variant)->project_id)->toBe($candidate['project']->id);
+});
+
+it('accepts an Employer-direct CareerFact under a Role belonging to that Employer', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $employerFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-employer-narrative',
+        'attributable_type' => (new Employer)->getMorphClass(),
+        'attributable_id' => $candidate['employer']->id,
+    ]);
+    $content = singleBulletSelectionContent($candidate, [$employerFact->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect(ResumeVariant::count())->toBe(1)
+        // Employer-direct evidence has no single project — the same
+        // "no specific project" derivation a role-level fact produces.
+        ->and(firstPersistedBullet($variant)->project_id)->toBeNull();
+});
+
+it('accepts the same Employer-direct CareerFact under a DIFFERENT Role belonging to the same Employer', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $secondRole = Role::factory()->create(['employer_id' => $candidate['employer']->id]);
+    $employerFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-employer-narrative',
+        'attributable_type' => (new Employer)->getMorphClass(),
+        'attributable_id' => $candidate['employer']->id,
+    ]);
+
+    // $candidate['role'] must still appear (it is genuinely
+    // resume-eligible); $secondRole voluntarily appears too, citing only
+    // the Employer-direct fact, to prove that same fact is eligible
+    // there as well.
+    $content = validSelectionContent($candidate, $job);
+    $content['experience'][] = [
+        'role_id' => $secondRole->id,
+        'title_choice' => 'full',
+        'bullet_groups' => [[
+            'order' => 1,
+            'career_fact_keys' => [$employerFact->key],
+            'job_analysis_finding_ids' => [],
+        ]],
+    ];
+    $wordingContent = validWordingContent($candidate);
+    $wordingContent['experience'][] = [
+        'role_id' => $secondRole->id,
+        'bullets' => [['bullet_group_index' => 0, 'text' => 'A second-role bullet.']],
+    ];
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', $wordingContent));
+
+    $variant = app(GenerateResumeVariant::class)->generateFull($jobMatch);
+
+    expect($variant->experienceRoles)->toHaveCount(2)
+        ->and($variant->experienceRoles->firstWhere('role_id', $secondRole->id)->bullets->sole()->project_id)->toBeNull();
+});
+
+it('rejects an Employer-direct CareerFact under a Role belonging to a DIFFERENT Employer', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $employerFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-employer-narrative',
+        'attributable_type' => (new Employer)->getMorphClass(),
+        'attributable_id' => $candidate['employer']->id,
+    ]);
+    $otherEmployer = Employer::factory()->create(['career_profile_id' => $candidate['profile']->id]);
+    $otherEmployerRole = Role::factory()->create(['employer_id' => $otherEmployer->id]);
+
+    $content = singleBulletSelectionContent(['role' => $otherEmployerRole], [$employerFact->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent(['role' => $otherEmployerRole])));
+
+    expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is not eligible Experience evidence for role_id');
+    expect(ResumeVariant::count())->toBe(0);
+});
+
+it('rejects a Project-direct CareerFact cited under a Role other than that Project\'s owning Role', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $otherEmployer = Employer::factory()->create(['career_profile_id' => $candidate['profile']->id]);
+    $otherRole = Role::factory()->create(['employer_id' => $otherEmployer->id]);
+
+    $content = singleBulletSelectionContent(['role' => $otherRole], [$candidate['factAws']->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent(['role' => $otherRole])));
+
+    expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is not eligible Experience evidence for role_id');
+    expect(ResumeVariant::count())->toBe(0);
+});
+
+it('rejects an independent-project CareerFact cited under any Experience Role', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $independentProject = Project::factory()->create(['role_id' => null, 'career_profile_id' => $candidate['profile']->id]);
+    $independentFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'fixture-independent-project-fact',
+        'attributable_type' => (new Project)->getMorphClass(),
+        'attributable_id' => $independentProject->id,
+    ]);
+    $content = singleBulletSelectionContent($candidate, [$independentFact->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
+        ->toThrow(InvalidResumeVariantResponseException::class, 'is not eligible Experience evidence for role_id');
+    expect(ResumeVariant::count())->toBe(0);
+});
+
+it('reproduces and rejects the exact real TRM Labs regression key: profile-ai-assisted-development-pattern under an employer Role, never invoking Wording, persisting nothing', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $realKeyFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'profile-ai-assisted-development-pattern',
+        'attributable_type' => 'career_profile',
+        'attributable_id' => $candidate['profile']->id,
+    ]);
+    $content = singleBulletSelectionContent($candidate, [$realKeyFact->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
+        ->toThrow(InvalidResumeVariantResponseException::class, "career_fact_key [{$realKeyFact->key}] is not eligible Experience evidence for role_id");
+    expect($wording->callCount)->toBe(0);
+    expect(ResumeVariant::count())->toBe(0);
+});
+
+it('reproduces and rejects the exact real TRM Labs regression key: profile-github-personal-projects under an employer Role, never invoking Wording, persisting nothing', function () {
+    [$candidate, $job, $jobMatch] = fullFixtureSetup();
+    $realKeyFact = CareerFact::factory()->create([
+        'career_profile_id' => $candidate['profile']->id,
+        'key' => 'profile-github-personal-projects',
+        'attributable_type' => 'career_profile',
+        'attributable_id' => $candidate['profile']->id,
+    ]);
+    $content = singleBulletSelectionContent($candidate, [$realKeyFact->key]);
+
+    [$selection, $wording] = bindFakeResumeProviders();
+    $selection->willReturn(new ResumeSelectionProviderResponse('openai', 'gpt-test', $content));
+    $wording->willReturn(new ResumeWordingProviderResponse('openai', 'gpt-test', singleBulletWordingContent($candidate)));
+
+    expect(fn () => app(GenerateResumeVariant::class)->generateFull($jobMatch))
+        ->toThrow(InvalidResumeVariantResponseException::class, "career_fact_key [{$realKeyFact->key}] is not eligible Experience evidence for role_id");
+    expect($wording->callCount)->toBe(0);
     expect(ResumeVariant::count())->toBe(0);
 });
 

@@ -20,12 +20,12 @@ use Illuminate\Support\Carbon;
  * how long it took, without a browser tab needing to stay open or a
  * client-side timer needing to be trusted as the source of truth.
  *
- * Job Analysis and Job Match generation both create, queue, and
+ * Job Analysis, Job Match, and Resume generation all create, queue, and
  * transition attempts through this model today (see
  * docs/job-analysis-generation.md "Durable generation attempts
- * (foundation)" and docs/job-match-generation.md "Async Job Match");
- * Resume generation remains synchronous and does not yet use it. It
- * exists as its own small persistence model — it does not call a
+ * (foundation)", docs/job-match-generation.md "Async Job Match", and
+ * docs/resume-variant-generation.md "Async Resume"). It exists as its
+ * own small persistence model — it does not call a
  * provider, run a prompt, or validate a response; that remains
  * entirely GenerateJobAnalysis/GenerateJobMatch/GenerateResumeVariant's
  * job, reused unchanged.

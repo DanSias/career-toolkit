@@ -40,12 +40,13 @@ Route::get('/generation-attempts/{generationAttempt}', [GenerationAttemptControl
 Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches', [JobMatchController::class, 'store'])->middleware(AllowLongRunningGeneration::class)->name('jobs.analyses.matches.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}', [JobMatchController::class, 'show'])->name('jobs.analyses.matches.show');
 
-// AllowLongRunningGeneration: this POST route still makes one blocking,
-// potentially multi-minute local Ollama inference call synchronously —
-// see that middleware's own docblock for why PHP's ambient
-// max_execution_time must not cut it short. Not yet migrated to the
-// queued pattern above (Resume generation is next).
-
+// Resume generation is also queued now (GenerateResumeVariantJob), same
+// pattern as Job Analysis/Job Match above — one attempt covers the
+// entire Selection -> Wording pipeline. AllowLongRunningGeneration is
+// kept on this route for this milestone even though the POST request
+// itself no longer blocks on either provider call — see
+// docs/resume-variant-generation.md "Async Resume" and this
+// middleware's own docblock.
 Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume', [ResumeVariantController::class, 'store'])->middleware(AllowLongRunningGeneration::class)->name('jobs.analyses.matches.resume.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume/{resumeVariant}', [ResumeVariantController::class, 'show'])->name('jobs.analyses.matches.resume.show');
 

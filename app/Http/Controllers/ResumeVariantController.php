@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\GenerationStatus;
+use App\Enums\GenerationType;
 use App\Enums\ResumeClaimPosture;
 use App\Enums\ResumeTermUsageLocation;
-use App\Exceptions\InvalidResumeVariantResponseException;
-use App\Exceptions\ResumeGenerationProviderException;
+use App\Jobs\GenerateResumeVariantJob;
 use App\Models\CareerFact;
 use App\Models\Education;
 use App\Models\JobAnalysis;
@@ -17,13 +18,10 @@ use App\Models\ResumeVariantExperienceRole;
 use App\Models\ResumeVariantTargetTermUsage;
 use App\Models\Skill;
 use App\Support\JobMatch\CareerFactAttribution;
-use App\Support\ResumeVariant\GenerateResumeVariant;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
-use Throwable;
 
 /**
  * Generates and displays ResumeVariant snapshots for one JobMatch.
@@ -31,7 +29,13 @@ use Throwable;
  * replaces a prior one, and there is no "current" pointer to manage.
  * No editing, no deletion, no PDF — a read-only inspection surface over
  * App\Support\ResumeVariant\GenerateResumeVariant's pipeline, mirroring
- * JobMatchController exactly. See docs/resume-variant-generation.md.
+ * JobMatchController exactly.
+ *
+ * store() itself never calls the generation pipeline — it only
+ * creates/looks up a GenerationAttempt and dispatches
+ * GenerateResumeVariantJob, which owns the actual
+ * GenerateResumeVariant::generateFull() call and every outcome durably
+ * on that attempt. See "Async Resume" in docs/resume-variant-generation.md.
  */
 class ResumeVariantController extends Controller
 {
@@ -39,36 +43,26 @@ class ResumeVariantController extends Controller
         JobPosting $jobPosting,
         JobAnalysis $jobAnalysis,
         JobMatch $jobMatch,
-        GenerateResumeVariant $generator,
     ): RedirectResponse {
         abort_unless($jobAnalysis->job_posting_id === $jobPosting->id, 404);
         abort_unless($jobMatch->job_analysis_id === $jobAnalysis->id, 404);
 
-        try {
-            $variant = $generator->generateFull($jobMatch);
-        } catch (ResumeGenerationProviderException|InvalidResumeVariantResponseException $e) {
-            Log::warning('ResumeVariant generation failed.', [
-                'job_match_id' => $jobMatch->id,
-                'exception' => $e::class,
-                'message' => $e->getMessage(),
-                ...($e instanceof ResumeGenerationProviderException ? ($e->diagnostics?->toLogContext() ?? []) : []),
+        $hasActiveAttempt = $jobMatch->generationAttempts()
+            ->active()
+            ->where('generation_type', GenerationType::ResumeVariant)
+            ->exists();
+
+        if (! $hasActiveAttempt) {
+            $attempt = $jobMatch->generationAttempts()->create([
+                'generation_type' => GenerationType::ResumeVariant,
+                'status' => GenerationStatus::Queued,
+                'queued_at' => now(),
             ]);
 
-            return back()->withErrors([
-                'resume_generation' => 'Resume generation failed — the response could not be validated. You can try again.',
-            ]);
-        } catch (Throwable $e) {
-            Log::error('ResumeVariant generation failed unexpectedly.', [
-                'job_match_id' => $jobMatch->id,
-                'exception' => $e::class,
-            ]);
-
-            return back()->withErrors([
-                'resume_generation' => 'Resume generation failed unexpectedly. You can try again.',
-            ]);
+            GenerateResumeVariantJob::dispatch($attempt);
         }
 
-        return redirect()->route('jobs.analyses.matches.resume.show', [$jobPosting, $jobAnalysis, $jobMatch, $variant]);
+        return redirect()->route('jobs.analyses.matches.show', [$jobPosting, $jobAnalysis, $jobMatch]);
     }
 
     public function show(

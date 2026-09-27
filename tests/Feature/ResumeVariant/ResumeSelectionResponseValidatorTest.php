@@ -35,7 +35,6 @@ function selectionResponseWithBulletGroups(array $bulletGroupsPerRole, int $skil
         for ($i = 0; $i < $count; $i++) {
             $factCounter++;
             $bulletGroups[] = [
-                'project_id' => -1,
                 'order' => $i + 1,
                 'career_fact_keys' => ["fact-{$factCounter}"],
                 'job_analysis_finding_ids' => [],
@@ -77,12 +76,30 @@ function validateSelectionResponse(array $response, array $overrides = []): arra
     $roleIds = array_column($response['experience'], 'role_id');
     $titleChoicesByRole = array_combine($roleIds, array_fill(0, count($roleIds), ['full' => 'Some Title']));
 
+    // Self-consistent by default: every CareerFact cited in a bullet
+    // group is treated as eligible evidence for that bullet's own
+    // declared role, so tests unrelated to Experience-role eligibility
+    // (budgets, Skills, target-term locality, ...) aren't incidentally
+    // rejected by assertBulletGroupCareerFactsAreEligibleForRole().
+    // Tests that specifically exercise an eligibility mismatch pass an
+    // explicit 'eligibleFactKeysForRole' override instead.
+    $eligibleFactKeysForRole = [];
+    foreach ($response['experience'] as $role) {
+        $eligibleFactKeysForRole[$role['role_id']] ??= [];
+
+        foreach ($role['bullet_groups'] as $group) {
+            foreach ($group['career_fact_keys'] as $key) {
+                $eligibleFactKeysForRole[$role['role_id']][$key] = true;
+            }
+        }
+    }
+
     return selectionValidator()->validate(
         $response,
         $overrides['validRoleIds'] ?? $roleIds,
         $overrides['validFactKeys'] ?? $validFactKeys,
         $overrides['validSkillIds'] ?? $validSkillIds,
-        $overrides['roleIdByProjectId'] ?? [],
+        $overrides['eligibleFactKeysForRole'] ?? $eligibleFactKeysForRole,
         $overrides['validFindingIds'] ?? [],
         $overrides['titleChoicesByRole'] ?? $titleChoicesByRole,
         $overrides['directEvidenceExistsByTerm'] ?? [],
@@ -254,31 +271,34 @@ it('exposes MAX_SELECTED_PROJECTS as 1, the single source of truth the prompt sc
     expect(ResumeSelectionResponseValidator::MAX_SELECTED_PROJECTS)->toBe(1);
 });
 
-// --- Experience fact/project consistency --------------------------------
+// --- Experience CareerFact eligibility -----------------------------------
 //
-// Closes the exact gap a live qwen3.8:27b evaluation exposed: the
-// pre-existing assertRoleAndProjectValidity() only checks that a bullet
-// group's declared project_id belongs to its role_id — it never checked
-// that each CITED FACT is itself attributed to that declared project.
-// The failed response mixed a sibling-role project into role_id=3
-// (caught by the pre-existing check) but ALSO mixed same-role,
-// sibling-PROJECT facts into three other bullet groups (RocketGate
-// Transaction Toolkit tagged as Verbatim; Pearson Email Marketing
-// Tracker tagged as Marketing Forecast; Pearson Recruitment Agent
-// Tracking tagged as Salesforce Migration) — all invisible to the
-// validator until now. The chosen semantics (see
-// assertExperienceFactProjectConsistency()'s own docblock) are
-// evidence-based, not guessed: the two real, already-persisted,
-// human-accepted Formic selections never mix a role-level fact into a
-// project-specific bullet group, so that combination is rejected here
-// exactly like a sibling-project fact — a `-1` bullet group remains
-// unconstrained.
+// As of ResumeSelectionPromptV3, an Experience bullet group no longer
+// declares its own project_id at all — see
+// ResumeSelectionResponseValidator's own docblock and
+// docs/resume-variant-generation.md "Design boundary: selection vs.
+// provenance". Project attribution is now derived deterministically by
+// GenerateResumeVariant from each bullet's approved career_fact_keys
+// (see GenerateResumeVariantTest.php for those derivation tests) — the
+// validator's own remaining responsibility here is: does every cited
+// CareerFact belong to the *eligibility set* GenerateResumeVariant
+// precomputed for the bullet's declared role_id (Role-direct, that
+// Role's Project-direct, or that Role's Employer-direct — see
+// GenerateResumeVariant::eligibleFactKeysForRole()'s own docblock).
+// CareerProfile-direct facts never enter any role's eligibility set.
+// This file exercises the validator's own consumption of an already-
+// computed eligibility map in isolation; the map-building logic itself
+// (which genuinely needs real Employer/Role/Project relationships —
+// Project-direct, Employer-direct-across-multiple-roles,
+// CareerProfile-direct exclusion) is exercised end-to-end with real
+// fixtures in GenerateResumeVariantTest.php's own "Experience CareerFact
+// eligibility" section, including the two exact real regression keys.
 
 /**
  * @param  array<int, string>  $factKeys
  * @return array<string, mixed>
  */
-function experienceGroup(int $roleId, int $projectId, array $factKeys, string $titleChoice = 'full'): array
+function experienceGroup(int $roleId, array $factKeys, string $titleChoice = 'full'): array
 {
     return [
         'summary_evidence' => [],
@@ -287,7 +307,6 @@ function experienceGroup(int $roleId, int $projectId, array $factKeys, string $t
             'role_id' => $roleId,
             'title_choice' => $titleChoice,
             'bullet_groups' => [[
-                'project_id' => $projectId,
                 'order' => 1,
                 'career_fact_keys' => $factKeys,
                 'job_analysis_finding_ids' => [],
@@ -298,95 +317,62 @@ function experienceGroup(int $roleId, int $projectId, array $factKeys, string $t
     ];
 }
 
-it('accepts a project-specific bullet whose fact is genuinely attributed to that exact project', function () {
-    $response = experienceGroup(roleId: 1, projectId: 10, factKeys: ['fact-a']);
+it('accepts a bullet group whose cited facts are eligible for the declared role', function () {
+    $response = experienceGroup(roleId: 1, factKeys: ['fact-a', 'fact-b']);
+
+    $validated = validateSelectionResponse($response, [
+        'validFactKeys' => ['fact-a', 'fact-b'],
+        'eligibleFactKeysForRole' => [1 => ['fact-a' => true, 'fact-b' => true]],
+    ]);
+
+    expect($validated['experience'][0]['bullet_groups'][0]['career_fact_keys'])->toBe(['fact-a', 'fact-b']);
+});
+
+it('accepts a fact eligible for a role via more than one route at once (e.g. both Role-direct and, hypothetically, Employer-direct)', function () {
+    // The eligibility set itself is role-scoped and route-agnostic by
+    // the time the validator sees it — it doesn't matter *why* a key is
+    // in a role's set, only that it is. GenerateResumeVariantTest.php
+    // proves each route (Role/Project/Employer-direct) is populated
+    // correctly in the first place.
+    $response = experienceGroup(roleId: 1, factKeys: ['fact-a']);
 
     $validated = validateSelectionResponse($response, [
         'validFactKeys' => ['fact-a'],
-        'roleIdByProjectId' => [10 => 1],
-        'projectIdByFactKey' => ['fact-a' => 10],
+        'eligibleFactKeysForRole' => [1 => ['fact-a' => true], 2 => ['fact-a' => true]],
     ]);
 
-    expect($validated['experience'][0]['bullet_groups'][0]['project_id'])->toBe(10);
+    expect($validated['experience'][0]['bullet_groups'][0]['career_fact_keys'])->toBe(['fact-a']);
 });
 
-it('still rejects when the declared project belongs to a different role (pre-existing behavior preserved)', function () {
-    $response = experienceGroup(roleId: 3, projectId: 6, factKeys: ['fact-a']);
+it('rejects a bullet group citing a CareerFact that is not eligible for the declared role at all', function () {
+    $response = experienceGroup(roleId: 3, factKeys: ['sibling-role-fact']);
 
     expect(fn () => validateSelectionResponse($response, [
-        'validFactKeys' => ['fact-a'],
-        'roleIdByProjectId' => [6 => 2], // project 6 really belongs to role 2
-        'projectIdByFactKey' => ['fact-a' => 6],
-    ]))->toThrow(InvalidResumeVariantResponseException::class);
+        'validFactKeys' => ['sibling-role-fact'],
+        'eligibleFactKeysForRole' => [2 => ['sibling-role-fact' => true]], // eligible for role 2 only, not role 3
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'is not eligible Experience evidence for role_id [3]');
 });
 
-it('rejects when the declared project belongs to the right role but a cited fact belongs to a sibling project — the exact gap this closes', function () {
-    // Mirrors the real failure: role 1 owns both project 2 (Verbatim)
-    // and project 3 (Transaction Toolkit); the bullet declares project
-    // 2 but cites a fact truly attributed to project 3.
-    $response = experienceGroup(roleId: 1, projectId: 2, factKeys: ['verbatim-fact', 'toolkit-fact-mistagged']);
+it('rejects a bullet group citing an independent-project CareerFact, which is eligible for no role at all', function () {
+    $response = experienceGroup(roleId: 1, factKeys: ['independent-project-fact']);
 
     expect(fn () => validateSelectionResponse($response, [
-        'validFactKeys' => ['verbatim-fact', 'toolkit-fact-mistagged'],
-        'roleIdByProjectId' => [2 => 1, 3 => 1],
-        'projectIdByFactKey' => ['verbatim-fact' => 2, 'toolkit-fact-mistagged' => 3],
-    ]))->toThrow(InvalidResumeVariantResponseException::class, 'is not attributed to project_id [2]');
+        'validFactKeys' => ['independent-project-fact'],
+        'eligibleFactKeysForRole' => [1 => []], // no entry at all — an independent-project fact is eligible nowhere
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'is not eligible Experience evidence for role_id [1]');
 });
 
-it('accepts multiple facts that all genuinely belong to the same declared project', function () {
-    $response = experienceGroup(roleId: 1, projectId: 2, factKeys: ['fact-a', 'fact-b', 'fact-c']);
-
-    $validated = validateSelectionResponse($response, [
-        'validFactKeys' => ['fact-a', 'fact-b', 'fact-c'],
-        'roleIdByProjectId' => [2 => 1],
-        'projectIdByFactKey' => ['fact-a' => 2, 'fact-b' => 2, 'fact-c' => 2],
-    ]);
-
-    expect($validated['experience'][0]['bullet_groups'][0]['career_fact_keys'])->toHaveCount(3);
-});
-
-it('accepts a role with no owned projects using project_id=-1', function () {
-    $response = experienceGroup(roleId: 3, projectId: -1, factKeys: ['seo-fact']);
-
-    $validated = validateSelectionResponse($response, [
-        'validFactKeys' => ['seo-fact'],
-        'roleIdByProjectId' => [],
-        'projectIdByFactKey' => [], // role-level fact, no project attribution
-    ]);
-
-    expect($validated['experience'][0]['bullet_groups'][0]['project_id'])->toBe(-1);
-});
-
-it('rejects a role with no owned projects borrowing a sibling role\'s project — the exact real Formic failure', function () {
-    $response = experienceGroup(roleId: 3, projectId: 6, factKeys: ['seo-fact']);
+it('rejects a bullet group citing a CareerProfile-direct fact, which is eligible for no Experience role', function () {
+    // Mirrors the real TRM Labs regression shape at the unit level —
+    // the two exact real regression keys (profile-ai-assisted-
+    // development-pattern, profile-github-personal-projects) are proven
+    // with real fixtures in GenerateResumeVariantTest.php.
+    $response = experienceGroup(roleId: 1, factKeys: ['profile-level-fact']);
 
     expect(fn () => validateSelectionResponse($response, [
-        'validFactKeys' => ['seo-fact'],
-        'roleIdByProjectId' => [6 => 2], // project 6 belongs to sibling role 2, not role 3
-        'projectIdByFactKey' => [],
-    ]))->toThrow(InvalidResumeVariantResponseException::class, 'project_id [6] does not belong to role_id [3]');
-});
-
-it('allows a -1 ("no specific project") bullet group to cite a project-attributed fact — permissive by design, per the chosen semantics', function () {
-    $response = experienceGroup(roleId: 1, projectId: -1, factKeys: ['project-attributed-fact']);
-
-    $validated = validateSelectionResponse($response, [
-        'validFactKeys' => ['project-attributed-fact'],
-        'roleIdByProjectId' => [2 => 1],
-        'projectIdByFactKey' => ['project-attributed-fact' => 2],
-    ]);
-
-    expect($validated['experience'][0]['bullet_groups'][0]['project_id'])->toBe(-1);
-});
-
-it('rejects a project-specific bullet group citing a role-level (unattributed) fact — strict by design, matching real historical Formic selections', function () {
-    $response = experienceGroup(roleId: 1, projectId: 2, factKeys: ['role-level-fact']);
-
-    expect(fn () => validateSelectionResponse($response, [
-        'validFactKeys' => ['role-level-fact'],
-        'roleIdByProjectId' => [2 => 1],
-        'projectIdByFactKey' => [], // role-level: no project attribution at all
-    ]))->toThrow(InvalidResumeVariantResponseException::class, 'is not attributed to project_id [2]');
+        'validFactKeys' => ['profile-level-fact'],
+        'eligibleFactKeysForRole' => [1 => []], // CareerProfile-direct facts never enter any role's set
+    ]))->toThrow(InvalidResumeVariantResponseException::class, 'is not eligible Experience evidence for role_id [1]');
 });
 
 // --- Target-term location/evidence integrity --------------------------
@@ -423,7 +409,6 @@ function selectionResponseWithBulletFacts(array $factKeysByRoleAndBulletIndex, a
 
         foreach ($bulletFactKeys as $index => $keys) {
             $bulletGroups[] = [
-                'project_id' => -1,
                 'order' => $index + 1,
                 'career_fact_keys' => $keys,
                 'job_analysis_finding_ids' => [],
@@ -583,4 +568,58 @@ it('still enforces qualified/capability relationship_phrase_key consistency alon
 
     expect(fn () => validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]))
         ->toThrow(InvalidResumeVariantResponseException::class, 'A qualified usage must supply a real relationship phrase');
+});
+
+// --- Duplicate career_fact_key within one bullet group ------------------
+//
+// Closes the exact gap a real TRM Labs async Resume run exposed: a
+// bullet group whose own career_fact_keys array cited the same
+// CareerFact twice went undetected by every pre-existing check (which
+// only ever compare across bullet groups, never within one array's own
+// values) and reached GenerateResumeVariant::generateFull()'s
+// persistence transaction, where it failed with a raw
+// UniqueConstraintViolationException on
+// resume_variant_bullet_citations' (bullet_id, career_fact_id) unique
+// constraint — after both Selection and Wording had already run. See
+// assertNoDuplicateCareerFactKeysWithinBulletGroup()'s own docblock and
+// docs/resume-variant-generation.md "Async Resume".
+
+it('rejects a bullet group whose career_fact_keys array cites the same CareerFact twice', function () {
+    $response = experienceGroup(roleId: 1, factKeys: ['fact-a', 'fact-a']);
+
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => ['fact-a']]))
+        ->toThrow(
+            InvalidResumeVariantResponseException::class,
+            'career_fact_key [fact-a] is selected more than once within bullet group [0] for role_id [1]'
+        );
+});
+
+it('rejects the exact real regression shape — the same real CareerFact key duplicated within one bullet group', function () {
+    $realKey = 'liquid-gravity-cms-crm-marketing-automation-integrations';
+    $response = experienceGroup(roleId: 1, factKeys: [$realKey, $realKey]);
+
+    expect(fn () => validateSelectionResponse($response, ['validFactKeys' => [$realKey]]))
+        ->toThrow(InvalidResumeVariantResponseException::class, "career_fact_key [{$realKey}] is selected more than once");
+});
+
+it('accepts a bullet group citing two genuinely different CareerFacts', function () {
+    $response = experienceGroup(roleId: 1, factKeys: ['fact-a', 'fact-b']);
+
+    $validated = validateSelectionResponse($response, ['validFactKeys' => ['fact-a', 'fact-b']]);
+
+    expect($validated['experience'][0]['bullet_groups'][0]['career_fact_keys'])->toBe(['fact-a', 'fact-b']);
+});
+
+it('does not broaden the new invariant across bullet groups — the same CareerFact cited by two different bullet groups (with otherwise distinct evidence) still passes, per pre-existing evidence-reuse semantics', function () {
+    $response = selectionResponseWithBulletFacts([
+        1 => [
+            ['fact-shared', 'fact-a'],
+            ['fact-shared', 'fact-b'],
+        ],
+    ]);
+
+    $validated = validateSelectionResponse($response, ['validFactKeys' => allFactKeysIn($response)]);
+
+    expect($validated['experience'][0]['bullet_groups'][0]['career_fact_keys'])->toBe(['fact-shared', 'fact-a'])
+        ->and($validated['experience'][0]['bullet_groups'][1]['career_fact_keys'])->toBe(['fact-shared', 'fact-b']);
 });

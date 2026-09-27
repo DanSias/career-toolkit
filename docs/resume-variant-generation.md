@@ -181,24 +181,34 @@ granular type would carry no behavioral difference in this milestone.
 
 ## Prompt and version semantics
 
-`App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV2` (current)
+`App\Support\ResumeVariant\Prompts\ResumeSelectionPromptV3` (current)
 and `ResumeWordingPromptV2` (current) each own their own system
 prompt, per-run user prompt, and JSON Schema — versioned
 **independently** of each other and of `JobAnalysis`/`JobMatch`'s own
 prompt/schema versions. `ResumeVariant` persists three version
 identifiers:
 
-- **`schema_version`** — currently taken from `ResumeSelectionPromptV2::schemaVersion()`
-  (`"1.3"`); the two stages' contracts are versioned together as one
+- **`schema_version`** — currently taken from `ResumeSelectionPromptV3::schemaVersion()`
+  (`"2.0"`); the two stages' contracts are versioned together as one
   `ResumeVariant` contract version, since Wording's schema is
   structurally simple enough that it has not yet needed independent
   versioning. Revisit this if Wording's contract ever needs to change
   without Selection's.
 - **`selection_prompt_version`** / **`wording_prompt_version`** — the
-  specific prompt implementation each stage used (`resume-selection-v2.1`
+  specific prompt implementation each stage used (`resume-selection-v3`
   / `resume-wording-v2`, as of the most recent bump of each). Bump
   the relevant one for a wording-only revision targeting the same
   schema.
+
+`ResumeSelectionPromptV3` is a genuinely independent revision after
+V2, following the normal convention: a new, immutable class,
+`ResumeSelectionPromptV2` untouched in source control. It removes
+`project_id` from the Experience bullet-group output contract entirely
+— a real schema shape change, not a prompt-text-only revision, so
+`schemaVersion()` bumps from `"1.3"` to `"2.0"` (mirroring how
+`JobAnalysisPromptV4` bumped its own `schema_version` from `"1.0"` to
+`"2.0"` for its own real structural change). See "Design boundary:
+selection vs. provenance" above for the full motivation and design.
 
 `ResumeWordingPromptV1` (`resume-wording-v1.3`) was the first
 production Wording prompt and has already reached real, persisted
@@ -259,18 +269,24 @@ covers only the structural conventions.
 
 **`ResumeSelectionResponseValidator`** is the trust boundary for
 Stage 1: referential integrity (every id/key actually came from the
-supplied input), no-duplicate-selection, role/project consistency
-(a bullet group's `project_id` really belongs to its `role_id`;
-`title_choice` really is one this exact selected role legally offers,
-per its own `role_id => {choice_key: title_string}` map — never a
-choice merely legal for some other role, and never a fallback to
-`full`), exact-duplicate-bullet-group rejection, a provider-neutral
-content-volume budget (total Experience `bullet_groups` ≤ 13, selected
-`skills` ≤ 18 — see `docs/resume-variant-contract.md` "Field notes —
-Resume Selection"), and the full target-term-usage rule set (posture
-authorization, phrase/posture consistency, location/sentinel
-consistency, at-most-one-qualified-per-location, and location/evidence
-locality — see "Target-term location integrity" below).
+supplied input), no-duplicate-selection, role membership for every
+cited CareerFact (it really belongs — directly or via one of its own
+Projects — to its bullet group's declared `role_id`; `title_choice`
+really is one this exact selected role legally offers, per its own
+`role_id => {choice_key: title_string}` map — never a choice merely
+legal for some other role, and never a fallback to `full`), no
+duplicate CareerFact key within one bullet group's own
+`career_fact_keys`, exact-duplicate-bullet-group rejection, a
+provider-neutral content-volume budget (total Experience
+`bullet_groups` ≤ 13, selected `skills` ≤ 18 — see
+`docs/resume-variant-contract.md` "Field notes — Resume Selection"),
+and the full target-term-usage rule set (posture authorization,
+phrase/posture consistency, location/sentinel consistency,
+at-most-one-qualified-per-location, and location/evidence locality —
+see "Target-term location integrity" below). As of
+ResumeSelectionPromptV3, an Experience bullet group's *project*
+attribution is no longer a model assertion this validator checks at
+all — see "Design boundary: selection vs. provenance" below.
 
 **`ResumeWordingResponseValidator`** is the trust boundary for
 Stage 2: completeness against exactly what Selection approved (no
@@ -287,6 +303,124 @@ stage's response is rejected — nothing is filtered, nothing is
 dropped, and no `ResumeVariant` row (or any part of its tree) is ever
 created from a partially-valid response, the same all-or-nothing
 posture `docs/job-match-generation.md` describes.
+
+## Design boundary: selection vs. provenance
+
+**The LLM selects evidence. Canonical application data determines
+evidence provenance.** This boundary was made explicit by
+ResumeSelectionPromptV3, after a real TRM Labs async Resume run failed
+Selection validation with `career_fact_key [pearson-...] is not
+attributed to project_id [8] declared for this bullet group` — a
+role-level CareerFact the model correctly selected, then incorrectly
+declared as belonging to a specific sibling project anyway.
+
+Investigation established two things. First, the model already had
+complete, correct, unambiguous input: `ResumeCandidatePayloadBuilder`
+grounds every fact's real `attribution.project_id` (including `null`
+for a role-level fact) directly against its loaded `attributable`
+relation, never inferred. Second, and more importantly, `project_id`
+was never information the model needed to invent in the first place —
+`ResumeSelectionResponseValidator` already enforced (see
+`assertExperienceFactProjectConsistency()`, now removed) that every
+fact cited in a non-`-1` bullet group must share that bullet's exact
+one project, meaning the bullet's real project was always **fully
+determined** by which facts got selected into it. Asking the model to
+also independently assert that already-determined value created a
+pure assert-vs-derive mismatch surface, with the model as the single
+point of failure and no compensating benefit.
+
+**What changed (ResumeSelectionPromptV3, schema_version `2.0`):**
+- An Experience bullet group's schema no longer has a `project_id`
+  field at all. The model selects a `role_id`, a `title_choice`, and
+  `career_fact_keys` per bullet — never a project.
+- `GenerateResumeVariant::deriveBulletGroupProjectId()` computes each
+  bullet's real project deterministically, immediately after Selection
+  validates, from that bullet's own approved `career_fact_keys` and
+  each fact's real canonical Project attribution:
+  - every cited fact shares one non-null project -> that project;
+  - any cited fact is role-level, or the cited facts span more than
+    one project -> no specific project (the same internal `null`
+    representation the old `-1` sentinel resolved to).
+  - Never guessed from names, themes, role membership, ordering, or
+    similarity — only real CareerFact-to-Project attribution.
+- `ResumeSelectionResponseValidator::assertBulletGroupCareerFactsAreEligibleForRole()`
+  replaces the old, `project_id`-mediated role/project check. It
+  verifies every cited CareerFact is *eligible Experience evidence* for
+  the bullet's declared `role_id` — see "Experience CareerFact
+  eligibility" below for exactly what that means — using only real
+  canonical attribution, for **every** bullet group. This is a strict
+  improvement, not merely a lateral move: the old check only ever
+  covered non-`-1` bullet groups; a `-1` ("no specific project") bullet
+  group could previously cite a CareerFact from any role at all with
+  nothing to catch it.
+- `Selected Projects` (independent projects) are **unaffected** — that
+  section's `project_id` remains a genuine, model-declared choice,
+  since it names the entire subject of the entry rather than incidental
+  evidence scope, and continues to be validated by
+  `assertSelectedProjects()` exactly as before.
+
+**What did not change:** Resume Wording, its prompt, its schema, its
+validator, provider/model configuration, token budgets/timeouts,
+`ResumeVariant`'s persisted schema, the PDF renderer, and the async
+`GenerationAttempt` architecture (see "Async Resume" below) are all
+untouched by this revision.
+
+### Experience CareerFact eligibility
+
+A second real TRM Labs run — after the fix above — failed with two
+CareerProfile-attributed facts (`profile-ai-assisted-development-pattern`,
+`profile-github-personal-projects`) rejected as "not attributed to
+role_id [1]". Investigation found `CareerFact.attributable` actually
+supports **four** canonical scopes (see `docs/domain-model.md` "Entity
+overview"/"Attribution integrity"): `CareerProfile`, `Employer`, `Role`,
+`Project` — not just the two (`Role`, `Project`) the original fix
+accounted for. The initial `roleIdByFactKey` map only recognized
+Role-direct and Project-direct facts, collapsing both `Employer`-direct
+and `CareerProfile`-direct facts into "belongs to no role," which was
+too coarse in one direction (a real `Employer`-direct narrative fact,
+e.g. "grew from SEO analyst into the analytics platform lead," is
+genuinely valid evidence for *any* Role at that Employer) and correct
+in the other (the two real `CareerProfile`-direct facts — one a
+genuine career-wide working pattern, the other explicitly about
+personal/open-source projects — are not both safely reusable as
+employer-attributed evidence, and nothing in canonical data
+distinguishes which is which).
+
+**The Experience-bullet eligibility rule**, computed by
+`GenerateResumeVariant::eligibleFactKeysForRole()` — a CareerFact is
+eligible evidence for Role R's Experience bullets iff it is:
+
+1. attributed directly to Role R; or
+2. attributed directly to a Project whose owning role is R; or
+3. attributed directly to the Employer that owns Role R.
+
+An Employer-direct fact is therefore eligible for **every** Role at
+that Employer, not just one — the map's shape is `role_id => {fact_key:
+true, ...}`, not one role per fact.
+
+**CareerProfile-direct facts are intentionally excluded from every
+Role's eligibility set.** This is a deliberate, conservative default,
+not an oversight: the current canonical model has no signal
+distinguishing a universally-reusable, career-wide fact (safe as
+supporting evidence under any Role) from a CareerProfile-direct fact
+that describes personal/independent work (misleading if presented as
+evidence of paid employment at a specific Employer). Allowing all
+CareerProfile-direct facts under every Role would let the second class
+through; allowing none is the narrowest rule the current data supports
+without guessing. This has **no effect** on CareerProfile-direct
+facts' eligibility for `summary_evidence` or Skills — both remain
+governed entirely by `ResumeEligibility`, unrelated to Experience-role
+eligibility, and a CareerProfile-direct fact remains exactly as
+selectable there as before.
+
+**A future explicit reusability/scope signal** — e.g. a flag or enum
+distinguishing "career-wide practice" from "personal/independent work"
+on a CareerProfile-attributed CareerFact — would be required before any
+CareerProfile-direct fact could be selectively allowed inside an
+Employer/Role Experience bullet. No such signal exists today, and none
+was added by this fix; extending eligibility further without it would
+mean guessing from fact text/theme, which this design explicitly
+avoids.
 
 ## Skill provenance
 
@@ -840,11 +974,99 @@ target JobPosting's company, via `ResumeVariant -> JobMatch ->
 JobAnalysis -> JobPosting`. No permanent PDF storage: every request
 regenerates and streams the PDF fresh.
 
-## Durable generation attempts
+## Async Resume
 
-Resume generation (Selection + Wording) is still fully synchronous
-today — see docs/job-analysis-generation.md "Durable generation
-attempts (foundation)" for the shared, cross-stage `GenerationAttempt`
-foundation (queue safety, schema, lifecycle, no-raw-content policy)
-this stage will eventually use once it's migrated to a background job,
-last in the planned sequence (after Job Analysis and Job Match).
+Resume generation is queued now, mirroring Job Analysis and Job Match —
+see docs/job-analysis-generation.md "Durable generation attempts
+(foundation)" for the shared, cross-stage `GenerationAttempt`
+foundation and "Async Job Analysis" / docs/job-match-generation.md
+"Async Job Match" for the pattern this section reuses.
+
+`ResumeVariantController::store()` no longer calls `GenerateResumeVariant`
+at all; it only creates or looks up a `GenerationAttempt` (subject: the
+`JobMatch`, generation_type: `resume_variant`) and dispatches
+`App\Jobs\GenerateResumeVariantJob`, then redirects back to the match
+page immediately. One `GenerationAttempt` represents the **entire**
+Selection -> validate -> Wording -> validate -> persist pipeline —
+never two attempts for the two stages — matching `GenerationType::ResumeVariant`'s
+own pre-existing docblock.
+
+**Profile resolution differs from Job Match.** `GenerateJobMatchJob`
+resolves `CurrentCareerProfile::resolve()` itself because
+`GenerateJobMatch::generate()` needs an externally-supplied profile.
+`GenerateResumeVariantJob` does **not** do this: `GenerateResumeVariant::generateFull($jobMatch)`
+already resolves its own profile internally, from `$jobMatch->careerProfile`
+— the profile frozen to that specific match, not whichever profile is
+currently "the" one. The queued job simply resolves the `JobMatch` from
+the attempt's subject and calls `generateFull($jobMatch)` unchanged.
+
+```
+GenerateResumeVariantJob::handle()
+  -> status=running, started_at=now()
+  -> GenerateResumeVariant::generateFull($jobMatch)
+       success -> status=succeeded, finished_at, result_id, schema_version
+       ResumeGenerationProviderException -> status=failed, failure_category=provider_error, safe diagnostics
+       InvalidResumeVariantResponseException -> status=failed, failure_category=validation_error
+  -> anything else escapes uncaught -> failed() callback -> status=failed, failure_category=unexpected_error
+```
+
+**Metadata is deliberately conservative.** Resume has two
+independently-configurable provider stages (Selection, Wording), each
+already recorded on the `ResumeVariant` result itself
+(`selection_generated_by`/`wording_generated_by`,
+`selection_prompt_version`/`wording_prompt_version`) — the two stages
+can genuinely use different providers/models, since
+`resolveResumeSelectionProvider()`/`resolveResumeWordingProvider()`
+are configured independently. Collapsing them into `GenerationAttempt`'s
+singular `provider`/`model`/`prompt_version` columns would misrepresent
+a run where the two stages actually differed. On success, only
+`schema_version` is populated on the attempt (the one field genuinely
+shared and single-valued across both stages, read straight off the
+persisted `ResumeVariant`) — `provider`/`model`/`prompt_version` are
+left `null`. The `ResumeVariant` row itself remains the authoritative
+source for per-stage provenance. No migration was added or needed to
+reach this representation.
+
+**Stage-diagnostic limitation, accepted for this milestone.** Both
+Selection and Wording throw the *same* two exception classes
+(`ResumeGenerationProviderException`, `InvalidResumeVariantResponseException`)
+— nothing in the exception type itself says which stage failed.
+- For a **validation** failure, the stage is recoverable for free: both
+  validators' existing throw sites already prefix their message with
+  `'Resume Selection provider response failed validation: '` or
+  `'Resume Wording provider response failed validation: '`. The job
+  reads this existing prefix (no validator change) to log
+  `generation_stage: 'selection'|'wording'` alongside the exact
+  existing exception message — log-only, not a new database column.
+- For a **provider** failure, the stage is genuinely NOT recoverable
+  today: `ResumeGenerationProviderException`'s message comes straight
+  from the transport exception (`OllamaChatCompletionsException`/
+  `OpenAIResponsesApiException`), which never mentions "Selection" or
+  "Wording" — the `logPrefix` string each client passes
+  ("Resume Selection generation (Ollama)" / "Resume Wording generation
+  (Ollama)") is used only for that transport client's own internal log
+  lines, never propagated into the exception or `ProviderDiagnostics`.
+  The job logs `generation_stage: null` honestly in this case rather
+  than guessing. Fixing this would mean changing `GenerateResumeVariant`
+  or the provider clients to catch-and-annotate between stages —
+  explicitly out of scope for this architectural migration.
+- **Field/path-level validator diagnostics remain unavailable**, same
+  pre-existing limitation identified before this migration: both
+  validators build their message via `implode(' ', $validator->errors()->all())`,
+  which already discards `$validator->errors()->keys()` before the
+  queued job ever sees the exception. Not fixed here — if the first
+  real async TRM Resume run fails validation and this gap prevents
+  diagnosing it, that becomes the next targeted fix.
+
+**Duplicate prevention, polling, and frontend behavior** are identical
+in kind to Job Analysis's and Job Match's: an application-level
+`GenerationAttempt::active()` check before creating a new attempt, the
+same `GET /generation-attempts/{generationAttempt}` endpoint, and
+`resources/js/pages/jobs/matches/show.tsx`'s `GenerateResumeAction`
+polling via the same `useGenerationAttemptPolling` hook and
+`GenerationStatus` component the other two stages use — no second
+polling mechanism was introduced.
+`App\Support\GenerationAttempt\PresentGenerationAttempt::resultUrl()`
+resolves a succeeded Resume attempt's result URL by traversing
+`subject` (a `JobMatch`) -> `jobAnalysis` for `job_posting_id` (the one
+ancestor id not already present on the `JobMatch` row itself).

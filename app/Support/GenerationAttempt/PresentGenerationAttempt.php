@@ -6,6 +6,7 @@ use App\Enums\GenerationStatus;
 use App\Enums\GenerationType;
 use App\Models\GenerationAttempt;
 use App\Models\JobAnalysis;
+use App\Models\JobMatch;
 
 /**
  * The one safe, minimal JSON shape a browser is ever handed for a
@@ -44,16 +45,13 @@ final class PresentGenerationAttempt
             return null;
         }
 
-        // Resume generation isn't migrated to this flow yet (see
-        // docs/job-analysis-generation.md), so there is deliberately no
-        // route for its result type here until that happens.
         return match ($attempt->generation_type) {
             GenerationType::JobAnalysis => route('jobs.analyses.show', [
                 'jobPosting' => $attempt->subject_id,
                 'jobAnalysis' => $attempt->result_id,
             ]),
             GenerationType::JobMatch => $this->jobMatchResultUrl($attempt),
-            default => null,
+            GenerationType::ResumeVariant => $this->resumeVariantResultUrl($attempt),
         };
     }
 
@@ -76,6 +74,29 @@ final class PresentGenerationAttempt
             'jobPosting' => $analysis->job_posting_id,
             'jobAnalysis' => $analysis->id,
             'jobMatch' => $attempt->result_id,
+        ]);
+    }
+
+    /**
+     * Traverses subject (a JobMatch) -> jobAnalysis (one relation hop,
+     * since job_posting_id lives on JobAnalysis, not JobMatch itself) to
+     * build the nested Resume show route's four ancestor ids.
+     */
+    private function resumeVariantResultUrl(GenerationAttempt $attempt): ?string
+    {
+        $jobMatch = $attempt->subject;
+
+        if (! $jobMatch instanceof JobMatch) {
+            return null;
+        }
+
+        $analysis = $jobMatch->jobAnalysis;
+
+        return route('jobs.analyses.matches.resume.show', [
+            'jobPosting' => $analysis->job_posting_id,
+            'jobAnalysis' => $jobMatch->job_analysis_id,
+            'jobMatch' => $jobMatch->id,
+            'resumeVariant' => $attempt->result_id,
         ]);
     }
 }

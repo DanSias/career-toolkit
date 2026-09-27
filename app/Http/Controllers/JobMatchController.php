@@ -13,6 +13,7 @@ use App\Models\JobMatch;
 use App\Models\JobMatchFinding;
 use App\Models\JobPosting;
 use App\Models\ResumeVariant;
+use App\Support\GenerationAttempt\PresentGenerationAttempt;
 use App\Support\JobMatch\CareerFactAttribution;
 use App\Support\ResumeVariant\DiscoveryPreflight;
 use Illuminate\Database\Eloquent\Collection;
@@ -58,7 +59,7 @@ class JobMatchController extends Controller
         return redirect()->route('jobs.analyses.show', [$jobPosting, $jobAnalysis]);
     }
 
-    public function show(JobPosting $jobPosting, JobAnalysis $jobAnalysis, JobMatch $jobMatch): Response
+    public function show(JobPosting $jobPosting, JobAnalysis $jobAnalysis, JobMatch $jobMatch, PresentGenerationAttempt $presenter): Response
     {
         abort_unless($jobAnalysis->job_posting_id === $jobPosting->id, 404);
         abort_unless($jobMatch->job_analysis_id === $jobAnalysis->id, 404);
@@ -78,14 +79,14 @@ class JobMatchController extends Controller
             'analysis' => [
                 'id' => $jobAnalysis->id,
             ],
-            'match' => $this->transformMatch($jobMatch),
+            'match' => $this->transformMatch($jobMatch, $presenter),
         ]);
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function transformMatch(JobMatch $match): array
+    private function transformMatch(JobMatch $match, PresentGenerationAttempt $presenter): array
     {
         return [
             'id' => $match->id,
@@ -104,7 +105,32 @@ class JobMatchController extends Controller
             // requires acting on it. See docs/domain-model.md
             // "ResumeVariant".
             'discovery_preflight' => (new DiscoveryPreflight)->run($match),
+            'latest_resume_attempt' => $this->latestUnresolvedResumeAttempt($match, $presenter),
         ];
+    }
+
+    /**
+     * The most recent resume_variant GenerationAttempt for this match,
+     * but only when it's still queued/running or ended in failure —
+     * mirrors JobPostingController::latestUnresolvedAttempt() and
+     * JobAnalysisController::latestUnresolvedMatchAttempt() exactly. A
+     * succeeded attempt is omitted since its result already appears in
+     * `resume_variants` above.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function latestUnresolvedResumeAttempt(JobMatch $match, PresentGenerationAttempt $presenter): ?array
+    {
+        $attempt = $match->generationAttempts()
+            ->where('generation_type', GenerationType::ResumeVariant)
+            ->latest('id')
+            ->first();
+
+        if ($attempt === null || $attempt->status === GenerationStatus::Succeeded) {
+            return null;
+        }
+
+        return $presenter->present($attempt);
     }
 
     /**

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -107,6 +108,19 @@ class JobMatch extends Model
     public function resumeVariants(): HasMany
     {
         return $this->hasMany(ResumeVariant::class);
+    }
+
+    /**
+     * Every resume_variant GenerationAttempt ever made against this
+     * match — queued, running, succeeded, or failed. See
+     * App\Models\GenerationAttempt and docs/resume-variant-generation.md
+     * "Async Resume".
+     *
+     * @return MorphMany<GenerationAttempt, $this>
+     */
+    public function generationAttempts(): MorphMany
+    {
+        return $this->morphMany(GenerationAttempt::class, 'subject');
     }
 
     /**

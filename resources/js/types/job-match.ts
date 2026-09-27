@@ -1,3 +1,5 @@
+import type { GenerationAttempt } from '@/types/generation-attempt';
+
 export type JobMatchSummary = {
     id: number;
     generated_at: string | null;
@@ -76,6 +78,7 @@ export type JobMatchDetail = {
     categories: JobMatchCategoryGroup[];
     resume_variants: ResumeVariantSummary[];
     discovery_preflight: DiscoveryPreflightCandidate[];
+    latest_resume_attempt: GenerationAttempt | null;
 };
 
 export type JobMatchJobContext = {

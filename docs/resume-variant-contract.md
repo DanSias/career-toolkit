@@ -153,7 +153,6 @@ that skips the other.
       "title_choice": "full",
       "bullet_groups": [
         {
-          "project_id": -1,
           "order": 1,
           "career_fact_keys": ["rocketgate-source-control-gitlab"],
           "job_analysis_finding_ids": [482]
@@ -176,11 +175,16 @@ that skips the other.
 }
 ```
 
-`project_id`, and `target_term_usages[].role_id`/`bullet_group_index`,
-use a `-1` sentinel ("no project" / "location is summary, not
-bullet") rather than a nullable field — this codebase's established
-convention (mirrors `JobMatchPromptV1::nonEmptyEnum()`), since
-nullable+enum combinations are avoided throughout.
+`selected_projects[].project_id` and
+`target_term_usages[].role_id`/`bullet_group_index` use a `-1`
+sentinel ("location is summary, not bullet", for the latter two) rather
+than a nullable field — this codebase's established convention (mirrors
+`JobMatchPromptV1::nonEmptyEnum()`), since nullable+enum combinations
+are avoided throughout. An Experience `bullet_groups[]` entry has no
+`project_id` field at all as of this contract (`schema_version`
+`"2.0"`) — see "Field notes" below and
+`docs/resume-variant-generation.md` "Design boundary: selection vs.
+provenance".
 
 ## Field notes — Resume Selection
 
@@ -209,10 +213,29 @@ nullable+enum combinations are avoided throughout.
   closed after live evaluation showed that shape schema-loose enough
   to invite drift — see `docs/domain-model.md` "Titles, chronology, and
   attribution".
-- **`bullet_groups[].project_id`**, when not `-1`, must belong to the
-  same `role_id` as its parent entry — re-checked independently against
-  a `project_id => role_id` map built deterministically from live
-  `Role`/`Project` data.
+- **An Experience `bullet_groups[]` entry never declares its own
+  project** (`schema_version` `"2.0"`, as of `ResumeSelectionPromptV3`
+  — a prior contract version had a `project_id` field here). Every
+  `career_fact_key` cited in a bullet group must be *eligible Experience
+  evidence* for that entry's declared `role_id` — attributed directly to
+  that Role, directly to one of that Role's own Projects, or directly to
+  that Role's Employer — re-checked independently against real
+  canonical attribution
+  (`ResumeSelectionResponseValidator::assertBulletGroupCareerFactsAreEligibleForRole()`).
+  A CareerFact attributed directly to the `CareerProfile` is never
+  eligible Experience evidence for any Role. Which Project (if any) the
+  bullet's evidence actually belongs to is never a model assertion:
+  `GenerateResumeVariant` derives it deterministically, after
+  validation, from the bullet's own approved `career_fact_keys` and each
+  fact's real CareerFact-to-Project attribution — every cited fact
+  sharing one non-null project resolves to that project; anything else
+  (role-level, Employer-level, or facts spanning more than one project)
+  resolves to no specific project. See
+  `docs/resume-variant-generation.md` "Design boundary: selection vs.
+  provenance" and "Experience CareerFact eligibility".
+  `selected_projects[].project_id` is unaffected — that section still
+  declares its project explicitly, since it names the entire subject of
+  the entry.
 - **A bullet group must cite at least one `career_fact_key`.** An empty
   evidence set is a validation failure, not an allowed "structural"
   bullet.

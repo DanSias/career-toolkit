@@ -6,6 +6,7 @@ use App\Models\GenerationAttempt;
 use App\Models\JobAnalysis;
 use App\Models\JobMatch;
 use App\Models\JobPosting;
+use App\Models\ResumeVariant;
 
 /**
  * The one read-only polling surface the frontend uses to watch a
@@ -72,6 +73,27 @@ it('includes the correct existing JobMatch result URL once succeeded, derived fr
     $response->assertJson([
         'status' => 'succeeded',
         'result_url' => route('jobs.analyses.matches.show', [$jobPosting, $analysis, $match]),
+    ]);
+});
+
+it('includes the correct existing ResumeVariant result URL once succeeded, derived from the JobMatch subject', function () {
+    $jobPosting = JobPosting::factory()->create();
+    $analysis = JobAnalysis::factory()->create(['job_posting_id' => $jobPosting->id]);
+    $match = JobMatch::factory()->create(['job_analysis_id' => $analysis->id]);
+    $variant = ResumeVariant::factory()->create(['job_match_id' => $match->id, 'career_profile_id' => $match->career_profile_id]);
+    $attempt = GenerationAttempt::factory()->create([
+        'subject_type' => (new JobMatch)->getMorphClass(),
+        'subject_id' => $match->id,
+        'generation_type' => GenerationType::ResumeVariant,
+        'status' => GenerationStatus::Succeeded,
+        'result_id' => $variant->id,
+    ]);
+
+    $response = $this->getJson(route('generation-attempts.show', $attempt))->assertOk();
+
+    $response->assertJson([
+        'status' => 'succeeded',
+        'result_url' => route('jobs.analyses.matches.resume.show', [$jobPosting, $analysis, $match, $variant]),
     ]);
 });
 

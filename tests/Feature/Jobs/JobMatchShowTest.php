@@ -1,11 +1,15 @@
 <?php
 
+use App\Enums\GenerationStatus;
+use App\Enums\GenerationType;
 use App\Enums\JobMatchCoverage;
 use App\Enums\MatchRelationship;
 use App\Enums\Visibility;
+use App\Models\GenerationAttempt;
 use App\Models\JobAnalysis;
 use App\Models\JobMatch;
 use App\Models\JobPosting;
+use App\Models\ResumeVariant;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Support\JobMatchFixtures;
 
@@ -82,6 +86,87 @@ it('groups findings by category and includes coverage plus every support referen
             ->where('match.categories.0.findings.1.coverage', 'no_evidence')
             ->has('match.categories.0.findings.1.career_fact_matches', 0)
         );
+});
+
+it('exposes no latest_resume_attempt when none has ever been made', function () {
+    $match = persistedMatch();
+    $analysis = JobAnalysis::find($match->job_analysis_id);
+    $job = $analysis->jobPosting;
+
+    $this->get(route('jobs.analyses.matches.show', [$job, $analysis, $match]))
+        ->assertInertia(fn (Assert $page) => $page->where('match.latest_resume_attempt', null));
+});
+
+it('exposes a queued attempt as the latest_resume_attempt, so a reload shows generation in progress', function () {
+    $match = persistedMatch();
+    $analysis = JobAnalysis::find($match->job_analysis_id);
+    $job = $analysis->jobPosting;
+    $attempt = GenerationAttempt::factory()->create([
+        'subject_type' => (new JobMatch)->getMorphClass(),
+        'subject_id' => $match->id,
+        'generation_type' => GenerationType::ResumeVariant,
+        'status' => GenerationStatus::Queued,
+    ]);
+
+    $this->get(route('jobs.analyses.matches.show', [$job, $analysis, $match]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('match.latest_resume_attempt.id', $attempt->id)
+            ->where('match.latest_resume_attempt.status', 'queued')
+        );
+});
+
+it('exposes the latest failed resume attempt so a reload still explains why it failed', function () {
+    $match = persistedMatch();
+    $analysis = JobAnalysis::find($match->job_analysis_id);
+    $job = $analysis->jobPosting;
+    GenerationAttempt::factory()->create([
+        'subject_type' => (new JobMatch)->getMorphClass(),
+        'subject_id' => $match->id,
+        'generation_type' => GenerationType::ResumeVariant,
+        'status' => GenerationStatus::Failed,
+        'failure_message' => 'Resume generation failed unexpectedly.',
+    ]);
+
+    $this->get(route('jobs.analyses.matches.show', [$job, $analysis, $match]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('match.latest_resume_attempt.status', 'failed')
+            ->where('match.latest_resume_attempt.failure_message', 'Resume generation failed unexpectedly.')
+        );
+});
+
+it('does not expose a succeeded resume attempt as latest_resume_attempt, since its result already appears in resume_variants', function () {
+    $match = persistedMatch();
+    $analysis = JobAnalysis::find($match->job_analysis_id);
+    $job = $analysis->jobPosting;
+    $variant = ResumeVariant::factory()->create(['job_match_id' => $match->id, 'career_profile_id' => $match->career_profile_id]);
+    GenerationAttempt::factory()->create([
+        'subject_type' => (new JobMatch)->getMorphClass(),
+        'subject_id' => $match->id,
+        'generation_type' => GenerationType::ResumeVariant,
+        'status' => GenerationStatus::Succeeded,
+        'result_id' => $variant->id,
+    ]);
+
+    $this->get(route('jobs.analyses.matches.show', [$job, $analysis, $match]))
+        ->assertInertia(fn (Assert $page) => $page->where('match.latest_resume_attempt', null));
+});
+
+it('does not select an unrelated attempt type as this match own latest_resume_attempt', function () {
+    $match = persistedMatch();
+    $analysis = JobAnalysis::find($match->job_analysis_id);
+    $job = $analysis->jobPosting;
+    // A job_match attempt whose subject_id happens to equal this
+    // JobMatch's own id — proves the query filters on generation_type,
+    // not just subject_id.
+    GenerationAttempt::factory()->create([
+        'subject_type' => (new JobAnalysis)->getMorphClass(),
+        'subject_id' => $analysis->id,
+        'generation_type' => GenerationType::JobMatch,
+        'status' => GenerationStatus::Running,
+    ]);
+
+    $this->get(route('jobs.analyses.matches.show', [$job, $analysis, $match]))
+        ->assertInertia(fn (Assert $page) => $page->where('match.latest_resume_attempt', null));
 });
 
 it('404s when the JobMatch does not belong to the given JobAnalysis', function () {

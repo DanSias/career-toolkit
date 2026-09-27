@@ -14,15 +14,32 @@ use Illuminate\Validation\Validator;
  * The single authoritative, deterministic check on the Resume Selection
  * provider's decoded response — structure, types, every enum value,
  * referential integrity, title_choice legitimacy per selected role,
- * role/project binding at both the bullet-group level
- * (`assertRoleAndProjectValidity()`) and the individual-CareerFact
- * level (`assertExperienceFactProjectConsistency()`), target-term
- * posture authorization, target-term location/evidence locality
- * (`assertUsageEvidenceIsLocal()`), structural anti-redundancy, and a
+ * Experience-role eligibility for every cited CareerFact
+ * (`assertBulletGroupCareerFactsAreEligibleForRole()` — Role-direct,
+ * that Role's Project-direct, or that Role's Employer-direct, checked
+ * against real canonical attribution, never a model-declared value),
+ * target-term posture authorization, target-term location/
+ * evidence locality (`assertUsageEvidenceIsLocal()`), structural
+ * anti-redundancy across and within bullet groups
+ * (`assertNoDuplicateBulletGroups()`,
+ * `assertNoDuplicateCareerFactKeysWithinBulletGroup()`), and a
  * provider-neutral content-volume budget (MAX_EXPERIENCE_BULLET_GROUPS/
  * MAX_SELECTED_SKILLS/MAX_SELECTED_PROJECTS — see their own docblocks).
  * Runs before any Eloquent model exists. Mirrors JobMatchResponseValidator.
- * See docs/resume-variant-generation.md.
+ *
+ * Design boundary (as of ResumeSelectionPromptV3): the model selects
+ * evidence — which CareerFacts, grouped how, under which real Role.
+ * Which Project (if any) an Experience bullet group's evidence actually
+ * belongs to is never a model assertion checked here; it is derived
+ * deterministically downstream by `GenerateResumeVariant` from the
+ * bullet's own approved `career_fact_keys`, since canonical
+ * CareerFact-to-Project attribution already determines it with
+ * certainty. `selected_projects[].project_id` is the one remaining
+ * model-declared project identifier — it names the entire subject of
+ * that entry, not incidental evidence scope, so it stays a real
+ * selection decision, still fully validated by `assertSelectedProjects()`.
+ * See docs/resume-variant-generation.md "Design boundary: selection vs.
+ * provenance".
  */
 final class ResumeSelectionResponseValidator
 {
@@ -67,13 +84,13 @@ final class ResumeSelectionResponseValidator
      * @param  array<int, int>  $validRoleIds
      * @param  array<int, string>  $validFactKeys
      * @param  array<int, int>  $validSkillIds
-     * @param  array<int, int>  $roleIdByProjectId  project_id => the role_id it actually belongs to.
+     * @param  array<int, array<string, true>>  $eligibleFactKeysForRole  role_id => set of CareerFact keys eligible as Experience-bullet evidence for that role (Role-direct, that Role's Project-direct, or that Role's Employer-direct). A CareerProfile-attributed fact never appears in any role's set here. See assertBulletGroupCareerFactsAreEligibleForRole() and GenerateResumeVariant::eligibleFactKeysForRole().
      * @param  array<int, int>  $validFindingIds
      * @param  array<int, array<string, string>>  $titleChoicesByRole  role_id => ['full' => canonical title, 'segment_N' => trimmed "/"-segment, ...]
      * @param  array<string, bool>  $directEvidenceExistsByTerm
      * @param  array<int, int>  $resumeEligibleRoleIds  Every role_id with at least one resume-eligible CareerFact attributed to it directly or via a Project — must each appear in `experience` with at least one bullet group. See assertRoleCompleteness().
      * @param  array<int, int>  $validIndependentProjectIds  Independent (role_id-null) Projects only — never a professional project's id. See assertSelectedProjects().
-     * @param  array<string, int>  $projectIdByFactKey  career_fact_key => the project_id it is actually attributed to (only present for project-attributed facts).
+     * @param  array<string, int>  $projectIdByFactKey  career_fact_key => the project_id it is actually attributed to (only present for project-attributed facts). Used only by assertSelectedProjects() now — Experience bullet groups no longer carry a model-declared project_id to check against this. See docs/resume-variant-generation.md "Design boundary: selection vs. provenance".
      * @return array<string, mixed>
      *
      * @throws InvalidResumeVariantResponseException
@@ -83,7 +100,7 @@ final class ResumeSelectionResponseValidator
         array $validRoleIds,
         array $validFactKeys,
         array $validSkillIds,
-        array $roleIdByProjectId,
+        array $eligibleFactKeysForRole,
         array $validFindingIds,
         array $titleChoicesByRole,
         array $directEvidenceExistsByTerm,
@@ -95,7 +112,7 @@ final class ResumeSelectionResponseValidator
 
         $validator->after(function (Validator $validator) use (
             $structuredContent, $validRoleIds, $validFactKeys,
-            $validSkillIds, $roleIdByProjectId, $validFindingIds,
+            $validSkillIds, $eligibleFactKeysForRole, $validFindingIds,
             $titleChoicesByRole, $directEvidenceExistsByTerm, $resumeEligibleRoleIds,
             $validIndependentProjectIds, $projectIdByFactKey,
         ) {
@@ -106,10 +123,11 @@ final class ResumeSelectionResponseValidator
 
             $this->assertReferentialIntegrity($validator, $structuredContent, $validFactKeys, $validSkillIds, $validFindingIds);
             $this->assertNoDuplicateSelections($validator, $structuredContent, $experience);
-            $this->assertRoleAndProjectValidity($validator, $experience, $validRoleIds, $roleIdByProjectId, $titleChoicesByRole);
+            $this->assertRoleAndTitleValidity($validator, $experience, $validRoleIds, $titleChoicesByRole);
             $this->assertRoleCompleteness($validator, $experience, $resumeEligibleRoleIds);
             $this->assertNoDuplicateBulletGroups($validator, $experience);
-            $this->assertExperienceFactProjectConsistency($validator, $experience, $projectIdByFactKey);
+            $this->assertNoDuplicateCareerFactKeysWithinBulletGroup($validator, $experience);
+            $this->assertBulletGroupCareerFactsAreEligibleForRole($validator, $experience, $eligibleFactKeysForRole);
             $this->assertExperienceBulletBudget($validator, $experience);
             $this->assertSkillsBudget($validator, $structuredContent);
             $this->assertSelectedProjects($validator, $selectedProjects, $validFactKeys, $validIndependentProjectIds, $projectIdByFactKey);
@@ -147,7 +165,6 @@ final class ResumeSelectionResponseValidator
             'experience.*.role_id' => ['required', 'integer'],
             'experience.*.title_choice' => ['required', 'string'],
             'experience.*.bullet_groups' => ['present', 'array'],
-            'experience.*.bullet_groups.*.project_id' => ['required', 'integer'],
             'experience.*.bullet_groups.*.order' => ['required', 'integer'],
             'experience.*.bullet_groups.*.career_fact_keys' => ['present', 'array'],
             'experience.*.bullet_groups.*.career_fact_keys.*' => ['string'],
@@ -315,16 +332,24 @@ final class ResumeSelectionResponseValidator
     }
 
     /**
+     * Role existence and title_choice legitimacy only — Experience-role
+     * eligibility of the bullet groups' own CareerFacts is a separate
+     * concern, see assertBulletGroupCareerFactsAreEligibleForRole().
+     * Prior to
+     * ResumeSelectionPromptV3 this method also checked each bullet
+     * group's model-declared `project_id` against `role_id` ownership;
+     * that check is obsolete now that Experience bullet groups no
+     * longer carry a `project_id` at all (see this class's own
+     * docblock) and was removed rather than left dead.
+     *
      * @param  array<int, mixed>  $experience
      * @param  array<int, int>  $validRoleIds
-     * @param  array<int, int>  $roleIdByProjectId
      * @param  array<int, array<string, string>>  $titleChoicesByRole
      */
-    private function assertRoleAndProjectValidity(
+    private function assertRoleAndTitleValidity(
         Validator $validator,
         array $experience,
         array $validRoleIds,
-        array $roleIdByProjectId,
         array $titleChoicesByRole,
     ): void {
         foreach ($experience as $roleIndex => $role) {
@@ -353,80 +378,54 @@ final class ResumeSelectionResponseValidator
                     "title_choice [{$titleChoice}] is not a legal title representation for role_id [{$roleId}]."
                 );
             }
-
-            $bulletGroups = is_array($role['bullet_groups'] ?? null) ? $role['bullet_groups'] : [];
-
-            foreach ($bulletGroups as $groupIndex => $group) {
-                if (! is_array($group)) {
-                    continue;
-                }
-
-                $projectId = $group['project_id'] ?? null;
-
-                // -1 is the "no project" sentinel — always valid.
-                if (is_int($projectId) && $projectId !== -1 && ($roleIdByProjectId[$projectId] ?? null) !== $roleId) {
-                    $validator->errors()->add(
-                        "experience.{$roleIndex}.bullet_groups.{$groupIndex}.project_id",
-                        "project_id [{$projectId}] does not belong to role_id [{$roleId}]."
-                    );
-                }
-            }
         }
     }
 
     /**
-     * A bullet group's non-`-1` `project_id` states that bullet's
-     * entire factual scope is that one project — confirmed against the
-     * two real, already-persisted, human-accepted Formic selections
-     * (`resume-selection-v1.5`, `openai:gpt-5.6-terra`): every
-     * project-specific bullet group in that historical data cites only
-     * facts truly attributed to that exact project, and every
-     * role-level (unattributed) fact is instead grouped under its own
-     * `-1` bullet, never mixed into a project-specific one. Mirrors
-     * `assertSelectedProjects()`'s identical rule for Selected
-     * Projects, extended here to Experience bullet groups for the
-     * first time. A role-level (`project_id === null` for the fact)
-     * CareerFact cited under a non-`-1` bullet group is therefore
-     * rejected exactly the same as a sibling-project fact — the
-     * bullet's declared project is a hard claim about every cited
-     * fact's scope, not merely about which role it belongs to.
+     * Every CareerFact cited anywhere in a bullet group must be
+     * eligible Experience evidence for that bullet's declared `role_id`
+     * — Role-direct, direct to one of that Role's own Projects, or
+     * direct to the Employer that owns that Role. Checked against real
+     * canonical attribution (`$eligibleFactKeysForRole`) only, never a
+     * model-declared value: as of ResumeSelectionPromptV3 the model no
+     * longer declares a bullet group's project at all, so this is the
+     * sole deterministic guarantee that a bullet's evidence actually
+     * belongs there. Replaces the narrower, project_id-mediated check
+     * `assertRoleAndProjectValidity()` used to perform for non-`-1`
+     * bullet groups only (see this class's own docblock) — this version
+     * covers every bullet group, including what used to be an
+     * unconstrained `-1` ("no specific project") one.
      *
-     * `-1` ("no specific project") bullet groups are deliberately NOT
-     * constrained this way — nothing in the schema, prompt, or
-     * historical data requires it, and a role-level claim can
-     * legitimately rest on evidence from more than one project, or
-     * none at all.
-     *
-     * This is the deterministic backstop for the exact failure mode a
-     * live qwen3.8:27b evaluation produced: a bullet group declared
-     * for one project citing a CareerFact truly attributed to a
-     * sibling project (RocketGate Transaction Toolkit tagged as
-     * Verbatim; Pearson Email Marketing Tracker tagged as Marketing
-     * Forecast; Pearson Recruitment Agent Tracking tagged as
-     * Salesforce Migration) — distinct from, and in addition to, the
-     * cross-*role* case `assertRoleAndProjectValidity()` above already
-     * catches.
+     * Deliberately excludes CareerProfile-attributed ("profile/global")
+     * CareerFacts from every Role's eligibility set — see
+     * `GenerateResumeVariant::eligibleFactKeysForRole()`'s own docblock
+     * and docs/resume-variant-generation.md "Design boundary: selection
+     * vs. provenance" for why: a real TRM Labs run showed the model
+     * cannot be trusted to distinguish a genuinely career-wide fact from
+     * one describing personal/independent work that would mislead if
+     * presented as evidence for paid employment, and the current
+     * canonical model carries no signal to make that distinction
+     * deterministically either. An independent-project CareerFact (one
+     * with no owning role at all) is rejected here for the same
+     * structural reason — `$eligibleFactKeysForRole` has no entry for
+     * it under any role.
      *
      * @param  array<int, mixed>  $experience
-     * @param  array<string, int>  $projectIdByFactKey
+     * @param  array<int, array<string, true>>  $eligibleFactKeysForRole
      */
-    private function assertExperienceFactProjectConsistency(Validator $validator, array $experience, array $projectIdByFactKey): void
+    private function assertBulletGroupCareerFactsAreEligibleForRole(Validator $validator, array $experience, array $eligibleFactKeysForRole): void
     {
         foreach ($experience as $roleIndex => $role) {
             if (! is_array($role)) {
                 continue;
             }
 
+            $roleId = $role['role_id'] ?? null;
+            $eligibleKeys = is_int($roleId) ? ($eligibleFactKeysForRole[$roleId] ?? []) : [];
             $bulletGroups = is_array($role['bullet_groups'] ?? null) ? $role['bullet_groups'] : [];
 
             foreach ($bulletGroups as $groupIndex => $group) {
                 if (! is_array($group)) {
-                    continue;
-                }
-
-                $projectId = $group['project_id'] ?? null;
-
-                if (! is_int($projectId) || $projectId === -1) {
                     continue;
                 }
 
@@ -437,12 +436,11 @@ final class ResumeSelectionResponseValidator
                         continue;
                     }
 
-                    $factProjectId = $projectIdByFactKey[$key] ?? null;
-
-                    if ($factProjectId !== $projectId) {
+                    if (! array_key_exists($key, $eligibleKeys)) {
                         $validator->errors()->add(
                             "experience.{$roleIndex}.bullet_groups.{$groupIndex}.career_fact_keys.{$keyIndex}",
-                            "career_fact_key [{$key}] is not attributed to project_id [{$projectId}] declared for this bullet group."
+                            "career_fact_key [{$key}] is not eligible Experience evidence for role_id [{$roleId}] — ".
+                            'it is not attributed to this role, one of its Projects, or its Employer.'
                         );
                     }
                 }
@@ -596,6 +594,66 @@ final class ResumeSelectionResponseValidator
                 }
 
                 $seenSets[] = $signature;
+            }
+        }
+    }
+
+    /**
+     * A single bullet group's own `career_fact_keys` array must not
+     * cite the same CareerFact twice — distinct from
+     * `assertNoDuplicateBulletGroups()` above, which catches two
+     * *different* bullet groups sharing the exact same evidence set.
+     * Citing one fact twice within one bullet group is never a
+     * legitimate resume choice (the bullet's persisted citation rows
+     * are one-per-(bullet, fact) by design — see
+     * `resume_variant_bullet_citations`'s own unique constraint), only a
+     * malformed response. Added after a real TRM Labs async Resume run
+     * reached exactly this shape and failed at persistence with a raw
+     * `UniqueConstraintViolationException` on that constraint, deep
+     * inside `GenerateResumeVariant::generateFull()`'s transaction,
+     * after both Selection and Wording had already completed — this
+     * check moves that rejection to where it belongs: before Wording
+     * ever runs, and before either provider call's cost is spent twice.
+     * The database constraint itself is deliberately left unchanged as
+     * defense-in-depth. See docs/resume-variant-generation.md "Async
+     * Resume".
+     *
+     * @param  array<int, mixed>  $experience
+     */
+    private function assertNoDuplicateCareerFactKeysWithinBulletGroup(Validator $validator, array $experience): void
+    {
+        foreach ($experience as $roleIndex => $role) {
+            if (! is_array($role)) {
+                continue;
+            }
+
+            $roleId = $role['role_id'] ?? null;
+            $bulletGroups = is_array($role['bullet_groups'] ?? null) ? $role['bullet_groups'] : [];
+
+            foreach ($bulletGroups as $groupIndex => $group) {
+                if (! is_array($group)) {
+                    continue;
+                }
+
+                $keys = is_array($group['career_fact_keys'] ?? null) ? $group['career_fact_keys'] : [];
+                $seenKeys = [];
+
+                foreach ($keys as $keyIndex => $key) {
+                    if (! is_string($key)) {
+                        continue;
+                    }
+
+                    if (in_array($key, $seenKeys, true)) {
+                        $validator->errors()->add(
+                            "experience.{$roleIndex}.bullet_groups.{$groupIndex}.career_fact_keys.{$keyIndex}",
+                            "career_fact_key [{$key}] is selected more than once within bullet group [{$groupIndex}] for role_id [{$roleId}] — each CareerFact may be cited at most once per bullet group."
+                        );
+
+                        continue;
+                    }
+
+                    $seenKeys[] = $key;
+                }
             }
         }
     }
