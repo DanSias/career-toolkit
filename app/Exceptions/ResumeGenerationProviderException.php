@@ -2,7 +2,9 @@
 
 namespace App\Exceptions;
 
+use App\Support\ProviderDiagnostics;
 use RuntimeException;
+use Throwable;
 
 /**
  * Thrown when either resume-generation model provider fails — a
@@ -16,5 +18,14 @@ use RuntimeException;
  * from InvalidResumeVariantResponseException, which covers a
  * well-formed reply that fails our own validation. Never carries
  * credentials or raw request/response headers in its message.
+ *
+ * `$diagnostics` — see JobAnalysisProviderException's own docblock for
+ * what this optional, non-content metadata is and why it exists.
  */
-class ResumeGenerationProviderException extends RuntimeException {}
+class ResumeGenerationProviderException extends RuntimeException
+{
+    public function __construct(string $message, public readonly ?ProviderDiagnostics $diagnostics = null, ?Throwable $previous = null)
+    {
+        parent::__construct($message, previous: $previous);
+    }
+}

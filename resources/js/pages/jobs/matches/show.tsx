@@ -1,4 +1,5 @@
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { GenerationStatus } from '@/components/generation-status';
 import AppShell from '@/layouts/app-shell';
 import { show as jobsShow } from '@/routes/jobs';
 import { show as analysesShow } from '@/routes/jobs/analyses';
@@ -40,12 +41,17 @@ function GenerateResumeAction({
                             jobAnalysis: analysisId,
                             jobMatch: matchId,
                         }),
+                        { showProgress: false },
                     )
                 }
                 className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
             >
                 {form.processing ? 'Generating…' : 'Generate Resume'}
             </button>
+            <GenerationStatus
+                active={form.processing}
+                label="Generating resume"
+            />
             {errors?.resume_generation && (
                 <p
                     role="alert"

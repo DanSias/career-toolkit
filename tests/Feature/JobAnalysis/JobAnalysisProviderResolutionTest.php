@@ -1,12 +1,12 @@
 <?php
 
 use App\Contracts\GeneratesJobAnalysis;
-use App\Support\JobAnalysis\EvidenceExcerptVerifier;
 use App\Support\JobAnalysis\GenerateJobAnalysis;
 use App\Support\JobAnalysis\JobAnalysisResponseValidator;
-use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV2;
+use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV4;
 use App\Support\JobAnalysis\Providers\OllamaJobAnalysisClient;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
+use App\Support\JobAnalysis\SegmentJobPostingDescription;
 
 /**
  * Covers AppServiceProvider::resolveJobAnalysisProvider() — the single
@@ -94,9 +94,9 @@ it('lets a caller construct GenerateJobAnalysis with an explicit OpenAIJobAnalys
             apiKey: (string) config('services.openai.key'),
             model: (string) config('services.openai.model'),
         ),
-        prompt: app(JobAnalysisPromptV2::class),
+        prompt: app(JobAnalysisPromptV4::class),
         validator: app(JobAnalysisResponseValidator::class),
-        evidenceVerifier: app(EvidenceExcerptVerifier::class),
+        segmenter: app(SegmentJobPostingDescription::class),
     );
 
     $provider = (new ReflectionClass($generator))->getProperty('provider')->getValue($generator);

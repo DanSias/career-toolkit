@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -49,5 +50,18 @@ class JobPosting extends Model
     public function jobAnalyses(): HasMany
     {
         return $this->hasMany(JobAnalysis::class);
+    }
+
+    /**
+     * Every job_analysis GenerationAttempt ever made against this
+     * posting — queued, running, succeeded, or failed. See
+     * App\Models\GenerationAttempt and docs/job-analysis-generation.md
+     * "Durable generation attempts (foundation)".
+     *
+     * @return MorphMany<GenerationAttempt, $this>
+     */
+    public function generationAttempts(): MorphMany
+    {
+        return $this->morphMany(GenerationAttempt::class, 'subject');
     }
 }

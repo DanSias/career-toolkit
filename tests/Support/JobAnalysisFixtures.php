@@ -2,13 +2,27 @@
 
 namespace Tests\Support;
 
+use App\Support\JobAnalysis\SegmentJobPostingDescription;
+
 /**
  * A shared source-of-truth job posting description plus a matching
  * valid structured-response payload, so tests exercising the
- * validator/evidence-verifier/orchestrator don't each hand-roll a
- * slightly different fixture. Every excerpt below is a real substring
- * of DESCRIPTION — deliberately, so "valid" fixtures actually pass
- * evidence verification.
+ * validator/orchestrator don't each hand-roll a slightly different
+ * fixture. Every evidence_refs value below is a real segment id
+ * produced by SegmentJobPostingDescription against DESCRIPTION —
+ * confirmed by segmentIds() below, computed the same way
+ * GenerateJobAnalysis does, never hand-guessed. See
+ * docs/job-analysis-generation.md "Async Job Analysis" (V4 evidence
+ * architecture).
+ *
+ * Segment ids for DESCRIPTION (confirmed via segmentIds(), stable
+ * because DESCRIPTION never changes):
+ *   S001 "We are hiring a Senior Backend Engineer to join our platform team."
+ *   S002 "Requirements:"
+ *   S003 "- Minimum 5 years of backend engineering experience required."
+ *   S004 "- Travel up to 25% required for client visits."
+ *   S005 "- Travel is expected periodically to support on-site engagements."
+ *   S006 "- ERP experience is not required — we will train you on our systems."
  */
 final class JobAnalysisFixtures
 {
@@ -21,6 +35,18 @@ final class JobAnalysisFixtures
         - Travel is expected periodically to support on-site engagements.
         - ERP experience is not required — we will train you on our systems.
         TEXT;
+
+    /**
+     * The exact valid segment id set for DESCRIPTION — what
+     * GenerateJobAnalysis would pass to JobAnalysisPromptV4::jsonSchema()
+     * and JobAnalysisResponseValidator::validate() for this posting.
+     *
+     * @return array<int, string>
+     */
+    public static function segmentIds(): array
+    {
+        return array_keys((new SegmentJobPostingDescription)->segment(self::DESCRIPTION));
+    }
 
     /**
      * @return array<string, mixed>
@@ -45,13 +71,7 @@ final class JobAnalysisFixtures
                     'recency_requirement' => null,
                     'time_horizon' => null,
                     'notes' => null,
-                    'evidence' => [
-                        [
-                            'excerpt' => 'Minimum 5 years of backend engineering experience required.',
-                            'source_section' => 'Requirements',
-                            'source_locator' => null,
-                        ],
-                    ],
+                    'evidence_refs' => ['S003'],
                 ],
                 [
                     'category' => 'travel',
@@ -66,18 +86,7 @@ final class JobAnalysisFixtures
                     'recency_requirement' => null,
                     'time_horizon' => null,
                     'notes' => 'Stated twice in the posting.',
-                    'evidence' => [
-                        [
-                            'excerpt' => 'Travel up to 25% required for client visits.',
-                            'source_section' => 'Requirements',
-                            'source_locator' => null,
-                        ],
-                        [
-                            'excerpt' => 'Travel is expected periodically to support on-site engagements.',
-                            'source_section' => 'Requirements',
-                            'source_locator' => null,
-                        ],
-                    ],
+                    'evidence_refs' => ['S004', 'S005'],
                 ],
                 [
                     'category' => 'preferred_qualification',
@@ -92,13 +101,7 @@ final class JobAnalysisFixtures
                     'recency_requirement' => null,
                     'time_horizon' => null,
                     'notes' => null,
-                    'evidence' => [
-                        [
-                            'excerpt' => 'ERP experience is not required — we will train you on our systems.',
-                            'source_section' => 'Requirements',
-                            'source_locator' => null,
-                        ],
-                    ],
+                    'evidence_refs' => ['S006'],
                 ],
             ],
         ];

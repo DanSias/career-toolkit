@@ -1,3 +1,5 @@
+import type { GenerationAttempt } from '@/types/generation-attempt';
+
 export type JobPostingSummary = {
     id: number;
     company: string;
@@ -24,6 +26,7 @@ export type JobPostingDetail = {
     captured_at: string | null;
     description: string;
     analyses: JobAnalysisSummary[];
+    latest_job_analysis_attempt: GenerationAttempt | null;
 };
 
 export type JobsIndexProps = {

@@ -25,7 +25,72 @@ function persistedAnalysis(?JobPosting $job = null, ?DateTimeInterface $generate
         'seniority_rationale' => 'Explicitly titled Senior.',
     ]);
 
-    foreach (JobAnalysisFixtures::validPayload()['findings'] as $findingData) {
+    // A directly-built, pre-V4 shaped persisted row — deliberately NOT
+    // sourced from JobAnalysisFixtures::validPayload()'s evidence_refs
+    // (that shape is a V4 provider-response payload, resolved by
+    // GenerateJobAnalysis before anything is persisted; it was never a
+    // database row shape). job_analysis_finding_evidence's own columns
+    // (excerpt/source_section/source_locator) are unchanged by V4 — see
+    // docs/job-analysis-generation.md "Async Job Analysis" — so a
+    // historical row shaped exactly like this is exactly what a real
+    // V1/V2/V3 analysis still looks like in the database today, and
+    // must still render correctly with zero frontend changes.
+    $findingsWithEvidence = [
+        [
+            'category' => 'required_qualification',
+            'statement' => '5+ years of backend engineering experience',
+            'label' => 'backend_experience_floor',
+            'basis' => 'explicit',
+            'requirement_strength' => 'required',
+            'emphasis' => 'normal',
+            'maturity' => 'unspecified',
+            'years_experience_min' => 5.0,
+            'years_experience_max' => null,
+            'recency_requirement' => null,
+            'time_horizon' => null,
+            'notes' => null,
+            'evidence' => [
+                ['excerpt' => 'Minimum 5 years of backend engineering experience required.', 'source_section' => 'Requirements', 'source_locator' => null],
+            ],
+        ],
+        [
+            'category' => 'travel',
+            'statement' => 'Travel up to 25% required for client visits',
+            'label' => null,
+            'basis' => 'explicit',
+            'requirement_strength' => 'required',
+            'emphasis' => 'high',
+            'maturity' => 'unspecified',
+            'years_experience_min' => null,
+            'years_experience_max' => null,
+            'recency_requirement' => null,
+            'time_horizon' => null,
+            'notes' => 'Stated twice in the posting.',
+            'evidence' => [
+                ['excerpt' => 'Travel up to 25% required for client visits.', 'source_section' => 'Requirements', 'source_locator' => null],
+                ['excerpt' => 'Travel is expected periodically to support on-site engagements.', 'source_section' => 'Requirements', 'source_locator' => null],
+            ],
+        ],
+        [
+            'category' => 'preferred_qualification',
+            'statement' => 'ERP experience is not required',
+            'label' => null,
+            'basis' => 'explicit',
+            'requirement_strength' => 'not_required',
+            'emphasis' => 'normal',
+            'maturity' => 'unspecified',
+            'years_experience_min' => null,
+            'years_experience_max' => null,
+            'recency_requirement' => null,
+            'time_horizon' => null,
+            'notes' => null,
+            'evidence' => [
+                ['excerpt' => 'ERP experience is not required — we will train you on our systems.', 'source_section' => 'Requirements', 'source_locator' => null],
+            ],
+        ],
+    ];
+
+    foreach ($findingsWithEvidence as $findingData) {
         $finding = $analysis->findings()->create([
             'category' => $findingData['category'],
             'statement' => $findingData['statement'],

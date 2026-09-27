@@ -171,3 +171,26 @@ it('wraps a transport failure as JobMatchProviderException, not JobAnalysisProvi
 
     ollamaJobMatchClient()->generate('system', 'user', fakeJobMatchSchema());
 })->throws(JobMatchProviderException::class, 'Ollama request failed with HTTP status 500.');
+
+it('preserves non-content provider diagnostics on a truncation failure, including this client\'s own 16000 max_tokens budget', function () {
+    Http::fake([
+        'ollama.test:11434/*' => Http::response([
+            'model' => 'qwen3.8:27b-test',
+            'choices' => [
+                ['index' => 0, 'message' => ['role' => 'assistant', 'content' => '{"incomple'], 'finish_reason' => 'length'],
+            ],
+            'usage' => ['prompt_tokens' => 35030, 'completion_tokens' => 16000, 'total_tokens' => 51030],
+        ]),
+    ]);
+
+    try {
+        ollamaJobMatchClient(timeoutSeconds: 600)->generate('system', 'user', fakeJobMatchSchema());
+        test()->fail('Expected JobMatchProviderException to be thrown.');
+    } catch (JobMatchProviderException $e) {
+        expect($e->diagnostics)->not->toBeNull()
+            ->and($e->diagnostics->finishReason)->toBe('length')
+            ->and($e->diagnostics->usage)->toBe(['prompt_tokens' => 35030, 'completion_tokens' => 16000, 'total_tokens' => 51030])
+            ->and($e->diagnostics->maxOutputTokens)->toBe(16000)
+            ->and($e->diagnostics->timeoutSeconds)->toBe(600);
+    }
+});

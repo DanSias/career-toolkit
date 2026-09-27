@@ -6,6 +6,7 @@ use App\Contracts\GeneratesResumeSelection;
 use App\Exceptions\ResumeGenerationProviderException;
 use App\Support\OllamaChatCompletionsClient;
 use App\Support\OllamaChatCompletionsException;
+use App\Support\ProviderDiagnostics;
 use App\Support\ResumeVariant\ResumeSelectionProviderResponse;
 
 /**
@@ -78,7 +79,13 @@ final class OllamaResumeSelectionClient implements GeneratesResumeSelection
                 logPrefix: 'Resume Selection generation (Ollama)',
             );
         } catch (OllamaChatCompletionsException $e) {
-            throw new ResumeGenerationProviderException($e->getMessage(), previous: $e);
+            throw new ResumeGenerationProviderException($e->getMessage(), diagnostics: new ProviderDiagnostics(
+                model: $e->model,
+                finishReason: $e->finishReason,
+                usage: $e->usage,
+                maxOutputTokens: self::MAX_OUTPUT_TOKENS,
+                timeoutSeconds: $this->timeoutSeconds,
+            ), previous: $e);
         }
 
         return new ResumeSelectionProviderResponse(

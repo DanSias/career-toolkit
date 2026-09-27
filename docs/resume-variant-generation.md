@@ -839,3 +839,12 @@ already on the pipeline — the owning CareerProfile's name and the
 target JobPosting's company, via `ResumeVariant -> JobMatch ->
 JobAnalysis -> JobPosting`. No permanent PDF storage: every request
 regenerates and streams the PDF fresh.
+
+## Durable generation attempts
+
+Resume generation (Selection + Wording) is still fully synchronous
+today — see docs/job-analysis-generation.md "Durable generation
+attempts (foundation)" for the shared, cross-stage `GenerationAttempt`
+foundation (queue safety, schema, lifecycle, no-raw-content policy)
+this stage will eventually use once it's migrated to a background job,
+last in the planned sequence (after Job Analysis and Job Match).

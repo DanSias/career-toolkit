@@ -4,11 +4,11 @@ use App\Enums\JobAnalysisFindingCategory;
 use App\Enums\JobAnalysisRequirementStrength;
 use App\Models\JobAnalysis;
 use App\Models\JobPosting;
-use App\Support\JobAnalysis\EvidenceExcerptVerifier;
 use App\Support\JobAnalysis\GenerateJobAnalysis;
 use App\Support\JobAnalysis\JobAnalysisResponseValidator;
-use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV2;
+use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV4;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
+use App\Support\JobAnalysis\SegmentJobPostingDescription;
 
 /**
  * Opt-in regression evaluation against the real, configured OpenAI
@@ -29,8 +29,8 @@ use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
  * stay OpenAI regardless of that setting, the same reasoning
  * OpenAIJobAnalysisLiveTest.php already follows for its own explicit
  * OpenAIJobAnalysisClient construction. Only the provider is
- * explicit; JobAnalysisPromptV2, JobAnalysisResponseValidator, and
- * EvidenceExcerptVerifier are still the real, unmodified,
+ * explicit; JobAnalysisPromptV4, JobAnalysisResponseValidator, and
+ * SegmentJobPostingDescription are still the real, unmodified,
  * container-free classes GenerateJobAnalysis always uses.
  *
  * sources/jobs/job-analysis-design-set.md is the single source of
@@ -61,9 +61,9 @@ function jobAnalysisViaOpenAI(JobPosting $posting): JobAnalysis
             apiKey: (string) config('services.openai.key'),
             model: (string) config('services.openai.model'),
         ),
-        prompt: new JobAnalysisPromptV2,
+        prompt: new JobAnalysisPromptV4,
         validator: new JobAnalysisResponseValidator,
-        evidenceVerifier: new EvidenceExcerptVerifier,
+        segmenter: new SegmentJobPostingDescription,
     );
 
     return $generator->generate($posting);

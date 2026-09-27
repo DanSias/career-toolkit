@@ -16,7 +16,7 @@ snapshots.
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "role_summary": "A one-to-two paragraph plain-language summary of what this role actually is, independent of any candidate.",
   "overall_seniority": "senior",
   "seniority_rationale": "Posting repeatedly references leading initiatives and mentoring, with no indication of close supervision.",
@@ -34,13 +34,7 @@ snapshots.
       "recency_requirement": null,
       "time_horizon": null,
       "notes": null,
-      "evidence": [
-        {
-          "excerpt": "Minimum 5 years of backend engineering experience required.",
-          "source_section": "Requirements",
-          "source_locator": "bullet 2"
-        }
-      ]
+      "evidence_refs": ["S014"]
     },
     {
       "category": "preferred_qualification",
@@ -55,13 +49,7 @@ snapshots.
       "recency_requirement": null,
       "time_horizon": null,
       "notes": "Explicit disclaimer, distinct from the posting simply not mentioning ERP at all.",
-      "evidence": [
-        {
-          "excerpt": "No prior ERP experience is necessary — we'll train on our systems.",
-          "source_section": "Nice to Have",
-          "source_locator": null
-        }
-      ]
+      "evidence_refs": ["S029"]
     },
     {
       "category": "travel",
@@ -76,22 +64,25 @@ snapshots.
       "recency_requirement": null,
       "time_horizon": null,
       "notes": "Stated twice in the posting.",
-      "evidence": [
-        {
-          "excerpt": "Must be willing to travel up to 25% of the time.",
-          "source_section": "Requirements",
-          "source_locator": null
-        },
-        {
-          "excerpt": "This role includes regular travel for client visits.",
-          "source_section": "About the Role",
-          "source_locator": null
-        }
-      ]
+      "evidence_refs": ["S015", "S031"]
     }
   ]
 }
 ```
+
+`evidence_refs` values (`"S014"`, `"S029"`, ...) are deterministic source
+segment ids — see `docs/job-analysis-generation.md` "Deterministic
+evidence (v4)". The provider never returns quoted excerpt text; the
+application resolves each id back to its segment's exact source text
+before persisting a `JobAnalysisFindingEvidence` row (which still has an
+`excerpt` column — that part of the persisted shape is unchanged, only
+how it gets populated changed). **Historical note:** `schema_version
+"1.0"` (prompt versions v1-v3) used a different, now-superseded evidence
+shape — each entry a `{excerpt, source_section, source_locator}` object
+with the model directly reproducing quoted text, deterministically
+verified against the source afterward. Already-persisted `"1.0"` rows
+are unaffected and continue to render correctly; this document describes
+the current, `"2.0"` contract only.
 
 ## Field notes
 
@@ -138,10 +129,11 @@ snapshots.
   transcription of a stated number or range, never a computed floor or
   ceiling. A floor-only statement ("5+ years") omits `years_experience_max`
   entirely (`null`), it does not invent one.
-- **`evidence`** is always an array, even for a finding with exactly one
-  supporting excerpt. Each entry is a close-to-verbatim quote from the
-  posting's `description`, plus an optional `source_section` /
-  `source_locator` to help a person find it again in the original text.
+- **`evidence_refs`** is always an array of 1-2 deterministic source
+  segment ids (never a quoted excerpt) — see
+  `docs/job-analysis-generation.md` "Deterministic evidence (v4)". Every
+  id must be one actually supplied to the model for that generation;
+  an invented or nonexistent id fails the entire response.
 - Nothing in this contract references a candidate, `CareerFact`, `Skill`,
   or any match/fit concept — see `docs/domain-model.md`'s
   candidate-independence note. A finding describes the job, not how well
@@ -149,8 +141,12 @@ snapshots.
 
 ## Deliberately out of scope here
 
-- The actual prompt text and provider request/response shapes — see
+- The actual prompt text, provider request/response shapes, and
+  deterministic source-segmentation algorithm — see
   `docs/job-analysis-generation.md`.
-- Retry, validation-failure, or partial-generation handling — a
-  `JobAnalysis` row only ever exists once generation has produced output
-  matching this contract; failed/in-progress attempts are not modeled.
+- Retry/validation-failure/in-progress-attempt handling — a `JobAnalysis`
+  row only ever exists once generation has produced output matching
+  this contract; a failed or in-progress attempt is tracked separately
+  and durably by `GenerationAttempt`, never as a partial or invalid
+  `JobAnalysis` row — see `docs/job-analysis-generation.md` "Durable
+  generation attempts (foundation)" and "Async Job Analysis".

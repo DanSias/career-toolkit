@@ -1,4 +1,5 @@
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { GenerationStatus } from '@/components/generation-status';
 import AppShell from '@/layouts/app-shell';
 import { show as jobsShow } from '@/routes/jobs';
 import {
@@ -33,6 +34,7 @@ function GenerateMatchAction({
                             jobPosting: jobId,
                             jobAnalysis: analysisId,
                         }),
+                        { showProgress: false },
                     )
                 }
                 className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
@@ -41,6 +43,10 @@ function GenerateMatchAction({
                     ? 'Matching…'
                     : 'Match Against My Profile'}
             </button>
+            <GenerationStatus
+                active={form.processing}
+                label="Matching against your profile"
+            />
             {errors?.match_generation && (
                 <p
                     role="alert"

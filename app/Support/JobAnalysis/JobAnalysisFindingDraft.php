@@ -9,10 +9,10 @@ use App\Enums\JobAnalysisMaturity;
 use App\Enums\JobAnalysisRequirementStrength;
 
 /**
- * One finding from an already-validated, already evidence-verified
- * provider response. Not an Eloquent model — see GenerateJobAnalysis
- * for where this is finally persisted as a JobAnalysisFinding plus its
- * JobAnalysisFindingEvidence children.
+ * One finding from an already-validated provider response. Not an
+ * Eloquent model — see GenerateJobAnalysis for where this is finally
+ * persisted as a JobAnalysisFinding plus its JobAnalysisFindingEvidence
+ * children.
  */
 final readonly class JobAnalysisFindingDraft
 {

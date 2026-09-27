@@ -6,10 +6,10 @@ use App\Enums\JobAnalysisSeniority;
 
 /**
  * The complete, trusted result of one generation attempt: an
- * already-validated, already evidence-verified provider response, ready
- * to be persisted as one immutable JobAnalysis snapshot. Not an
- * Eloquent model — see GenerateJobAnalysis, which is the only place
- * this is ever turned into database rows.
+ * already-validated provider response, ready to be persisted as one
+ * immutable JobAnalysis snapshot. Not an Eloquent model — see
+ * GenerateJobAnalysis, which is the only place this is ever turned into
+ * database rows.
  */
 final readonly class JobAnalysisDraft
 {

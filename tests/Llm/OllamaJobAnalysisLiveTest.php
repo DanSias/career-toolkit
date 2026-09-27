@@ -1,16 +1,16 @@
 <?php
 
 use App\Exceptions\InvalidJobAnalysisResponseException;
-use App\Support\JobAnalysis\EvidenceExcerptVerifier;
 use App\Support\JobAnalysis\JobAnalysisResponseValidator;
-use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV2;
+use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV4;
+use App\Support\JobAnalysis\SegmentJobPostingDescription;
 use App\Support\OllamaChatCompletionsClient;
 use App\Support\OllamaChatCompletionsException;
 
 /**
  * Opt-in, real-provider check that the existing JobAnalysis contract
- * (JobAnalysisPromptV2's prompt/schema, JobAnalysisResponseValidator,
- * EvidenceExcerptVerifier) works unchanged against a local Ollama
+ * (JobAnalysisPromptV4's prompt/schema, JobAnalysisResponseValidator,
+ * SegmentJobPostingDescription) works unchanged against a local Ollama
  * server — lives outside phpunit.xml's default testsuites via
  * tests/Pest.php's `->in('Llm')` registration (same mechanism as
  * JobAnalysisLiveCorpusTest.php), so it never runs as part of
@@ -51,7 +51,7 @@ use App\Support\OllamaChatCompletionsException;
  *
  * Deliberately does NOT call GenerateJobAnalysis (which would persist
  * a JobAnalysis + Findings + Evidence tree) — this harness calls the
- * transport -> JobAnalysisResponseValidator -> EvidenceExcerptVerifier
+ * transport -> JobAnalysisResponseValidator -> evidence_refs resolution
  * directly, so each stage's outcome can be reported independently and
  * so this check never writes a JobAnalysis record anywhere. The only
  * persistence involved at all is jobAnalysisCorpusPosting()'s
@@ -66,14 +66,15 @@ use App\Support\OllamaChatCompletionsException;
  * anywhere) purely for this run's human inspection.
  *
  * A transport failure fails this test loudly — that's the thing this
- * harness exists to prove works. A JobAnalysisResponseValidator or
- * EvidenceExcerptVerifier failure does NOT fail the test — that's a
- * signal about this specific model's output quality on this specific
- * posting, not about whether the Ollama transport integration works,
- * and is exactly the kind of signal this harness exists to surface for
- * human review rather than assert on.
+ * harness exists to prove works. A JobAnalysisResponseValidator
+ * failure (including an invented/nonexistent evidence_refs id) does
+ * NOT fail the test — that's a signal about this specific model's
+ * output quality on this specific posting, not about whether the
+ * Ollama transport integration works, and is exactly the kind of
+ * signal this harness exists to surface for human review rather than
+ * assert on.
  */
-const OLLAMA_JOB_ANALYSIS_MAX_OUTPUT_TOKENS = 8192; // must track OllamaJobAnalysisClient::MAX_OUTPUT_TOKENS
+const OLLAMA_JOB_ANALYSIS_MAX_OUTPUT_TOKENS = 16000; // must track OllamaJobAnalysisClient::MAX_OUTPUT_TOKENS
 
 beforeEach(function () {
     if (blank(config('services.ollama.base_url'))) {
@@ -93,12 +94,13 @@ it('runs the real JobAnalysis prompt/schema through Ollama and reports every pip
     $reasoningEffort = getenv('OLLAMA_LIVE_REASONING_EFFORT') ?: null;
 
     $transport = new OllamaChatCompletionsClient;
-    $prompt = new JobAnalysisPromptV2;
+    $prompt = new JobAnalysisPromptV4;
     $validator = new JobAnalysisResponseValidator;
-    $evidenceVerifier = new EvidenceExcerptVerifier;
+    $segments = (new SegmentJobPostingDescription)->segment($posting->description);
 
     $report = [
         'posting' => $postingPrefix,
+        'segment_count' => count($segments),
         'configured_model' => config('services.ollama.model'),
         'returned_model' => null,
         'reasoning_effort_requested' => $reasoningEffort,
@@ -110,8 +112,6 @@ it('runs the real JobAnalysis prompt/schema through Ollama and reports every pip
         'finding_count' => null,
         'validator_passed' => null,
         'validator_error' => null,
-        'evidence_verifier_passed' => null,
-        'evidence_verifier_error' => null,
     ];
 
     $start = microtime(true);
@@ -121,8 +121,8 @@ it('runs the real JobAnalysis prompt/schema through Ollama and reports every pip
             baseUrl: (string) config('services.ollama.base_url'),
             model: (string) config('services.ollama.model'),
             systemPrompt: $prompt->systemPrompt(),
-            userPrompt: $prompt->userPrompt($posting),
-            schema: $prompt->jsonSchema(),
+            userPrompt: $prompt->userPrompt($posting, $segments),
+            schema: $prompt->jsonSchema(array_keys($segments)),
             schemaName: 'job_analysis',
             maxOutputTokens: OLLAMA_JOB_ANALYSIS_MAX_OUTPUT_TOKENS,
             timeoutSeconds: (int) config('services.ollama.timeout'),
@@ -153,25 +153,13 @@ it('runs the real JobAnalysis prompt/schema through Ollama and reports every pip
     $report['completion_tokens'] = $result->usage['completion_tokens'] ?? null;
     $report['total_tokens'] = $result->usage['total_tokens'] ?? null;
 
-    $validated = null;
-
     try {
-        $validated = $validator->validate($result->structuredContent);
+        $validated = $validator->validate($result->structuredContent, array_keys($segments));
         $report['validator_passed'] = true;
         $report['finding_count'] = count($validated['findings'] ?? []);
     } catch (InvalidJobAnalysisResponseException $e) {
         $report['validator_passed'] = false;
         $report['validator_error'] = $e->getMessage();
-    }
-
-    if ($validated !== null) {
-        try {
-            $evidenceVerifier->verify($validated, $posting->description);
-            $report['evidence_verifier_passed'] = true;
-        } catch (InvalidJobAnalysisResponseException $e) {
-            $report['evidence_verifier_passed'] = false;
-            $report['evidence_verifier_error'] = $e->getMessage();
-        }
     }
 
     printReport($report);

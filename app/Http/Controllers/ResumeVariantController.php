@@ -51,6 +51,7 @@ class ResumeVariantController extends Controller
                 'job_match_id' => $jobMatch->id,
                 'exception' => $e::class,
                 'message' => $e->getMessage(),
+                ...($e instanceof ResumeGenerationProviderException ? ($e->diagnostics?->toLogContext() ?? []) : []),
             ]);
 
             return back()->withErrors([

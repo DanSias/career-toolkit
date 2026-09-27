@@ -172,3 +172,26 @@ it('wraps a transport failure as ResumeGenerationProviderException — the same 
 
     ollamaResumeWordingClient()->generate('system', 'user', fakeResumeWordingSchema());
 })->throws(ResumeGenerationProviderException::class, 'Ollama request failed with HTTP status 500.');
+
+it('preserves non-content provider diagnostics on a truncation failure, including this client\'s own 16000 max_tokens budget', function () {
+    Http::fake([
+        'ollama.test:11434/*' => Http::response([
+            'model' => 'qwen3.8:27b-test',
+            'choices' => [
+                ['index' => 0, 'message' => ['role' => 'assistant', 'content' => '{"incomple'], 'finish_reason' => 'length'],
+            ],
+            'usage' => ['prompt_tokens' => 32000, 'completion_tokens' => 16000, 'total_tokens' => 48000],
+        ]),
+    ]);
+
+    try {
+        ollamaResumeWordingClient(timeoutSeconds: 900)->generate('system', 'user', fakeResumeWordingSchema());
+        test()->fail('Expected ResumeGenerationProviderException to be thrown.');
+    } catch (ResumeGenerationProviderException $e) {
+        expect($e->diagnostics)->not->toBeNull()
+            ->and($e->diagnostics->finishReason)->toBe('length')
+            ->and($e->diagnostics->usage)->toBe(['prompt_tokens' => 32000, 'completion_tokens' => 16000, 'total_tokens' => 48000])
+            ->and($e->diagnostics->maxOutputTokens)->toBe(16000)
+            ->and($e->diagnostics->timeoutSeconds)->toBe(900);
+    }
+});

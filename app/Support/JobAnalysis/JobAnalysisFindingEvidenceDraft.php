@@ -3,11 +3,11 @@
 namespace App\Support\JobAnalysis;
 
 /**
- * One evidence entry from an already-validated, already
- * evidence-verified provider response — trusted to be a verbatim
- * excerpt of the source JobPosting's description by the time this
- * object exists. Not an Eloquent model; see GenerateJobAnalysis for
- * where this is finally persisted.
+ * One evidence entry — excerpt is always the exact, untouched text of
+ * the source segment a validated evidence_refs id resolved to (see
+ * GenerateJobAnalysis::toEvidenceDraft()), never model-generated text.
+ * Not an Eloquent model; see GenerateJobAnalysis for where this is
+ * finally persisted.
  */
 final readonly class JobAnalysisFindingEvidenceDraft
 {

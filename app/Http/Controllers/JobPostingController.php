@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\GenerationStatus;
+use App\Enums\GenerationType;
 use App\Http\Requests\StoreJobPostingRequest;
+use App\Models\GenerationAttempt;
 use App\Models\JobAnalysis;
 use App\Models\JobPosting;
 use App\Support\CurrentCareerProfile;
+use App\Support\GenerationAttempt\PresentGenerationAttempt;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -43,10 +47,10 @@ class JobPostingController extends Controller
         return redirect()->route('jobs.show', $job);
     }
 
-    public function show(JobPosting $jobPosting): Response
+    public function show(JobPosting $jobPosting, PresentGenerationAttempt $presenter): Response
     {
         return Inertia::render('jobs/show', [
-            'job' => $this->transformDetail($jobPosting),
+            'job' => $this->transformDetail($jobPosting, $presenter),
         ]);
     }
 
@@ -69,7 +73,7 @@ class JobPostingController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function transformDetail(JobPosting $job): array
+    private function transformDetail(JobPosting $job, PresentGenerationAttempt $presenter): array
     {
         return [
             'id' => $job->id,
@@ -85,7 +89,35 @@ class JobPostingController extends Controller
                 ->get()
                 ->map($this->transformAnalysisSummary(...))
                 ->all(),
+            'latest_job_analysis_attempt' => $this->latestUnresolvedAttempt($job, $presenter),
         ];
+    }
+
+    /**
+     * The most recent job_analysis GenerationAttempt for this posting,
+     * but only when it's still queued/running or ended in failure — a
+     * succeeded attempt is deliberately omitted, since its result
+     * already appears in `analyses` above and re-surfacing it here
+     * would be redundant. Lets the page show "generation in progress"
+     * or "here's why the last attempt failed" immediately on load,
+     * including after a reload — see docs/job-analysis-generation.md
+     * "Async Job Analysis".
+     *
+     * @return array<string, mixed>|null
+     */
+    private function latestUnresolvedAttempt(JobPosting $job, PresentGenerationAttempt $presenter): ?array
+    {
+        /** @var GenerationAttempt|null $attempt */
+        $attempt = $job->generationAttempts()
+            ->where('generation_type', GenerationType::JobAnalysis)
+            ->latest('id')
+            ->first();
+
+        if ($attempt === null || $attempt->status === GenerationStatus::Succeeded) {
+            return null;
+        }
+
+        return $presenter->present($attempt);
     }
 
     /**

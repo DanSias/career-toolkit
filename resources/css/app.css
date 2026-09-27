@@ -8,4 +8,22 @@
         'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
+
+    /* Indeterminate activity bar for a long-running synchronous
+       generation request — loops continuously and never reaches a
+       fixed end state, unlike a determinate progress bar. */
+    --animate-generation-indeterminate: generation-indeterminate 1.1s
+        ease-in-out infinite;
+}
+
+@keyframes generation-indeterminate {
+    0% {
+        transform: translateX(-100%);
+    }
+    50% {
+        transform: translateX(100%);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
 }

@@ -40,7 +40,28 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Laravel's stock default is 90s — unsafe for this app's
+            // generation jobs, which legitimately run for minutes. A
+            // job becomes eligible for a SECOND worker to pick up once
+            // it's been reserved longer than retry_after without being
+            // deleted/released — too low here would mean a real,
+            // still-running Ollama call gets duplicated by another
+            // worker, not just retried after a genuine failure.
+            // 7200 (2h) is comfortable margin over the worst
+            // legitimate case: Resume generation's Selection then
+            // Wording, each up to 900s (OLLAMA_RESUME_SELECTION_
+            // TIMEOUT_SECONDS / OLLAMA_RESUME_WORDING_TIMEOUT_SECONDS)
+            // and each retried up to 3x on a transient failure
+            // (App\Support\OllamaChatCompletionsClient::RETRY_TIMES) —
+            // 2 x (3 x 900 + 2) = 5404s. Job Analysis (300s) and Job
+            // Match (600s) both have far more margin than this.
+            // Distinct from a queue *worker's* --timeout: that's
+            // enforced by the worker process itself and must also
+            // never be set below this same worst case, or the worker
+            // would kill a legitimately-running job itself — see
+            // docs/job-analysis-generation.md "Durable generation
+            // attempts (foundation)".
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 7200),
             'after_commit' => false,
         ],
 

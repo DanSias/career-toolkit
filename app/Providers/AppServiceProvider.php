@@ -8,6 +8,9 @@ use App\Contracts\GeneratesResumeSelection;
 use App\Contracts\GeneratesResumeWording;
 use App\Models\CareerProfile;
 use App\Models\Employer;
+use App\Models\JobAnalysis;
+use App\Models\JobMatch;
+use App\Models\JobPosting;
 use App\Models\Project;
 use App\Models\Role;
 use App\Support\JobAnalysis\Providers\OllamaJobAnalysisClient;
@@ -220,10 +223,13 @@ class AppServiceProvider extends ServiceProvider
 
     /**
      * Use short, stable aliases for CareerFact's polymorphic attribution
-     * targets instead of full class names, so a future namespace refactor
-     * can't silently orphan stored attributions. Enforced (not just
-     * mapped), so an un-mapped model can never be used as an attributable
-     * target by accident. See docs/domain-model.md.
+     * targets, and for GenerationAttempt's polymorphic subject, instead
+     * of full class names, so a future namespace refactor can't
+     * silently orphan stored attributions/attempts. Enforced (not just
+     * mapped), so an un-mapped model can never be used as a morph
+     * target by accident. See docs/domain-model.md and
+     * docs/job-analysis-generation.md "Durable generation attempts
+     * (foundation)".
      */
     protected function configureMorphMap(): void
     {
@@ -232,6 +238,9 @@ class AppServiceProvider extends ServiceProvider
             'employer' => Employer::class,
             'role' => Role::class,
             'project' => Project::class,
+            'job_posting' => JobPosting::class,
+            'job_analysis' => JobAnalysis::class,
+            'job_match' => JobMatch::class,
         ]);
     }
 }

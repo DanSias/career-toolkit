@@ -6,6 +6,7 @@ use App\Contracts\GeneratesResumeWording;
 use App\Exceptions\ResumeGenerationProviderException;
 use App\Support\OllamaChatCompletionsClient;
 use App\Support\OllamaChatCompletionsException;
+use App\Support\ProviderDiagnostics;
 use App\Support\ResumeVariant\ResumeWordingProviderResponse;
 
 /**
@@ -84,7 +85,13 @@ final class OllamaResumeWordingClient implements GeneratesResumeWording
                 logPrefix: 'Resume Wording generation (Ollama)',
             );
         } catch (OllamaChatCompletionsException $e) {
-            throw new ResumeGenerationProviderException($e->getMessage(), previous: $e);
+            throw new ResumeGenerationProviderException($e->getMessage(), diagnostics: new ProviderDiagnostics(
+                model: $e->model,
+                finishReason: $e->finishReason,
+                usage: $e->usage,
+                maxOutputTokens: self::MAX_OUTPUT_TOKENS,
+                timeoutSeconds: $this->timeoutSeconds,
+            ), previous: $e);
         }
 
         return new ResumeWordingProviderResponse(

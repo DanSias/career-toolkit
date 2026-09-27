@@ -57,7 +57,7 @@ it('posts to {base_url}/v1/chat/completions with the configured model, messages,
                 ['role' => 'system', 'content' => 'system prompt text'],
                 ['role' => 'user', 'content' => 'user prompt text'],
             ]
-            && $request['max_tokens'] === 8192
+            && $request['max_tokens'] === 16000
             && $request['response_format']['type'] === 'json_schema'
             && $request['response_format']['json_schema']['name'] === 'job_analysis'
             && $request['response_format']['json_schema']['schema'] === ['type' => 'object', 'properties' => []]
@@ -139,6 +139,62 @@ it('throws a truncation-specific error when finish_reason is length', function (
 
     ollamaClient()->generate('system', 'user', ['type' => 'object']);
 })->throws(JobAnalysisProviderException::class, 'Ollama response was truncated');
+
+it('preserves non-content provider diagnostics (model, finish_reason, token usage, configured budget/timeout) on a truncation failure', function () {
+    Http::fake([
+        'ollama.test:11434/*' => Http::response([
+            'model' => 'qwen3.8:27b-test',
+            'choices' => [
+                ['index' => 0, 'message' => ['role' => 'assistant', 'content' => '{"incomple'], 'finish_reason' => 'length'],
+            ],
+            'usage' => ['prompt_tokens' => 21050, 'completion_tokens' => 8192, 'total_tokens' => 29242],
+        ]),
+    ]);
+
+    try {
+        ollamaClient(timeoutSeconds: 300)->generate('system', 'user', ['type' => 'object']);
+        test()->fail('Expected JobAnalysisProviderException to be thrown.');
+    } catch (JobAnalysisProviderException $e) {
+        expect($e->diagnostics)->not->toBeNull()
+            ->and($e->diagnostics->model)->toBe('qwen3.8:27b-test')
+            ->and($e->diagnostics->finishReason)->toBe('length')
+            ->and($e->diagnostics->usage)->toBe(['prompt_tokens' => 21050, 'completion_tokens' => 8192, 'total_tokens' => 29242])
+            ->and($e->diagnostics->maxOutputTokens)->toBe(16000)
+            ->and($e->diagnostics->timeoutSeconds)->toBe(300);
+
+        expect($e->diagnostics->toLogContext())->toBe([
+            'provider_model' => 'qwen3.8:27b-test',
+            'finish_reason' => 'length',
+            'prompt_tokens' => 21050,
+            'completion_tokens' => 8192,
+            'total_tokens' => 29242,
+            'max_output_tokens_configured' => 16000,
+            'provider_timeout_seconds' => 300,
+        ]);
+    }
+});
+
+it('leaves the response-derived diagnostics fields null when the failure never reached a decoded response body (e.g. a connection failure), while still reporting the configured budget/timeout', function () {
+    Http::fake(function () {
+        throw new ConnectionException('simulated connection failure');
+    });
+
+    try {
+        ollamaClient(timeoutSeconds: 300)->generate('system', 'user', ['type' => 'object']);
+        test()->fail('Expected JobAnalysisProviderException to be thrown.');
+    } catch (JobAnalysisProviderException $e) {
+        // The domain exception always carries a ProviderDiagnostics
+        // instance (the client always knows its own configured budget/
+        // timeout) — but the response-derived fields are null because
+        // no HTTP response body was ever decoded.
+        expect($e->diagnostics)->not->toBeNull()
+            ->and($e->diagnostics->model)->toBeNull()
+            ->and($e->diagnostics->finishReason)->toBeNull()
+            ->and($e->diagnostics->usage)->toBeNull()
+            ->and($e->diagnostics->maxOutputTokens)->toBe(16000)
+            ->and($e->diagnostics->timeoutSeconds)->toBe(300);
+    }
+});
 
 it('throws when the response content is not valid JSON', function () {
     Http::fake([

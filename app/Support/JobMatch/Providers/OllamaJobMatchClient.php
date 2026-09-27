@@ -7,6 +7,7 @@ use App\Exceptions\JobMatchProviderException;
 use App\Support\JobMatch\JobMatchProviderResponse;
 use App\Support\OllamaChatCompletionsClient;
 use App\Support\OllamaChatCompletionsException;
+use App\Support\ProviderDiagnostics;
 
 /**
  * Calls a local/self-hosted Ollama server's OpenAI-compatible Chat
@@ -80,7 +81,13 @@ final class OllamaJobMatchClient implements GeneratesJobMatch
                 logPrefix: 'JobMatch generation (Ollama)',
             );
         } catch (OllamaChatCompletionsException $e) {
-            throw new JobMatchProviderException($e->getMessage(), previous: $e);
+            throw new JobMatchProviderException($e->getMessage(), diagnostics: new ProviderDiagnostics(
+                model: $e->model,
+                finishReason: $e->finishReason,
+                usage: $e->usage,
+                maxOutputTokens: self::MAX_OUTPUT_TOKENS,
+                timeoutSeconds: $this->timeoutSeconds,
+            ), previous: $e);
         }
 
         return new JobMatchProviderResponse(

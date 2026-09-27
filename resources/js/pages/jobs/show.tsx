@@ -1,33 +1,56 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
+import { GenerationStatus } from '@/components/generation-status';
+import { useGenerationAttemptPolling } from '@/hooks/use-generation-attempt-polling';
 import AppShell from '@/layouts/app-shell';
 import { index as jobsIndex } from '@/routes/jobs';
-import { show as analysesShow, store as analysesStore } from '@/routes/jobs/analyses';
+import {
+    show as analysesShow,
+    store as analysesStore,
+} from '@/routes/jobs/analyses';
+import type { GenerationAttempt } from '@/types/generation-attempt';
 import type { JobShowProps } from '@/types/job-posting';
 
-type PageErrors = { errors?: { generation?: string } };
-
-function GenerateAnalysisAction({ jobId }: { jobId: number }) {
+function GenerateAnalysisAction({
+    jobId,
+    initialAttempt,
+}: {
+    jobId: number;
+    initialAttempt: GenerationAttempt | null;
+}) {
     const form = useForm({});
-    const { errors } = usePage<PageErrors>().props;
+    const attempt = useGenerationAttemptPolling(initialAttempt);
+    const isActive =
+        attempt !== null &&
+        (attempt.status === 'queued' || attempt.status === 'running');
+    const disabled = form.processing || isActive;
 
     return (
         <div>
             <button
                 type="button"
-                disabled={form.processing}
+                disabled={disabled}
                 onClick={() =>
-                    form.post(analysesStore.url({ jobPosting: jobId }))
+                    form.post(analysesStore.url({ jobPosting: jobId }), {
+                        showProgress: false,
+                    })
                 }
                 className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
             >
-                {form.processing ? 'Generating…' : 'Generate Analysis'}
+                {disabled ? 'Generating…' : 'Generate Analysis'}
             </button>
-            {errors?.generation && (
+            <GenerationStatus
+                active={isActive}
+                label="Generating analysis"
+                queued={attempt?.status === 'queued'}
+                queuedLabel="Analysis queued…"
+                startedAt={attempt?.started_at}
+            />
+            {attempt?.status === 'failed' && attempt.failure_message && (
                 <p
                     role="alert"
                     className="mt-2 text-sm text-red-600 dark:text-red-400"
                 >
-                    {errors.generation}
+                    {attempt.failure_message}
                 </p>
             )}
         </div>
@@ -94,7 +117,10 @@ export default function JobsShow({ job }: JobShowProps) {
                     <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                         Job Analysis
                     </h2>
-                    <GenerateAnalysisAction jobId={job.id} />
+                    <GenerateAnalysisAction
+                        jobId={job.id}
+                        initialAttempt={job.latest_job_analysis_attempt}
+                    />
                 </div>
 
                 {job.analyses.length === 0 ? (
@@ -116,9 +142,9 @@ export default function JobsShow({ job }: JobShowProps) {
                                         {analysis.generated_at ?? '—'}
                                     </span>
                                     <span className="text-xs text-neutral-400 dark:text-neutral-500">
-                                        {analysis.overall_seniority ?? 'unspecified'}{' '}
-                                        · {analysis.findings_count ?? 0}{' '}
-                                        finding
+                                        {analysis.overall_seniority ??
+                                            'unspecified'}{' '}
+                                        · {analysis.findings_count ?? 0} finding
                                         {analysis.findings_count === 1
                                             ? ''
                                             : 's'}

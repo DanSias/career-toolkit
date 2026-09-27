@@ -48,6 +48,7 @@ class JobMatchController extends Controller
                 'career_profile_id' => $profile->id,
                 'exception' => $e::class,
                 'message' => $e->getMessage(),
+                ...($e instanceof JobMatchProviderException ? ($e->diagnostics?->toLogContext() ?? []) : []),
             ]);
 
             return back()->withErrors([

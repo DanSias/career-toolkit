@@ -312,3 +312,12 @@ suite's own pass/fail. **Result: accepted. No prompt revision (no
   24,814 in / 13,447 out; Vista 23,523 in / 11,100 out — 69,394 input,
   32,884 output, 102,278 total tokens across the 6 real calls (one
   `JobAnalysis` + one `JobMatch` generation per posting).
+
+## Durable generation attempts
+
+Job Match generation is still fully synchronous today — see
+docs/job-analysis-generation.md "Durable generation attempts
+(foundation)" for the shared, cross-stage `GenerationAttempt`
+foundation (queue safety, schema, lifecycle, no-raw-content policy)
+this stage will eventually use once it's migrated to a background job,
+after Job Analysis.

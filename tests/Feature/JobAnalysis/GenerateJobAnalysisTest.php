@@ -53,7 +53,7 @@ it('persists the full graph from a valid provider response', function () {
         ->and($analysis->findings)->toHaveCount(3);
 });
 
-it('sends the provider only company, title, location, and description', function () {
+it('sends the provider only company, title, location, and description — as labeled source segments', function () {
     $posting = JobPosting::factory()->create([
         'company' => 'Acme Corp',
         'title' => 'Staff Engineer',
@@ -72,10 +72,25 @@ it('sends the provider only company, title, location, and description', function
         ->toContain('Acme Corp')
         ->toContain('Staff Engineer')
         ->toContain('Remote')
-        ->toContain(JobAnalysisFixtures::DESCRIPTION)
+        ->toContain('[S001] We are hiring a Senior Backend Engineer to join our platform team.')
+        ->toContain('[S003] - Minimum 5 years of backend engineering experience required.')
         ->not->toContain('CareerFact')
         ->not->toContain('Skill')
         ->not->toContain('candidate');
+});
+
+it('sends the provider a schema constrained to the exact segment ids for this posting', function () {
+    $posting = postingWithDescription();
+    $fake = fakeProvider()->willReturn(new JobAnalysisProviderResponse(
+        provider: 'openai',
+        model: 'gpt-5.6-test',
+        structuredContent: JobAnalysisFixtures::validPayload(),
+    ));
+
+    generator()->generate($posting);
+
+    $evidenceRefsSchema = $fake->capturedSchema['properties']['findings']['items']['properties']['evidence_refs'];
+    expect($evidenceRefsSchema['items']['enum'])->toBe(JobAnalysisFixtures::segmentIds());
 });
 
 it('persists correct schema/prompt/model generation metadata', function () {
@@ -88,8 +103,8 @@ it('persists correct schema/prompt/model generation metadata', function () {
 
     $analysis = generator()->generate($posting);
 
-    expect($analysis->schema_version)->toBe('1.0')
-        ->and($analysis->prompt_version)->toBe('job-analysis-v2')
+    expect($analysis->schema_version)->toBe('2.0')
+        ->and($analysis->prompt_version)->toBe('job-analysis-v4')
         ->and($analysis->generated_by)->toBe('openai:gpt-5.6-2026-09-01')
         ->and($analysis->generated_at)->not->toBeNull()
         ->and($analysis->raw_response)->toBeArray();
@@ -163,24 +178,57 @@ it('persists repeated evidence on the same finding', function () {
     expect($travelFinding->evidence)->toHaveCount(2);
 });
 
-it('persists a whitespace-normalized evidence excerpt', function () {
+/**
+ * V4 evidence resolution — see docs/job-analysis-generation.md "Async
+ * Job Analysis". The persisted excerpt is always the application-owned
+ * segment text, resolved deterministically from the validated
+ * evidence_refs id — never anything the provider supplied directly,
+ * since V4's payload never carries excerpt text at all.
+ */
+it('persists the exact source segment text as the evidence excerpt, not anything provider-supplied', function () {
     $posting = postingWithDescription();
     $payload = JobAnalysisFixtures::validPayload();
-    $payload['findings'][0]['evidence'][0]['excerpt'] =
-        "Minimum 5 years\n   of backend engineering  experience required.";
+    $payload['findings'] = [$payload['findings'][0]]; // evidence_refs: ['S003']
     fakeProvider()->willReturn(new JobAnalysisProviderResponse('openai', 'gpt-5.6-test', $payload));
 
     $analysis = generator()->generate($posting);
 
-    expect(JobAnalysis::count())->toBe(1)
-        ->and($analysis->findings->first()->evidence->first()->excerpt)
-        ->toBe("Minimum 5 years\n   of backend engineering  experience required.");
+    expect($analysis->findings->first()->evidence->first()->excerpt)
+        ->toBe('- Minimum 5 years of backend engineering experience required.');
 });
 
-it('rejects the complete analysis when any evidence excerpt is unverifiable', function () {
+it('records the segment id as source_locator, and leaves source_section null', function () {
     $posting = postingWithDescription();
     $payload = JobAnalysisFixtures::validPayload();
-    $payload['findings'][0]['evidence'][0]['excerpt'] = 'This was never in the posting.';
+    $payload['findings'] = [$payload['findings'][0]]; // evidence_refs: ['S003']
+    fakeProvider()->willReturn(new JobAnalysisProviderResponse('openai', 'gpt-5.6-test', $payload));
+
+    $analysis = generator()->generate($posting);
+
+    $evidence = $analysis->findings->first()->evidence->first();
+    expect($evidence->source_locator)->toBe('S003')
+        ->and($evidence->source_section)->toBeNull();
+});
+
+it('resolves two evidence_refs to their two distinct source segments', function () {
+    $posting = postingWithDescription();
+    $payload = JobAnalysisFixtures::validPayload();
+    $payload['findings'] = [$payload['findings'][1]]; // evidence_refs: ['S004', 'S005']
+    fakeProvider()->willReturn(new JobAnalysisProviderResponse('openai', 'gpt-5.6-test', $payload));
+
+    $analysis = generator()->generate($posting);
+
+    $excerpts = $analysis->findings->first()->evidence->pluck('excerpt')->all();
+    expect($excerpts)->toBe([
+        '- Travel up to 25% required for client visits.',
+        '- Travel is expected periodically to support on-site engagements.',
+    ]);
+});
+
+it('rejects the complete analysis when an evidence_refs id does not exist in the supplied segment set', function () {
+    $posting = postingWithDescription();
+    $payload = JobAnalysisFixtures::validPayload();
+    $payload['findings'][0]['evidence_refs'] = ['S999'];
     fakeProvider()->willReturn(new JobAnalysisProviderResponse('openai', 'gpt-5.6-test', $payload));
 
     expect(fn () => generator()->generate($posting))
@@ -190,12 +238,13 @@ it('rejects the complete analysis when any evidence excerpt is unverifiable', fu
         ->and(JobAnalysisFindingEvidence::count())->toBe(0);
 });
 
-it('rejects the complete analysis when one excerpt among otherwise-valid findings is unverifiable', function () {
+it('rejects the complete analysis when one evidence_refs id among otherwise-valid findings does not exist', function () {
     $posting = postingWithDescription();
     $payload = JobAnalysisFixtures::validPayload();
-    // Only the SECOND evidence entry of the SECOND finding is corrupted —
-    // findings[0] and the rest of findings[1]/findings[2] are all valid.
-    $payload['findings'][1]['evidence'][1]['excerpt'] = 'Fabricated — not in the posting.';
+    // Only the SECOND evidence_refs entry of the SECOND finding is
+    // corrupted — findings[0] and the rest of findings[1]/findings[2]
+    // are all valid.
+    $payload['findings'][1]['evidence_refs'] = ['S004', 'S999'];
     fakeProvider()->willReturn(new JobAnalysisProviderResponse('openai', 'gpt-5.6-test', $payload));
 
     expect(fn () => generator()->generate($posting))

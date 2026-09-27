@@ -1,12 +1,14 @@
 <?php
 
 use App\Http\Controllers\CareerDataController;
+use App\Http\Controllers\GenerationAttemptController;
 use App\Http\Controllers\JobAnalysisController;
 use App\Http\Controllers\JobMatchController;
 use App\Http\Controllers\JobPostingController;
 use App\Http\Controllers\ResumeVariantController;
 use App\Http\Controllers\ResumeVariantPdfController;
 use App\Http\Controllers\ResumeVariantPreviewController;
+use App\Http\Middleware\AllowLongRunningGeneration;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [CareerDataController::class, 'index'])->name('career-data.index');
@@ -17,13 +19,30 @@ Route::get('/jobs/create', [JobPostingController::class, 'create'])->name('jobs.
 Route::post('/jobs', [JobPostingController::class, 'store'])->name('jobs.store');
 Route::get('/jobs/{jobPosting}', [JobPostingController::class, 'show'])->name('jobs.show');
 
+// Job Analysis generation is queued (GenerateJobAnalysisJob) — this
+// POST only creates/looks up a GenerationAttempt and dispatches, so it
+// no longer needs AllowLongRunningGeneration; the actual, potentially
+// multi-minute Ollama call now happens in the queue worker's own
+// process, not this request's. See
+// docs/job-analysis-generation.md "Async Job Analysis".
 Route::post('/jobs/{jobPosting}/analyses', [JobAnalysisController::class, 'store'])->name('jobs.analyses.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}', [JobAnalysisController::class, 'show'])->name('jobs.analyses.show');
 
-Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches', [JobMatchController::class, 'store'])->name('jobs.analyses.matches.store');
+// Read-only polling endpoint for a GenerationAttempt's durable status —
+// see App\Http\Controllers\GenerationAttemptController.
+Route::get('/generation-attempts/{generationAttempt}', [GenerationAttemptController::class, 'show'])->name('generation-attempts.show');
+
+// AllowLongRunningGeneration: these two POST routes still make one
+// blocking, potentially multi-minute local Ollama inference call
+// synchronously — see that middleware's own docblock for why PHP's
+// ambient max_execution_time must not cut them short. Not yet migrated
+// to the queued pattern above (Job Match, then Resume generation, are
+// next — see docs/job-analysis-generation.md).
+
+Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches', [JobMatchController::class, 'store'])->middleware(AllowLongRunningGeneration::class)->name('jobs.analyses.matches.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}', [JobMatchController::class, 'show'])->name('jobs.analyses.matches.show');
 
-Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume', [ResumeVariantController::class, 'store'])->name('jobs.analyses.matches.resume.store');
+Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume', [ResumeVariantController::class, 'store'])->middleware(AllowLongRunningGeneration::class)->name('jobs.analyses.matches.resume.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume/{resumeVariant}', [ResumeVariantController::class, 'show'])->name('jobs.analyses.matches.resume.show');
 
 // Deterministic, non-Inertia print/preview surface — the single visual

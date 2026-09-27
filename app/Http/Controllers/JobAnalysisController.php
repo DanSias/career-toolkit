@@ -2,59 +2,57 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\GenerationStatus;
+use App\Enums\GenerationType;
 use App\Enums\JobAnalysisFindingCategory;
-use App\Exceptions\InvalidJobAnalysisResponseException;
-use App\Exceptions\JobAnalysisProviderException;
+use App\Jobs\GenerateJobAnalysisJob;
 use App\Models\JobAnalysis;
 use App\Models\JobAnalysisFinding;
 use App\Models\JobAnalysisFindingEvidence;
 use App\Models\JobMatch;
 use App\Models\JobPosting;
 use App\Support\CurrentCareerProfile;
-use App\Support\JobAnalysis\GenerateJobAnalysis;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
-use Throwable;
 
 /**
- * Generates and displays JobAnalysis snapshots for a JobPosting.
+ * Triggers and displays JobAnalysis snapshots for a JobPosting.
  * Generation always creates a new immutable snapshot — never edits or
  * replaces a prior one, and there is no "current" pointer to manage.
  * No editing, no deletion, no matching/fit content — this is a
  * read-only inspection surface over App\Support\JobAnalysis's
  * generation pipeline. See docs/job-analysis-generation.md.
+ *
+ * store() itself never calls the generation pipeline — it only
+ * creates/looks up a GenerationAttempt and dispatches
+ * GenerateJobAnalysisJob, which owns the actual
+ * GenerateJobAnalysis::generate() call and every outcome (success,
+ * provider failure, validation failure, evidence-verification failure,
+ * unexpected failure) durably on that attempt. See "Async Job
+ * Analysis" in docs/job-analysis-generation.md.
  */
 class JobAnalysisController extends Controller
 {
-    public function store(JobPosting $jobPosting, GenerateJobAnalysis $generator): RedirectResponse
+    public function store(JobPosting $jobPosting): RedirectResponse
     {
-        try {
-            $analysis = $generator->generate($jobPosting);
-        } catch (JobAnalysisProviderException|InvalidJobAnalysisResponseException $e) {
-            Log::warning('JobAnalysis generation failed.', [
-                'job_posting_id' => $jobPosting->id,
-                'exception' => $e::class,
-                'message' => $e->getMessage(),
+        $hasActiveAttempt = $jobPosting->generationAttempts()
+            ->active()
+            ->where('generation_type', GenerationType::JobAnalysis)
+            ->exists();
+
+        if (! $hasActiveAttempt) {
+            $attempt = $jobPosting->generationAttempts()->create([
+                'generation_type' => GenerationType::JobAnalysis,
+                'status' => GenerationStatus::Queued,
+                'queued_at' => now(),
             ]);
 
-            return back()->withErrors([
-                'generation' => 'Analysis generation failed — the response could not be validated. You can try again.',
-            ]);
-        } catch (Throwable $e) {
-            Log::error('JobAnalysis generation failed unexpectedly.', [
-                'job_posting_id' => $jobPosting->id,
-                'exception' => $e::class,
-            ]);
-
-            return back()->withErrors([
-                'generation' => 'Analysis generation failed unexpectedly. You can try again.',
-            ]);
+            GenerateJobAnalysisJob::dispatch($attempt);
         }
 
-        return redirect()->route('jobs.analyses.show', [$jobPosting, $analysis]);
+        return redirect()->route('jobs.show', $jobPosting);
     }
 
     public function show(JobPosting $jobPosting, JobAnalysis $jobAnalysis): Response

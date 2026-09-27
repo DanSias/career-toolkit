@@ -2,7 +2,9 @@
 
 namespace App\Exceptions;
 
+use App\Support\ProviderDiagnostics;
 use RuntimeException;
+use Throwable;
 
 /**
  * Thrown when the JobMatch model provider itself fails — a transport
@@ -12,5 +14,14 @@ use RuntimeException;
  * that fails our own schema/business-rule validation. Never carries
  * credentials or raw request/response headers in its message. Mirrors
  * JobAnalysisProviderException's role. See docs/job-match-generation.md.
+ *
+ * `$diagnostics` — see JobAnalysisProviderException's own docblock for
+ * what this optional, non-content metadata is and why it exists.
  */
-class JobMatchProviderException extends RuntimeException {}
+class JobMatchProviderException extends RuntimeException
+{
+    public function __construct(string $message, public readonly ?ProviderDiagnostics $diagnostics = null, ?Throwable $previous = null)
+    {
+        parent::__construct($message, previous: $previous);
+    }
+}

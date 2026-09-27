@@ -2,10 +2,10 @@
 
 use App\Exceptions\InvalidJobAnalysisResponseException;
 use App\Exceptions\JobAnalysisProviderException;
-use App\Support\JobAnalysis\EvidenceExcerptVerifier;
 use App\Support\JobAnalysis\JobAnalysisResponseValidator;
-use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV2;
+use App\Support\JobAnalysis\Prompts\JobAnalysisPromptV4;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
+use App\Support\JobAnalysis\SegmentJobPostingDescription;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Log;
 
@@ -41,9 +41,9 @@ use Illuminate\Support\Facades\Log;
  * since the transport already asserts response status == "completed"
  * or throws before returning).
  *
- * Runs JobAnalysisResponseValidator and EvidenceExcerptVerifier
- * directly (not through GenerateJobAnalysis) — same reasoning as the
- * Ollama harness: each stage's outcome is reported independently, and
+ * Runs JobAnalysisResponseValidator directly (not through
+ * GenerateJobAnalysis) — same reasoning as the Ollama harness: each
+ * stage's outcome is reported independently, and
  * this check never writes a JobAnalysis record anywhere. The only
  * persistence involved at all is jobAnalysisCorpusPosting()'s
  * JobPosting::factory()->create() call, into the same
@@ -55,9 +55,9 @@ use Illuminate\Support\Facades\Log;
  * anywhere) purely for this run's human inspection.
  *
  * A provider/transport failure fails this test loudly. A
- * JobAnalysisResponseValidator or EvidenceExcerptVerifier failure does
- * NOT fail the test — see OllamaJobAnalysisLiveTest.php's docblock for
- * why.
+ * JobAnalysisResponseValidator failure (including an invented/
+ * nonexistent evidence_refs id) does NOT fail the test — see
+ * OllamaJobAnalysisLiveTest.php's docblock for why.
  */
 beforeEach(function () {
     if (blank(config('services.openai.key'))) {
@@ -73,11 +73,12 @@ it('runs the real JobAnalysis prompt/schema through OpenAI and reports every pip
         model: (string) config('services.openai.model'),
     );
 
-    $prompt = new JobAnalysisPromptV2;
+    $prompt = new JobAnalysisPromptV4;
     $validator = new JobAnalysisResponseValidator;
-    $evidenceVerifier = new EvidenceExcerptVerifier;
+    $segments = (new SegmentJobPostingDescription)->segment($posting->description);
 
     $report = [
+        'segment_count' => count($segments),
         'configured_model' => config('services.openai.model'),
         'returned_model' => null,
         'elapsed_seconds' => null,
@@ -87,8 +88,6 @@ it('runs the real JobAnalysis prompt/schema through OpenAI and reports every pip
         'finding_count' => null,
         'validator_passed' => null,
         'validator_error' => null,
-        'evidence_verifier_passed' => null,
-        'evidence_verifier_error' => null,
     ];
 
     // OpenAIResponsesApiClient::call() already logs usage via
@@ -107,8 +106,8 @@ it('runs the real JobAnalysis prompt/schema through OpenAI and reports every pip
     try {
         $providerResponse = $client->generate(
             $prompt->systemPrompt(),
-            $prompt->userPrompt($posting),
-            $prompt->jsonSchema(),
+            $prompt->userPrompt($posting, $segments),
+            $prompt->jsonSchema(array_keys($segments)),
         );
     } catch (JobAnalysisProviderException $e) {
         $report['elapsed_seconds'] = round(microtime(true) - $start, 2);
@@ -119,25 +118,13 @@ it('runs the real JobAnalysis prompt/schema through OpenAI and reports every pip
     $report['elapsed_seconds'] = round(microtime(true) - $start, 2);
     $report['returned_model'] = $providerResponse->model;
 
-    $validated = null;
-
     try {
-        $validated = $validator->validate($providerResponse->structuredContent);
+        $validated = $validator->validate($providerResponse->structuredContent, array_keys($segments));
         $report['validator_passed'] = true;
         $report['finding_count'] = count($validated['findings'] ?? []);
     } catch (InvalidJobAnalysisResponseException $e) {
         $report['validator_passed'] = false;
         $report['validator_error'] = $e->getMessage();
-    }
-
-    if ($validated !== null) {
-        try {
-            $evidenceVerifier->verify($validated, $posting->description);
-            $report['evidence_verifier_passed'] = true;
-        } catch (InvalidJobAnalysisResponseException $e) {
-            $report['evidence_verifier_passed'] = false;
-            $report['evidence_verifier_error'] = $e->getMessage();
-        }
     }
 
     printOpenAIReport($report);
