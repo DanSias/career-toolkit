@@ -313,11 +313,47 @@ suite's own pass/fail. **Result: accepted. No prompt revision (no
   32,884 output, 102,278 total tokens across the 6 real calls (one
   `JobAnalysis` + one `JobMatch` generation per posting).
 
-## Durable generation attempts
+## Async Job Match
 
-Job Match generation is still fully synchronous today — see
-docs/job-analysis-generation.md "Durable generation attempts
+Job Match generation is queued now, mirroring Job Analysis exactly —
+see docs/job-analysis-generation.md "Durable generation attempts
 (foundation)" for the shared, cross-stage `GenerationAttempt`
-foundation (queue safety, schema, lifecycle, no-raw-content policy)
-this stage will eventually use once it's migrated to a background job,
-after Job Analysis.
+foundation (queue safety, schema, lifecycle, no-raw-content policy) and
+"Async Job Analysis" for the pattern this section reuses. Resume
+generation remains fully synchronous.
+
+`JobMatchController::store()` no longer calls `GenerateJobMatch` at
+all; it only creates or looks up a `GenerationAttempt` (subject: the
+`JobAnalysis`, generation_type: `job_match`) and dispatches
+`App\Jobs\GenerateJobMatchJob`, then redirects back to the analysis
+page immediately. `App\Jobs\GenerateJobMatchJob` is a thin
+orchestration wrapper, structurally identical to
+`GenerateJobAnalysisJob`, with one difference: it resolves
+`CurrentCareerProfile::resolve()` itself inside `handle()` rather than
+receiving a profile at dispatch time, since `GenerateJobMatch::generate()`
+takes both a `JobAnalysis` and a `CareerProfile` — this app has exactly
+one profile, deterministically resolved, so there's nothing meaningful
+to capture ahead of time.
+
+```
+GenerateJobMatchJob::handle()
+  -> status=running, started_at=now()
+  -> profile = CurrentCareerProfile::resolve()
+  -> GenerateJobMatch::generate($analysis, $profile)
+       success -> status=succeeded, finished_at, result_id, provider/model/prompt_version/schema_version
+       JobMatchProviderException -> status=failed, failure_category=provider_error, safe diagnostics
+       InvalidJobMatchResponseException -> status=failed, failure_category=validation_error
+  -> anything else escapes uncaught -> failed() callback -> status=failed, failure_category=unexpected_error
+```
+
+Duplicate prevention, polling, and frontend behavior are identical in
+kind to Job Analysis's: an application-level `GenerationAttempt::active()`
+check before creating a new attempt, the same `GET
+/generation-attempts/{generationAttempt}` endpoint, and
+`resources/js/pages/jobs/analyses/show.tsx`'s `GenerateMatchAction`
+polling via the same `useGenerationAttemptPolling` hook and
+`GenerationStatus` component Job Analysis uses — no second polling
+mechanism was introduced. `App\Support\GenerationAttempt\PresentGenerationAttempt::resultUrl()`
+resolves a succeeded Job Match attempt's result URL from
+`subject->job_posting_id` (the analysis's own column, not a lazy-loaded
+relation) plus `subject_id`/`result_id`.

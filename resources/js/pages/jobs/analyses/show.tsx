@@ -1,33 +1,39 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import { GenerationStatus } from '@/components/generation-status';
+import { useGenerationAttemptPolling } from '@/hooks/use-generation-attempt-polling';
 import AppShell from '@/layouts/app-shell';
 import { show as jobsShow } from '@/routes/jobs';
 import {
     show as matchesShow,
     store as matchesStore,
 } from '@/routes/jobs/analyses/matches';
+import type { GenerationAttempt } from '@/types/generation-attempt';
 import type {
     JobAnalysisFinding,
     JobAnalysisShowProps,
 } from '@/types/job-analysis';
 
-type PageErrors = { errors?: { match_generation?: string } };
-
 function GenerateMatchAction({
     jobId,
     analysisId,
+    initialAttempt,
 }: {
     jobId: number;
     analysisId: number;
+    initialAttempt: GenerationAttempt | null;
 }) {
     const form = useForm({});
-    const { errors } = usePage<PageErrors>().props;
+    const attempt = useGenerationAttemptPolling(initialAttempt);
+    const isActive =
+        attempt !== null &&
+        (attempt.status === 'queued' || attempt.status === 'running');
+    const disabled = form.processing || isActive;
 
     return (
         <div>
             <button
                 type="button"
-                disabled={form.processing}
+                disabled={disabled}
                 onClick={() =>
                     form.post(
                         matchesStore.url({
@@ -39,20 +45,21 @@ function GenerateMatchAction({
                 }
                 className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
             >
-                {form.processing
-                    ? 'Matching…'
-                    : 'Match Against My Profile'}
+                {disabled ? 'Matching…' : 'Match Against My Profile'}
             </button>
             <GenerationStatus
-                active={form.processing}
+                active={isActive}
                 label="Matching against your profile"
+                queued={attempt?.status === 'queued'}
+                queuedLabel="Match queued…"
+                startedAt={attempt?.started_at}
             />
-            {errors?.match_generation && (
+            {attempt?.status === 'failed' && attempt.failure_message && (
                 <p
                     role="alert"
                     className="mt-2 text-sm text-red-600 dark:text-red-400"
                 >
-                    {errors.match_generation}
+                    {attempt.failure_message}
                 </p>
             )}
         </div>
@@ -246,6 +253,7 @@ export default function JobAnalysesShow({
                     <GenerateMatchAction
                         jobId={job.id}
                         analysisId={analysis.id}
+                        initialAttempt={analysis.latest_job_match_attempt}
                     />
                 </div>
 

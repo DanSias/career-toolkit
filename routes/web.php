@@ -32,15 +32,19 @@ Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}', [JobAnalysisController::
 // see App\Http\Controllers\GenerationAttemptController.
 Route::get('/generation-attempts/{generationAttempt}', [GenerationAttemptController::class, 'show'])->name('generation-attempts.show');
 
-// AllowLongRunningGeneration: these two POST routes still make one
-// blocking, potentially multi-minute local Ollama inference call
-// synchronously — see that middleware's own docblock for why PHP's
-// ambient max_execution_time must not cut them short. Not yet migrated
-// to the queued pattern above (Job Match, then Resume generation, are
-// next — see docs/job-analysis-generation.md).
-
+// Job Match generation is also queued now (GenerateJobMatchJob), same
+// pattern as Job Analysis above. AllowLongRunningGeneration is kept on
+// this route for this milestone even though the POST request itself no
+// longer blocks on the Ollama call — see docs/job-match-generation.md
+// "Async Job Match" and this middleware's own docblock.
 Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches', [JobMatchController::class, 'store'])->middleware(AllowLongRunningGeneration::class)->name('jobs.analyses.matches.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}', [JobMatchController::class, 'show'])->name('jobs.analyses.matches.show');
+
+// AllowLongRunningGeneration: this POST route still makes one blocking,
+// potentially multi-minute local Ollama inference call synchronously —
+// see that middleware's own docblock for why PHP's ambient
+// max_execution_time must not cut it short. Not yet migrated to the
+// queued pattern above (Resume generation is next).
 
 Route::post('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume', [ResumeVariantController::class, 'store'])->middleware(AllowLongRunningGeneration::class)->name('jobs.analyses.matches.resume.store');
 Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}/matches/{jobMatch}/resume/{resumeVariant}', [ResumeVariantController::class, 'show'])->name('jobs.analyses.matches.resume.show');

@@ -1,3 +1,4 @@
+import type { GenerationAttempt } from '@/types/generation-attempt';
 import type { JobMatchSummary } from '@/types/job-match';
 
 export type JobAnalysisEvidence = {
@@ -38,6 +39,7 @@ export type JobAnalysisDetail = {
     seniority_rationale: string | null;
     categories: JobAnalysisCategoryGroup[];
     matches: JobMatchSummary[];
+    latest_job_match_attempt: GenerationAttempt | null;
 };
 
 export type JobAnalysisJobContext = {

@@ -1,6 +1,10 @@
 <?php
 
+use App\Enums\GenerationStatus;
+use App\Enums\GenerationType;
 use App\Enums\JobAnalysisSeniority;
+use App\Models\CareerProfile;
+use App\Models\GenerationAttempt;
 use App\Models\JobAnalysis;
 use App\Models\JobPosting;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -165,6 +169,92 @@ it('404s for a nonexistent analysis id', function () {
     $job = JobPosting::factory()->create();
 
     $this->get("/jobs/{$job->id}/analyses/999999")->assertNotFound();
+});
+
+it('exposes no latest_job_match_attempt when none has ever been made', function () {
+    $analysis = persistedAnalysis();
+    $job = $analysis->jobPosting;
+
+    $this->get(route('jobs.analyses.show', [$job, $analysis]))
+        ->assertInertia(fn (Assert $page) => $page->where('analysis.latest_job_match_attempt', null));
+});
+
+it('exposes a queued attempt as the latest_job_match_attempt, so a reload shows generation in progress', function () {
+    $analysis = persistedAnalysis();
+    $job = $analysis->jobPosting;
+    $attempt = GenerationAttempt::factory()->create([
+        'subject_type' => (new JobAnalysis)->getMorphClass(),
+        'subject_id' => $analysis->id,
+        'generation_type' => GenerationType::JobMatch,
+        'status' => GenerationStatus::Queued,
+    ]);
+
+    $this->get(route('jobs.analyses.show', [$job, $analysis]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('analysis.latest_job_match_attempt.id', $attempt->id)
+            ->where('analysis.latest_job_match_attempt.status', 'queued')
+        );
+});
+
+it('exposes the latest failed job_match attempt so a reload still explains why it failed', function () {
+    $analysis = persistedAnalysis();
+    $job = $analysis->jobPosting;
+    GenerationAttempt::factory()->create([
+        'subject_type' => (new JobAnalysis)->getMorphClass(),
+        'subject_id' => $analysis->id,
+        'generation_type' => GenerationType::JobMatch,
+        'status' => GenerationStatus::Failed,
+        'failure_message' => 'Match generation failed unexpectedly.',
+    ]);
+
+    $this->get(route('jobs.analyses.show', [$job, $analysis]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('analysis.latest_job_match_attempt.status', 'failed')
+            ->where('analysis.latest_job_match_attempt.failure_message', 'Match generation failed unexpectedly.')
+        );
+});
+
+it('does not expose a succeeded job_match attempt as latest_job_match_attempt, since its result already appears in matches', function () {
+    $analysis = persistedAnalysis();
+    $job = $analysis->jobPosting;
+    $profile = CareerProfile::factory()->create();
+    $match = $analysis->jobMatches()->create([
+        'career_profile_id' => $profile->id,
+        'schema_version' => '1.0',
+        'prompt_version' => 'job-match-v3',
+        'generated_by' => 'openai:gpt-5.6-test',
+        'generated_at' => now(),
+        'input_snapshot' => [],
+        'raw_response' => [],
+    ]);
+    GenerationAttempt::factory()->create([
+        'subject_type' => (new JobAnalysis)->getMorphClass(),
+        'subject_id' => $analysis->id,
+        'generation_type' => GenerationType::JobMatch,
+        'status' => GenerationStatus::Succeeded,
+        'result_id' => $match->id,
+    ]);
+
+    $this->get(route('jobs.analyses.show', [$job, $analysis]))
+        ->assertInertia(fn (Assert $page) => $page->where('analysis.latest_job_match_attempt', null));
+});
+
+it('does not select a job_analysis-typed attempt as this analysis own latest_job_match_attempt', function () {
+    $analysis = persistedAnalysis();
+    $job = $analysis->jobPosting;
+    // A job_analysis attempt whose subject_id happens to equal this
+    // JobAnalysis's own id — proves the query filters on generation_type,
+    // not just subject_id, and (implicitly, via the polymorphic subject
+    // relation) on subject_type.
+    GenerationAttempt::factory()->create([
+        'subject_type' => (new JobPosting)->getMorphClass(),
+        'subject_id' => $job->id,
+        'generation_type' => GenerationType::JobAnalysis,
+        'status' => GenerationStatus::Running,
+    ]);
+
+    $this->get(route('jobs.analyses.show', [$job, $analysis]))
+        ->assertInertia(fn (Assert $page) => $page->where('analysis.latest_job_match_attempt', null));
 });
 
 it('lists existing analyses newest first on the job posting detail page', function () {

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -93,6 +94,19 @@ class JobAnalysis extends Model
     public function jobMatches(): HasMany
     {
         return $this->hasMany(JobMatch::class);
+    }
+
+    /**
+     * Every job_match GenerationAttempt ever made against this
+     * analysis — queued, running, succeeded, or failed. See
+     * App\Models\GenerationAttempt and docs/job-match-generation.md
+     * "Async Job Match".
+     *
+     * @return MorphMany<GenerationAttempt, $this>
+     */
+    public function generationAttempts(): MorphMany
+    {
+        return $this->morphMany(GenerationAttempt::class, 'subject');
     }
 
     /**

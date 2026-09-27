@@ -12,6 +12,7 @@ use App\Models\JobAnalysisFindingEvidence;
 use App\Models\JobMatch;
 use App\Models\JobPosting;
 use App\Support\CurrentCareerProfile;
+use App\Support\GenerationAttempt\PresentGenerationAttempt;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -55,7 +56,7 @@ class JobAnalysisController extends Controller
         return redirect()->route('jobs.show', $jobPosting);
     }
 
-    public function show(JobPosting $jobPosting, JobAnalysis $jobAnalysis): Response
+    public function show(JobPosting $jobPosting, JobAnalysis $jobAnalysis, PresentGenerationAttempt $presenter): Response
     {
         abort_unless($jobAnalysis->job_posting_id === $jobPosting->id, 404);
 
@@ -67,14 +68,14 @@ class JobAnalysisController extends Controller
                 'company' => $jobPosting->company,
                 'title' => $jobPosting->title,
             ],
-            'analysis' => $this->transformAnalysis($jobAnalysis),
+            'analysis' => $this->transformAnalysis($jobAnalysis, $presenter),
         ]);
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function transformAnalysis(JobAnalysis $analysis): array
+    private function transformAnalysis(JobAnalysis $analysis, PresentGenerationAttempt $presenter): array
     {
         return [
             'id' => $analysis->id,
@@ -93,7 +94,31 @@ class JobAnalysisController extends Controller
                 ->get()
                 ->map($this->transformMatchSummary(...))
                 ->all(),
+            'latest_job_match_attempt' => $this->latestUnresolvedMatchAttempt($analysis, $presenter),
         ];
+    }
+
+    /**
+     * The most recent job_match GenerationAttempt for this analysis,
+     * but only when it's still queued/running or ended in failure —
+     * mirrors JobPostingController::latestUnresolvedAttempt() exactly.
+     * A succeeded attempt is omitted since its result already appears
+     * in `matches` above.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function latestUnresolvedMatchAttempt(JobAnalysis $analysis, PresentGenerationAttempt $presenter): ?array
+    {
+        $attempt = $analysis->generationAttempts()
+            ->where('generation_type', GenerationType::JobMatch)
+            ->latest('id')
+            ->first();
+
+        if ($attempt === null || $attempt->status === GenerationStatus::Succeeded) {
+            return null;
+        }
+
+        return $presenter->present($attempt);
     }
 
     /**

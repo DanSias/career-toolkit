@@ -4,6 +4,7 @@ use App\Enums\GenerationStatus;
 use App\Enums\GenerationType;
 use App\Models\GenerationAttempt;
 use App\Models\JobAnalysis;
+use App\Models\JobMatch;
 use App\Models\JobPosting;
 
 /**
@@ -51,6 +52,26 @@ it('includes the correct existing JobAnalysis result URL once succeeded', functi
     $response->assertJson([
         'status' => 'succeeded',
         'result_url' => route('jobs.analyses.show', [$jobPosting, $analysis]),
+    ]);
+});
+
+it('includes the correct existing JobMatch result URL once succeeded, derived from the JobAnalysis subject', function () {
+    $jobPosting = JobPosting::factory()->create();
+    $analysis = JobAnalysis::factory()->create(['job_posting_id' => $jobPosting->id]);
+    $match = JobMatch::factory()->create(['job_analysis_id' => $analysis->id]);
+    $attempt = GenerationAttempt::factory()->create([
+        'subject_type' => (new JobAnalysis)->getMorphClass(),
+        'subject_id' => $analysis->id,
+        'generation_type' => GenerationType::JobMatch,
+        'status' => GenerationStatus::Succeeded,
+        'result_id' => $match->id,
+    ]);
+
+    $response = $this->getJson(route('generation-attempts.show', $attempt))->assertOk();
+
+    $response->assertJson([
+        'status' => 'succeeded',
+        'result_url' => route('jobs.analyses.matches.show', [$jobPosting, $analysis, $match]),
     ]);
 });
 

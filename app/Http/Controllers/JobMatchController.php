@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\GenerationStatus;
+use App\Enums\GenerationType;
 use App\Enums\JobAnalysisFindingCategory;
-use App\Exceptions\InvalidJobMatchResponseException;
-use App\Exceptions\JobMatchProviderException;
+use App\Jobs\GenerateJobMatchJob;
 use App\Models\CareerFactMatch;
 use App\Models\EducationMatch;
 use App\Models\JobAnalysis;
@@ -12,16 +13,12 @@ use App\Models\JobMatch;
 use App\Models\JobMatchFinding;
 use App\Models\JobPosting;
 use App\Models\ResumeVariant;
-use App\Support\CurrentCareerProfile;
 use App\Support\JobMatch\CareerFactAttribution;
-use App\Support\JobMatch\GenerateJobMatch;
 use App\Support\ResumeVariant\DiscoveryPreflight;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
-use Throwable;
 
 /**
  * Generates and displays JobMatch snapshots comparing a JobAnalysis
@@ -29,44 +26,36 @@ use Throwable;
  * immutable snapshot — never edits or replaces a prior one, and there
  * is no "current" pointer to manage. No editing, no deletion — a
  * read-only inspection surface over App\Support\JobMatch's generation
- * pipeline, mirroring JobAnalysisController exactly. See
- * docs/job-match-generation.md.
+ * pipeline, mirroring JobAnalysisController exactly.
+ *
+ * store() itself never calls the generation pipeline — it only
+ * creates/looks up a GenerationAttempt and dispatches
+ * GenerateJobMatchJob, which owns the actual GenerateJobMatch::generate()
+ * call and every outcome durably on that attempt. See "Async Job Match"
+ * in docs/job-match-generation.md.
  */
 class JobMatchController extends Controller
 {
-    public function store(JobPosting $jobPosting, JobAnalysis $jobAnalysis, GenerateJobMatch $generator): RedirectResponse
+    public function store(JobPosting $jobPosting, JobAnalysis $jobAnalysis): RedirectResponse
     {
         abort_unless($jobAnalysis->job_posting_id === $jobPosting->id, 404);
 
-        $profile = CurrentCareerProfile::resolve();
+        $hasActiveAttempt = $jobAnalysis->generationAttempts()
+            ->active()
+            ->where('generation_type', GenerationType::JobMatch)
+            ->exists();
 
-        try {
-            $match = $generator->generate($jobAnalysis, $profile);
-        } catch (JobMatchProviderException|InvalidJobMatchResponseException $e) {
-            Log::warning('JobMatch generation failed.', [
-                'job_analysis_id' => $jobAnalysis->id,
-                'career_profile_id' => $profile->id,
-                'exception' => $e::class,
-                'message' => $e->getMessage(),
-                ...($e instanceof JobMatchProviderException ? ($e->diagnostics?->toLogContext() ?? []) : []),
-            ]);
-
-            return back()->withErrors([
-                'match_generation' => 'Match generation failed — the response could not be validated. You can try again.',
-            ]);
-        } catch (Throwable $e) {
-            Log::error('JobMatch generation failed unexpectedly.', [
-                'job_analysis_id' => $jobAnalysis->id,
-                'career_profile_id' => $profile->id,
-                'exception' => $e::class,
+        if (! $hasActiveAttempt) {
+            $attempt = $jobAnalysis->generationAttempts()->create([
+                'generation_type' => GenerationType::JobMatch,
+                'status' => GenerationStatus::Queued,
+                'queued_at' => now(),
             ]);
 
-            return back()->withErrors([
-                'match_generation' => 'Match generation failed unexpectedly. You can try again.',
-            ]);
+            GenerateJobMatchJob::dispatch($attempt);
         }
 
-        return redirect()->route('jobs.analyses.matches.show', [$jobPosting, $jobAnalysis, $match]);
+        return redirect()->route('jobs.analyses.show', [$jobPosting, $jobAnalysis]);
     }
 
     public function show(JobPosting $jobPosting, JobAnalysis $jobAnalysis, JobMatch $jobMatch): Response
