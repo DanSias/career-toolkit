@@ -341,21 +341,25 @@ it('renders the Role date range with abbreviated three-letter months', function 
     expect($html)->toContain('Jan 2021 – Present');
 });
 
-it('renders the Education degree on its own primary line, and institution/dates on a separate secondary line', function () {
+it('renders an Education entry\'s degree, institution, and dates on one compact line', function () {
     [$candidate, $variant] = previewCandidateVariant();
 
     $html = renderResumePrintView($variant);
 
-    expect($html)->toContain('<p class="education-degree-line">')
-        ->and($html)->toContain('<p class="education-meta-line">')
-        ->and($html)->toContain('<span class="education-institution">'.e($candidate['education']->institution).'</span>');
+    // One <p class="education-line"> holding all three spans, in DOM/
+    // reading order degree -> institution -> dates, joined by the same
+    // middle-dot separator used elsewhere in this document (Skills,
+    // contact line) — not two stacked <p> lines.
+    expect($html)->toMatch(
+        '/<p class="education-line">\s*'
+        .'<span class="education-degree">[^<]*<\/span>\s*'
+        .'·\s*<span class="education-institution">'.preg_quote(e($candidate['education']->institution), '/').'<\/span>\s*'
+        .'·\s*<span class="education-dates">[^<]*<\/span>\s*'
+        .'<\/p>/'
+    );
 
-    $degreeLinePos = strpos($html, 'education-degree-line');
-    $metaLinePos = strpos($html, 'education-meta-line');
-
-    expect($degreeLinePos)->not->toBeFalse()
-        ->and($metaLinePos)->not->toBeFalse()
-        ->and($degreeLinePos)->toBeLessThan($metaLinePos);
+    expect($html)->not->toContain('education-degree-line')
+        ->and($html)->not->toContain('education-meta-line');
 });
 
 // --- Skills DOM/text ordering ------------------------------------------------

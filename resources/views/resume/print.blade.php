@@ -69,12 +69,16 @@
     characters in the actual heading text). There is deliberately no
     visible Summary heading — the summary paragraph reads directly
     beneath the centered name/contact header — while the Summary
-    section/DTO field itself is unchanged. Role and Education entries
-    use a two-level header (primary line, then a secondary metadata
-    line); each Skills group is one compact "Label: skill · skill"
-    line — the label stays visually distinguishable via font-weight
-    only, never consuming its own row. None of this introduces tables,
-    grid, columns, icons, or absolute positioning.
+    section/DTO field itself is unchanged. A Role entry uses a
+    two-level header (title+dates sharing a row, employer on its own
+    row); an Education entry is one compact line — degree/field,
+    institution, and dates joined with the same middle-dot separator
+    used elsewhere in this document — that wraps naturally onto a
+    second line only when its own content is too long to fit, never
+    forced or truncated; each Skills group is one compact "Label:
+    skill · skill" line — the label stays visually distinguishable via
+    font-weight only, never consuming its own row. None of this
+    introduces tables, grid, columns, icons, or absolute positioning.
 --}}
 <!DOCTYPE html>
 <html lang="en">
@@ -408,8 +412,13 @@
             margin-bottom: 0;
         }
 
-        .education-degree-line {
-            margin: 0 0 0.02in;
+        .education-line {
+            /* One compact line — degree/field, institution, and dates —
+               that wraps naturally via ordinary inline text flow when
+               its own content doesn't fit, rather than the two stacked
+               <p> lines used previously. No white-space: nowrap and no
+               fixed width: a genuinely long entry is allowed to wrap. */
+            margin: 0;
             line-height: 1.25;
         }
 
@@ -418,18 +427,14 @@
             color: #1a1a1a;
         }
 
-        .education-meta-line {
-            margin: 0;
-            font-size: 10pt;
-            line-height: 1.25;
-        }
-
         .education-institution {
+            font-size: 10pt;
             font-weight: 400;
             color: #444444;
         }
 
         .education-dates {
+            font-size: 10pt;
             color: #444444;
         }
     </style>
@@ -533,11 +538,9 @@
             <h2>Education</h2>
             @foreach ($document->education as $entry)
                 <div class="education-entry">
-                    <p class="education-degree-line">
+                    <p class="education-line">
                         <span class="education-degree">{{ $entry->degree }}{{ $entry->fieldOfStudy ? ', '.$entry->fieldOfStudy : '' }}</span>
-                    </p>
-                    <p class="education-meta-line">
-                        <span class="education-institution">{{ $entry->institution }}</span>
+                        · <span class="education-institution">{{ $entry->institution }}</span>
                         · <span class="education-dates">{{ $entry->dateRangeLabel }}</span>
                     </p>
                 </div>
