@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ResumeVariant;
+use App\Support\ResumeDocument\GenerateResumeDocument;
 use Illuminate\Support\Facades\Http;
 use Smalot\PdfParser\Parser as PdfParser;
 use Tests\Support\ResumeVariantFixtures;
@@ -8,12 +9,14 @@ use Tests\Support\ResumeVariantFixtures;
 /**
  * Proves the PDF export route (GET /resume-variants/{resumeVariant}/pdf)
  * goes through the exact same GenerateResumeDocument +
- * resources/views/resume/print.blade.php path as the HTML preview —
- * never a second PDF-specific template, never live domain
- * reconstruction, never a provider/network call. Deep content/page-
- * count regression against a real, larger, human-reviewed resume lives
- * in GenerateResumePdfTest.php; this file is about the response
- * envelope and data path, not resume content.
+ * resources/views/resume/print.blade.php path the in-app preview page
+ * embeds (via this same route's own `?inline=1` toggle — see
+ * App\Http\Controllers\ResumeVariantPreviewController) — never a second
+ * PDF-specific template, never live domain reconstruction, never a
+ * provider/network call. Deep content/page-count regression against a
+ * real, larger, human-reviewed resume lives in GenerateResumePdfTest.php;
+ * this file is about the response envelope and data path, not resume
+ * content.
  */
 function pdfCandidateVariant(): array
 {
@@ -133,22 +136,24 @@ it('makes no outbound HTTP/provider calls while exporting the PDF', function () 
     Http::assertNothingSent();
 });
 
-it('sources the PDF from the same rendered markup as the HTML preview', function () {
+it('sources the PDF from the same rendered markup the Blade template itself produces', function () {
     [$candidate, $variant] = pdfCandidateVariant();
 
-    $previewHtml = $this->get(route('resume-variants.preview', $variant))->getContent();
+    $previewHtml = view('resume.print', [
+        'document' => app(GenerateResumeDocument::class)->generate($variant),
+    ])->render();
     $pdfResponse = $this->get(route('resume-variants.pdf', $variant));
     $pdfText = (new PdfParser)->parseContent($pdfResponse->getContent())->getText();
 
     // Every distinct field GenerateResumeDocument assembles — summary,
     // Experience bullet, Skill name, Education degree — must appear in
-    // BOTH the raw preview HTML and the Chromium-rendered PDF text.
-    // Preview never touches Eloquent/live data directly (see
-    // ResumeVariantPreviewTest.php) and PDF export renders the
-    // identical `resume.print` Blade output — both surfaces agreeing on
-    // every field is exactly what "one template, two outputs" predicts,
-    // and what a second, independently-maintained PDF template could
-    // easily drift on.
+    // BOTH the raw Blade-rendered HTML and the Chromium-rendered PDF
+    // text. See ResumeVariantPreviewTest.php for direct coverage of the
+    // Blade template's own output; PDF export renders that identical
+    // `resume.print` output through Chromium — both surfaces agreeing
+    // on every field is exactly what "one template, two outputs"
+    // predicts, and what a second, independently-maintained PDF
+    // template could easily drift on.
     $expectedStrings = [
         'A targeted PDF-export test summary.',
         'Built cloud-hosted deployment workflows on AWS.',

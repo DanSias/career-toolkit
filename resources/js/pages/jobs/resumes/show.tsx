@@ -1,6 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import AppShell from '@/layouts/app-shell';
 import { show as matchesShow } from '@/routes/jobs/analyses/matches';
+import { pdf as resumePdf, preview as resumePreview } from '@/routes/resume-variants';
 import type {
     ResumeBullet,
     ResumeCareerFactSummary,
@@ -170,12 +171,32 @@ export default function ResumeVariantShow({
             </Link>
 
             <div className="mt-4">
-                <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-                    Tailored Resume
-                </h1>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                    {job.title} at {job.company}
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+                            Tailored Resume
+                        </h1>
+                        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                            {job.title} at {job.company}
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <a
+                            href={resumePreview.url({ resumeVariant: resume.id })}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                        >
+                            Preview Resume
+                        </a>
+                        <a
+                            href={resumePdf.url({ resumeVariant: resume.id })}
+                            className="inline-flex items-center rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                        >
+                            Download PDF
+                        </a>
+                    </div>
+                </div>
                 <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
                     <div className="flex gap-1">
                         <dt className="font-medium text-neutral-400 dark:text-neutral-500">

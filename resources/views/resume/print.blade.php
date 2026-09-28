@@ -28,9 +28,15 @@
     together with whatever immediately follows it. A Role itself is
     deliberately NOT one atomic unit: a Role with several bullets may
     span a page boundary between bullets, with its heading always
-    staying with at least its first bullet. See the `break-*`/
-    `page-break-*` rules below for exactly where each invariant lives;
-    none of them reference a specific employer, Role, or page number.
+    staying with at least its first bullet, and its *last* bullet never
+    left stranded alone at the top of the next page when the
+    fragmentation engine can instead move that break one bullet earlier
+    (see `.role ul.bullets li:last-child` below — the one narrow
+    exception to "a Role may split anywhere between bullets", added
+    after a real TRM Labs resume's final Experience bullet was orphaned
+    this way). See the `break-*`/`page-break-*` rules below for exactly
+    where each invariant lives; none of them reference a specific
+    employer, Role, or page number.
 
     ATS v1 rendering contract: US Letter (explicit `@page { size:
     letter; margin: 0 }` below — the one physical-page-geometry source
@@ -307,6 +313,22 @@
 
         ul.bullets li:last-child {
             margin-bottom: 0;
+        }
+
+        /* Avoids stranding a role's final bullet alone at the top of a
+           new page: if it wouldn't otherwise fit, this asks the
+           fragmentation engine to move the break one bullet earlier
+           instead, keeping the final two bullets together. Scoped to
+           Experience roles only (`.role`) — a Selected Project's own
+           single bullet is already fully atomic via `.selected-project`
+           above, where this rule would be inert anyway. Deliberately
+           NOT `break-inside: avoid` on `.role` itself — a role with
+           several bullets may still span pages between earlier bullets;
+           only the specific last-bullet-orphan case is addressed here.
+           See docs/resume-variant-generation.md "PDF export". */
+        .role ul.bullets li:last-child {
+            page-break-before: avoid;
+            break-before: avoid;
         }
 
         .skill-group {

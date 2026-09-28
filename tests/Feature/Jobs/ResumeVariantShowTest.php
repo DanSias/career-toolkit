@@ -103,6 +103,21 @@ it('includes experience grouped by role with citations and target-term usages', 
         );
 });
 
+it('exposes resume.id sufficient to construct the existing preview/PDF document routes', function () {
+    [$candidate, $job, $match, $variant] = persistedResumeVariant();
+    $jobPosting = $match->jobAnalysis->jobPosting;
+
+    $this->get(route('jobs.analyses.matches.resume.show', [$jobPosting, $match->jobAnalysis, $match, $variant]))
+        ->assertInertia(fn (Assert $page) => $page->where('resume.id', $variant->id));
+
+    // The same id the page exposes is exactly what resume-variants.preview
+    // and resume-variants.pdf expect (see resources/js/routes/resume-variants) —
+    // confirm the preview route actually resolves for it. PDF-specific
+    // rendering/page-budget behavior remains owned by
+    // tests/Feature/ResumeDocument/ResumeVariantPdfControllerTest.php.
+    $this->get(route('resume-variants.preview', $variant))->assertOk();
+});
+
 it('404s when the ResumeVariant does not belong to the given JobMatch', function () {
     [$candidate, $job, $match, $variant] = persistedResumeVariant();
     $jobPosting = $match->jobAnalysis->jobPosting;

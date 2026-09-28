@@ -9,12 +9,13 @@ use App\Support\ResumeDocument\GenerateResumePdf;
 use App\Support\ResumeDocument\ResumePdfFilename;
 use App\Support\ResumeDocument\ResumePdfValidator;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /**
- * Exports one ResumeVariant as a downloadable PDF, via the exact same
+ * Exports one ResumeVariant as a PDF, via the exact same
  * GenerateResumeDocument + resources/views/resume/print.blade.php path
- * ResumeVariantPreviewController renders as HTML — see
+ * ResumeVariantPreviewController's in-app preview page embeds — see
  * App\Support\ResumeDocument\GenerateResumePdf's own docblock. No
  * separate PDF-specific template, no permanent storage: the PDF is
  * generated fresh and streamed back on every request.
@@ -22,17 +23,27 @@ use Illuminate\Http\Response;
  * Orchestration only: generate (GenerateResumePdf) -> validate
  * (ResumePdfValidator) -> respond. This controller owns none of the
  * rendering logic and none of the page-count policy itself — see each
- * class's own docblock. A rejected PDF is never streamed/downloaded;
- * the failure response reports the actual measured page count rather
- * than a generic message. No automatic regeneration, no provider call,
- * no mutation of the ResumeVariant on either path — a rejected export
+ * class's own docblock. A rejected PDF is never streamed; the failure
+ * response reports the actual measured page count rather than a
+ * generic message. No automatic regeneration, no provider call, no
+ * mutation of the ResumeVariant on either path — a rejected export
  * leaves the persisted variant and its HTML preview completely
- * unaffected; the candidate can still preview it, just not download an
- * over-length PDF.
+ * unaffected; the candidate can still preview it, just not download (or
+ * inline-view) an over-length PDF.
+ *
+ * `?inline=1` is the one behavioral toggle this action supports —
+ * everything else (generation, validation, byte content) is identical
+ * either way. Deliberately not a second route/controller: the
+ * generate-then-validate orchestration is the part worth keeping in one
+ * place, and the only difference between "Download PDF" and the
+ * in-app preview's embedded PDF is this one response header. See
+ * App\Http\Controllers\ResumeVariantPreviewController, whose embedded
+ * `<iframe>` points at this same route with `inline=1`.
  */
 class ResumeVariantPdfController extends Controller
 {
     public function show(
+        Request $request,
         ResumeVariant $resumeVariant,
         GenerateResumePdf $generator,
         ResumePdfValidator $validator,
@@ -50,10 +61,11 @@ class ResumeVariantPdfController extends Controller
         }
 
         $filename = ResumePdfFilename::build($resumeVariant);
+        $disposition = $request->boolean('inline') ? 'inline' : 'attachment';
 
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+            'Content-Disposition' => "{$disposition}; filename=\"{$filename}\"",
         ]);
     }
 }

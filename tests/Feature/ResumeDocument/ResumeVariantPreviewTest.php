@@ -2,16 +2,31 @@
 
 use App\Models\ResumeVariant;
 use App\Models\Skill;
+use App\Support\ResumeDocument\GenerateResumeDocument;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\ResumeVariantFixtures;
 
 /**
- * Proves the deterministic, non-Inertia preview route
- * (GET /resume-variants/{resumeVariant}/preview) renders the exact
- * ResumeDocument GenerateResumeDocument builds — never live Eloquent
- * data reached into directly from the Blade template, and never a
- * provider call.
+ * Proves resources/views/resume/print.blade.php's own rendered output —
+ * the single shared template both the in-app PDF-backed preview
+ * (App\Http\Controllers\ResumeVariantPreviewController, which embeds
+ * the generated PDF rather than serving this HTML directly — see that
+ * class's own docblock) and PDF export
+ * (App\Http\Controllers\ResumeVariantPdfController /
+ * App\Support\ResumeDocument\GenerateResumePdf) are built from.
+ * Rendered here directly via the view layer, independent of any
+ * specific controller/route, so this suite stays meaningful regardless
+ * of which HTTP surface happens to expose the template — never live
+ * Eloquent data reached into directly from the Blade template, and
+ * never a provider call.
  */
+function renderResumePrintView(ResumeVariant $variant): string
+{
+    return view('resume.print', [
+        'document' => app(GenerateResumeDocument::class)->generate($variant),
+    ])->render();
+}
+
 function previewCandidateVariant(): array
 {
     $candidate = ResumeVariantFixtures::candidate();
@@ -91,88 +106,76 @@ function previewCandidateVariantWithSelectedProject(): array
     return [$candidate, $variant->fresh()];
 }
 
-it('returns HTML for a valid ResumeVariant', function () {
+it('renders valid HTML for a valid ResumeVariant', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk();
-    expect($response->headers->get('Content-Type'))->toContain('text/html');
+    expect($html)->toContain('<!DOCTYPE html>');
 });
 
 it('renders the ResumeDocument summary, employer, title, bullets, skills, and education', function () {
     [$candidate, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk()
-        ->assertSee('A targeted preview summary.')
-        ->assertSee($candidate['employer']->name)
-        ->assertSee('Senior Software Engineer')
-        ->assertSee('Built cloud-hosted deployment workflows on AWS.')
-        ->assertSee($candidate['awsSkill']->name)
-        ->assertSee($candidate['education']->institution);
+    expect($html)->toContain('A targeted preview summary.')
+        ->and($html)->toContain($candidate['employer']->name)
+        ->and($html)->toContain('Senior Software Engineer')
+        ->and($html)->toContain('Built cloud-hosted deployment workflows on AWS.')
+        ->and($html)->toContain($candidate['awsSkill']->name)
+        ->and($html)->toContain($candidate['education']->institution);
 });
 
 it('omits null contact fields rather than rendering an empty placeholder', function () {
     [$candidate, $variant] = previewCandidateVariant();
     $candidate['profile']->update(['phone' => null, 'location' => null]);
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant->fresh());
 
-    $response->assertOk();
-    $html = $response->getContent();
     expect($html)->not->toContain('null')
         ->and($html)->not->toContain('Phone:')
         ->and($html)->not->toContain('Location:');
 });
 
 it('renders the portfolio link as a real anchor with the canonical URL as href and the human-readable domain as visible text', function () {
-    [$candidate, $variant] = previewCandidateVariant();
+    [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk();
-    $html = $response->getContent();
     expect($html)->toContain('<a href="https://example.dev">example.dev</a>');
 });
 
 it('omits GitHub from the default rendered header even though the candidate has a github_url', function () {
-    [$candidate, $variant] = previewCandidateVariant();
+    [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk();
-    $html = $response->getContent();
     expect($html)->not->toContain('github.com/example')
         ->and($html)->not->toContain('<a href="https://github.com/example"');
 });
 
 it('omits location from the default rendered header', function () {
-    [$candidate, $variant] = previewCandidateVariant();
+    [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk();
-    expect($response->getContent())->not->toContain('Orlando, FL');
+    expect($html)->not->toContain('Orlando, FL');
 });
 
 it('renders nothing for portfolio when it is null', function () {
     [$candidate, $variant] = previewCandidateVariant();
     $candidate['profile']->update(['portfolio_url' => null, 'github_url' => null]);
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant->fresh());
 
-    $response->assertOk();
-    expect($response->getContent())->not->toContain('<a href');
+    expect($html)->not->toContain('<a href');
 });
 
 it('renders the default contact line in the order email, then phone, then portfolio', function () {
-    [$candidate, $variant] = previewCandidateVariant();
+    [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $response->assertOk();
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     $emailPos = strpos($html, 'candidate@example.com');
     $phonePos = strpos($html, '(407) 272-1720');
@@ -192,10 +195,8 @@ it('renders the frozen ResumeDocument content, not live domain data, when the un
     $candidate['employer']->update(['name' => 'Renamed Employer Inc.']);
     $candidate['awsSkill']->update(['name' => 'Renamed Skill']);
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk();
-    $html = $response->getContent();
     expect($html)->not->toContain('Renamed Employer Inc.')
         ->and($html)->not->toContain('Renamed Skill')
         ->and($html)->toContain($originalEmployerName);
@@ -204,9 +205,7 @@ it('renders the frozen ResumeDocument content, not live domain data, when the un
 it('renders sections in v1 display order: Summary, then Skills, then Experience, then Education', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $response->assertOk();
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     $summaryPos = strpos($html, 'A targeted preview summary.');
     $skillsPos = strpos($html, '>Technical Skills<');
@@ -225,9 +224,7 @@ it('renders sections in v1 display order: Summary, then Skills, then Experience,
 it('renders no visible Summary section heading, while the summary text itself still renders', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $response->assertOk();
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     expect($html)->toContain('A targeted preview summary.')
         ->and($html)->not->toContain('>Summary<');
@@ -236,45 +233,38 @@ it('renders no visible Summary section heading, while the summary text itself st
 it('renders conventional, ATS-recognizable section heading text for Skills and Experience', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk()
-        ->assertSee('Technical Skills')
-        ->assertSee('Professional Experience')
-        ->assertSee('Education');
+    expect($html)->toContain('Technical Skills')
+        ->and($html)->toContain('Professional Experience')
+        ->and($html)->toContain('Education');
 });
 
 it('omits the entire Selected Projects section — no heading at all — when no Project was selected', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk();
-    expect($response->getContent())->not->toContain('Selected Projects');
+    expect($html)->not->toContain('Selected Projects');
 });
 
 it('renders the Selected Projects name, technologies, bullet, and both links when present', function () {
     [, $variant] = previewCandidateVariantWithSelectedProject();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk()
-        ->assertSee('Selected Projects')
-        ->assertSee('Well Prompted')
-        ->assertSee('Prisma, Supabase', false)
-        ->assertSee('Built a structured prompt library for reusable AI-assisted development workflows.');
-
-    $html = $response->getContent();
-    expect($html)->toContain('<a href="https://wellprompted.example.dev">Live Demo</a>')
+    expect($html)->toContain('Selected Projects')
+        ->and($html)->toContain('Well Prompted')
+        ->and($html)->toContain('Prisma, Supabase')
+        ->and($html)->toContain('Built a structured prompt library for reusable AI-assisted development workflows.')
+        ->and($html)->toContain('<a href="https://wellprompted.example.dev">Live Demo</a>')
         ->and($html)->toContain('<a href="https://github.com/example/well-prompted">Repository</a>');
 });
 
 it('renders sections in order: Skills, Experience, Selected Projects, Education, when a Project is selected', function () {
     [, $variant] = previewCandidateVariantWithSelectedProject();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $response->assertOk();
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     $skillsPos = strpos($html, '>Technical Skills<');
     $experiencePos = strpos($html, '>Professional Experience<');
@@ -296,10 +286,8 @@ it('renders the frozen Selected Projects content, not live Project/Skill data, w
     $candidate['independentProject']->update(['name' => 'Renamed Project']);
     $candidate['independentProjectSkill']->update(['name' => 'Renamed Skill']);
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk();
-    $html = $response->getContent();
     expect($html)->not->toContain('Renamed Project')
         ->and($html)->not->toContain('Renamed Skill')
         ->and($html)->toContain('Well Prompted');
@@ -309,9 +297,9 @@ it('makes no outbound HTTP/provider calls while rendering the preview', function
     Http::preventStrayRequests();
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk();
+    expect($html)->toContain('<!DOCTYPE html>');
     Http::assertNothingSent();
 });
 
@@ -320,8 +308,7 @@ it('makes no outbound HTTP/provider calls while rendering the preview', function
 it('renders the Role title, company, and dates as three DOM elements in that logical order — title, company, date — regardless of visual CSS layout', function () {
     [$candidate, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     expect($html)->toContain('<p class="role-title">Senior Software Engineer</p>')
         ->and($html)->toContain('<p class="role-employer">'.e($candidate['employer']->name).'</p>')
@@ -341,8 +328,7 @@ it('renders the Role title, company, and dates as three DOM elements in that log
 it('renders Role title/company/dates as plain block-level <p> elements, so a CSS-off view still stacks them as three lines in DOM order', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     expect($html)->toMatch('/<p class="role-title">[^<]*<\/p>\s*<p class="role-employer">[^<]*<\/p>\s*<p class="role-dates">[^<]*<\/p>/');
 });
@@ -350,16 +336,15 @@ it('renders Role title/company/dates as plain block-level <p> elements, so a CSS
 it('renders the Role date range with abbreviated three-letter months', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
+    $html = renderResumePrintView($variant);
 
-    $response->assertOk()->assertSee('Jan 2021 – Present');
+    expect($html)->toContain('Jan 2021 – Present');
 });
 
 it('renders the Education degree on its own primary line, and institution/dates on a separate secondary line', function () {
     [$candidate, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     expect($html)->toContain('<p class="education-degree-line">')
         ->and($html)->toContain('<p class="education-meta-line">')
@@ -378,8 +363,7 @@ it('renders the Education degree on its own primary line, and institution/dates 
 it('renders each Skills group as one compact line — a bold inline label followed by its skills, not on its own row', function () {
     [$candidate, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     // The label is an inline <span> inside the same <p> as the skills
     // that follow it — proving the compact one-line structure, not a
@@ -399,9 +383,9 @@ it('joins multiple skills within a group with a middle dot, not a comma', functi
         'display_order' => 2,
     ]);
 
-    $response = $this->get(route('resume-variants.preview', $variant->fresh()));
+    $html = renderResumePrintView($variant->fresh());
 
-    $response->assertOk()->assertSee('AWS · Terraform', false);
+    expect($html)->toContain('AWS · Terraform');
 });
 
 // --- Print pagination CSS rules --------------------------------------------
@@ -433,8 +417,7 @@ function cssRuleBody(string $css, string $selector): ?string
 it('no longer treats a whole Role as one unbreakable print unit', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $css = $response->getContent();
+    $css = renderResumePrintView($variant);
 
     $roleRule = cssRuleBody($css, '.role');
 
@@ -446,8 +429,7 @@ it('no longer treats a whole Role as one unbreakable print unit', function () {
 it('keeps a Role heading glued to whatever follows it (its first bullet), and keeps the heading itself unsplit', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $css = $response->getContent();
+    $css = renderResumePrintView($variant);
 
     $headerRule = cssRuleBody($css, '.role-header');
 
@@ -460,8 +442,7 @@ it('keeps a Role heading glued to whatever follows it (its first bullet), and ke
 it('treats every individual bullet (Experience and Selected Project) as an indivisible print unit', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $css = $response->getContent();
+    $css = renderResumePrintView($variant);
 
     $bulletRule = cssRuleBody($css, 'ul.bullets li');
 
@@ -470,11 +451,33 @@ it('treats every individual bullet (Experience and Selected Project) as an indiv
         ->and($bulletRule)->toContain('page-break-inside: avoid');
 });
 
+it('avoids stranding a Role\'s final bullet alone at the top of a new page, without making the whole Role unbreakable', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $css = renderResumePrintView($variant);
+
+    $lastBulletRule = cssRuleBody($css, '.role ul.bullets li:last-child');
+
+    expect($lastBulletRule)->not->toBeNull()
+        ->and($lastBulletRule)->toContain('break-before: avoid')
+        ->and($lastBulletRule)->toContain('page-break-before: avoid');
+
+    // The narrow last-bullet rule must not be confused with, or replace,
+    // the existing "every bullet is atomic" rule — both coexist.
+    $bulletRule = cssRuleBody($css, 'ul.bullets li');
+    expect($bulletRule)->toContain('break-inside: avoid');
+
+    // And the whole-Role atomicity assertion above still holds — this
+    // rule is scoped to the last bullet only, never break-inside on
+    // .role itself.
+    $roleRule = cssRuleBody($css, '.role');
+    expect($roleRule)->not->toContain('break-inside');
+});
+
 it('never lets any section heading be stranded alone at the bottom of a page — a generic rule, not per-section', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $css = $response->getContent();
+    $css = renderResumePrintView($variant);
 
     $h2Rule = cssRuleBody($css, 'h2');
 
@@ -486,8 +489,7 @@ it('never lets any section heading be stranded alone at the bottom of a page —
 it('keeps small semantic units (Summary paragraph, a Skills category line, an Education entry, a Selected Project entry) print-indivisible', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $css = $response->getContent();
+    $css = renderResumePrintView($variant);
 
     foreach (['.summary-text', '.skill-group', '.education-entry', '.selected-project'] as $selector) {
         $rule = cssRuleBody($css, $selector);
@@ -500,8 +502,7 @@ it('keeps small semantic units (Summary paragraph, a Skills category line, an Ed
 it('never groups all Education entries into one unbreakable block — only each individual entry', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $css = $response->getContent();
+    $css = renderResumePrintView($variant);
 
     // No selector targets the whole .education section as an atomic
     // print unit — only .education-entry (already asserted above).
@@ -513,8 +514,7 @@ it('never groups all Education entries into one unbreakable block — only each 
 it('never uses a table or absolute positioning anywhere, including for the Role title/date line layout', function () {
     [, $variant] = previewCandidateVariant();
 
-    $response = $this->get(route('resume-variants.preview', $variant));
-    $html = $response->getContent();
+    $html = renderResumePrintView($variant);
 
     expect($html)->not->toContain('<table')
         ->and($html)->not->toContain('position: absolute')
