@@ -99,4 +99,21 @@ return [
         'provider' => env('AI_RESUME_WORDING_PROVIDER', 'ollama'),
     ],
 
+    /*
+    | Shared-secret Bearer token guarding routes/api.php's worker
+    | protocol endpoints (App\Http\Middleware\AuthenticateBrowserWorker)
+    | — never Sanctum; see docs/application-inspector.md "Approved v1
+    | worker authentication". claim_ttl is how long a claimed AgentRun
+    | may run before Career Toolkit treats the worker as gone and
+    | recovers the claim as failed (failure_category: claim_timeout) —
+    | see App\Support\ApplicationInspection\ClaimNextAgentRun. Default
+    | (60s) is sized against the real AI-box smoke-test timing (~3.5s
+    | per Greenhouse inspection), not the earlier, more conservative
+    | 120s estimate from before that data existed.
+    */
+    'browser_worker' => [
+        'token' => env('BROWSER_WORKER_TOKEN'),
+        'claim_ttl' => (int) env('BROWSER_WORKER_CLAIM_TTL', 60),
+    ],
+
 ];
