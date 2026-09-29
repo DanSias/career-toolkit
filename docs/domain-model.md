@@ -7,22 +7,27 @@ AI functionality, resume generation, or authentication behavior exists yet.
 
 ## Entity overview
 
-| Entity          | Belongs to                                                     | Holds                                                             |
-| --------------- | -------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `User`          | —                                                              | Laravel's standard account/ownership root                         |
-| `CareerProfile` | `User`                                                         | A person's canonical career dataset                               |
-| `Employer`      | `CareerProfile`                                                | An organization                                                   |
-| `Role`          | `Employer`                                                     | One title/period of employment                                    |
-| `Project`       | `Role`                                                         | A named, evidenced body of work (zero or many per Role)           |
-| `CareerFact`    | `CareerProfile` (+ attributed to one of the four models above) | One atomic, selectable claim                                      |
-| `Evidence`      | `CareerFact`                                                   | One piece of provenance for a fact                                |
-| `Metric`        | `CareerFact` (optional, 1:1)                                   | Structured quantitative data for a fact                           |
-| `Skill`         | `CareerProfile`                                                | A build technology, platform integration, capability, or practice |
-| `Education`     | `CareerProfile`                                                | One academic credential — plain structured data, not a CareerFact |
-| `JobPosting`    | `CareerProfile`                                                | The verbatim source material for a target job                     |
-| `JobAnalysis`   | `JobPosting`                                                   | One versioned, immutable structured-analysis snapshot of a posting |
-| `JobAnalysisFinding` | `JobAnalysis`                                             | One discrete observation extracted from a posting                 |
-| `JobAnalysisFindingEvidence` | `JobAnalysisFinding`                              | One verbatim excerpt substantiating a finding                     |
+| Entity                       | Belongs to                                                     | Holds                                                                 |
+| ---------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `User`                       | —                                                              | Laravel's standard account/ownership root                             |
+| `CareerProfile`              | `User`                                                         | A person's canonical career dataset                                   |
+| `Employer`                   | `CareerProfile`                                                | An organization                                                       |
+| `Role`                       | `Employer`                                                     | One title/period of employment                                        |
+| `Project`                    | `Role`                                                         | A named, evidenced body of work (zero or many per Role)               |
+| `CareerFact`                 | `CareerProfile` (+ attributed to one of the four models above) | One atomic, selectable claim                                          |
+| `Evidence`                   | `CareerFact`                                                   | One piece of provenance for a fact                                    |
+| `Metric`                     | `CareerFact` (optional, 1:1)                                   | Structured quantitative data for a fact                               |
+| `Skill`                      | `CareerProfile`                                                | A build technology, platform integration, capability, or practice     |
+| `Education`                  | `CareerProfile`                                                | One academic credential — plain structured data, not a CareerFact     |
+| `JobPosting`                 | `CareerProfile`                                                | The verbatim source material for a target job                         |
+| `JobAnalysis`                | `JobPosting`                                                   | One versioned, immutable structured-analysis snapshot of a posting    |
+| `JobAnalysisFinding`         | `JobAnalysis`                                                  | One discrete observation extracted from a posting                     |
+| `JobAnalysisFindingEvidence` | `JobAnalysisFinding`                                           | One verbatim excerpt substantiating a finding                         |
+| `Application`                | `JobPosting`                                                   | A mutable operational attempt to evaluate/pursue one opportunity      |
+| `WorkflowRun`                | `Application`                                                  | One durable execution of a business process against an Application    |
+| `WorkflowStep`               | `WorkflowRun`                                                  | One bounded step within a WorkflowRun                                 |
+| `AgentRun`                   | `WorkflowStep`                                                 | One execution attempt by an external worker satisfying a WorkflowStep |
+| `ApplicationQuestion`        | `Application` (+ produced by one `AgentRun`)                   | One field/question discovered on an external application              |
 
 `CareerFact` ↔ `Skill` is many-to-many via a plain pivot table
 (`career_fact_skill`). `project_skill` also exists but is currently
@@ -49,9 +54,16 @@ User
       ├── Education (hasMany)
       │
       └── JobPosting (hasMany)
-           └── JobAnalysis (hasMany — zero or more snapshots, no "current" pointer)
-                └── JobAnalysisFinding (hasMany)
-                     └── JobAnalysisFindingEvidence (hasMany)
+           ├── JobAnalysis (hasMany — zero or more snapshots, no "current" pointer)
+           │    └── JobAnalysisFinding (hasMany)
+           │         └── JobAnalysisFindingEvidence (hasMany)
+           │
+           └── Application (hasMany — zero or more pursuit attempts per posting)
+                ├── WorkflowRun (hasMany)
+                │    └── WorkflowStep (hasMany)
+                │         └── AgentRun (hasMany)
+                │
+                └── ApplicationQuestion (hasMany — each also belongsTo the AgentRun that produced it)
 ```
 
 A `CareerFact` has **two relationships** to the rest of the graph: it
@@ -396,8 +408,11 @@ seen before.
 | `Role`              | `Project`                                                                                |
 | `CareerFact`        | `Evidence`, `Metric`, `career_fact_skill` pivot rows                                     |
 | `Skill` / `Project` | their pivot rows only, never the other side                                              |
-| `JobAnalysis`       | `JobMatch` → `JobMatchFinding` → `CareerFactMatch`/`EducationMatch`                       |
+| `JobAnalysis`       | `JobMatch` → `JobMatchFinding` → `CareerFactMatch`/`EducationMatch`                      |
 | `JobMatch`          | `JobMatchFinding` → `CareerFactMatch`/`EducationMatch`                                   |
+| `Application`       | `WorkflowRun` → `WorkflowStep` → `AgentRun`; `ApplicationQuestion`                       |
+| `WorkflowRun`       | `WorkflowStep` → `AgentRun`                                                              |
+| `WorkflowStep`      | `AgentRun`                                                                               |
 
 `CareerProfile` is treated as the true aggregate root: deleting it deletes
 everything it owns, with no special handling needed — **except** that a
@@ -409,6 +424,16 @@ same way any other RESTRICT-protected dependent blocks deletion; a
 `education_matches.education_id` RESTRICT rather than cascade — the one
 deliberately non-cascading FK direction in this table, alongside the
 `Employer`/`Role`/`Project` reassignment case just below.
+
+The same RESTRICT posture applies one level up the tree now too:
+`applications.job_posting_id` RESTRICTs rather than cascades, for the
+identical reason — an `Application` is operational tracking history, and
+a `JobPosting` with a live `Application` against it cannot be deleted
+until that history is dealt with. Since `JobPosting` itself cascades from
+`CareerProfile`, this means a `CareerProfile` with any live `Application`
+also cannot be deleted until that `Application` is dealt with — the same
+transitive blocking behavior `JobMatch` history already produces via
+`CareerFact`/`Education`, not a new mechanism. See "Application" below.
 
 **The one deliberately non-cascading case:** deleting an `Employer`,
 `Role`, or `Project` must never destroy a `CareerFact` merely because that
@@ -805,7 +830,7 @@ schema gives a matcher trustworthy structured grounds to assert an actual
 contradiction rather than an absence. `no_evidence` and `not_assessable`
 are both **epistemic, never capability**, judgments:
 
-- **`no_evidence`** means the canonical dataset supplied to *this run*
+- **`no_evidence`** means the canonical dataset supplied to _this run_
   contains no evidence at all for the finding — nothing supplied even
   partially speaks to it, so `matches` and `education_matches` are both
   empty — never "the candidate cannot do this." A capability genuinely
@@ -820,7 +845,7 @@ are both **epistemic, never capability**, judgments:
   location, relocation willingness, current willingness to travel,
   salary preference, start-date availability, and other forward-looking
   personal preferences/eligibility states. Past professional travel is
-  relevant *context* but does not prove present willingness to travel;
+  relevant _context_ but does not prove present willingness to travel;
   past remote work does not prove a current remote-only preference. This
   is a domain-authorization boundary, not "could some hypothetical
   freeform `CareerFact` narrative ever touch this topic" — that framing
@@ -829,7 +854,7 @@ are both **epistemic, never capability**, judgments:
 
 **`CareerFactMatch.relationship` / `EducationMatch.relationship`** (the
 shared `MatchRelationship` enum: `direct`, `transferable`, `contextual`)
-is categorical, not ordinal — it answers *what kind* of support a
+is categorical, not ordinal — it answers _what kind_ of support a
 `CareerFact`/`Education` row provides, not a quality ranking from weak to
 strong. This is a deliberate departure from an earlier ordinal design
 (`direct`/`strong`/`supporting`), made specifically to avoid the same
@@ -885,7 +910,7 @@ exists to protect. Inspection of the existing deletion behavior (this
 document's "Deletion behavior" section, and `Employer`/`Role`/`Project`'s
 reassignment-on-delete hooks) found no existing pathway that deletes a
 single `CareerFact`/`Education` row outside of whole-`CareerProfile`
-deletion — `Employer`/`Role`/`Project` deletion explicitly *reassigns*
+deletion — `Employer`/`Role`/`Project` deletion explicitly _reassigns_
 `CareerFact`s rather than deleting them — so RESTRICT introduces no
 conflict with any existing lifecycle: an unreferenced `CareerFact`/
 `Education` still deletes freely, and a `CareerProfile` with `JobMatch`
@@ -895,7 +920,7 @@ as `CareerProfile` deletion is already blocked in other RESTRICT-adjacent
 cases elsewhere in this schema. `JobMatchFinding`, `CareerFactMatch`, and
 `EducationMatch` still cascade normally within a snapshot's own tree when
 the `JobMatch` itself (or its parent `JobAnalysis`) is deleted — only the
-cross-reference to *live* canonical data is restrictive.
+cross-reference to _live_ canonical data is restrictive.
 
 **`input_snapshot` (JSON, required) freezes the exact normalized
 candidate+job payload actually supplied to the provider** — the
@@ -906,7 +931,7 @@ asked, and what came back. A later edit to a live `CareerFact`'s
 statement never retroactively changes what an already-persisted
 `JobMatch`'s `input_snapshot` says was supplied. **`visibility` is the
 one deliberate exception to snapshot-freezing** — a `CareerFactMatch`'s
-effective visibility is always resolved *live* against the current
+effective visibility is always resolved _live_ against the current
 `CareerFact.visibility`, never frozen at generation time. This is an
 intentional asymmetry: visibility is a real-time access-control policy
 decision, not a historical fact about what was asked or answered, and
@@ -917,7 +942,7 @@ into a snapshot would silently defeat that.
 **`coverage_rationale` and `rationale` are internal model-generated
 commentary only — never canonical evidence and never approved resume
 wording.** A future resume-generation stage must resolve the underlying
-`CareerFact`/`Education` reference, enforce *current* visibility, and
+`CareerFact`/`Education` reference, enforce _current_ visibility, and
 generate its own wording; it may never copy a `JobMatch` rationale string
 directly into candidate-facing output. This is a documentation-only rule
 — there is no persisted flag distinguishing "safe" rationale from
@@ -1140,7 +1165,7 @@ absence, not a runtime check) and is rendered directly from canonical
 `Skill` names/categories, direct-evidence-only.
 
 `denylist_terms` is a blanket, variant-wide list — removing a
-`direct`-posture term from it says nothing about *where* Wording
+`direct`-posture term from it says nothing about _where_ Wording
 should actually use it. `direct` posture itself means the term is
 authorized/desired terminology at the one location Selection approved
 it for, never a requirement to emit it, and never authorization at any
@@ -1218,8 +1243,8 @@ string enum — unlike the free-text `display_title` it replaced — built
 per generation as `App\Support\ResumeVariant\GenerateResumeVariant::titleChoiceKeyEnum()`:
 `full` plus `segment_1` through the highest segment count any candidate
 Role for this run actually has, derived from live data rather than a
-fixed permanent cap. What the schema *cannot* express is that a given
-key is only legal for *some* roles (a title with one `"/"` has no
+fixed permanent cap. What the schema _cannot_ express is that a given
+key is only legal for _some_ roles (a title with one `"/"` has no
 `segment_2`) — that per-role legality is where deterministic validation
 remains the real authority, consistent with this codebase's established
 "schema does coarse structure, the deterministic validator is the real
@@ -1264,7 +1289,7 @@ closely, with one addition specific to this subtree's structure:
   relationship `CareerFact` has to `CareerFactMatch` — you cannot
   delete the diagnostic basis of a resume that was actually generated
   from it.
-- **Every FK from this subtree into *live canonical data*
+- **Every FK from this subtree into _live canonical data_
   (`CareerFact`, `Skill`, `Education`, `Employer`, `Role`, `Project`)
   restricts, not cascades** — a `ResumeVariant` is a historical,
   immutable snapshot; if a live row it cited were later deleted and the
@@ -1312,7 +1337,7 @@ blocks it.
 There is no one-`CareerFact`-per-bullet rule anywhere in this
 subtree — the same fact may legitimately back a summary claim and one
 or more bullets, or back two different bullets that each draw a
-different conclusion from it. Only an *exact* duplicate bullet-group
+different conclusion from it. Only an _exact_ duplicate bullet-group
 evidence set (the same set of `career_fact_keys`, order-independent,
 across two bullet groups) is rejected, along with obvious exact
 structural duplicates. There is no semantic-similarity/dedup NLP in
@@ -1331,8 +1356,173 @@ drag/drop reordering, no evidence pinning or swapping, and no PDF
 preview or rendering — deliberately deferred; see
 `docs/resume-variant-generation.md`.
 
+## Application
+
+`Application` is the first entity in this domain that is neither
+canonical data nor an immutable AI-generated snapshot: it is **mutable
+operational state**, tracking a candidate's own attempt to evaluate or
+pursue one `JobPosting`. Where `JobPosting` is candidate-independent (an
+opportunity that exists), `Application` is explicitly candidate-facing —
+"my attempt to pursue/evaluate that opportunity." See
+`docs/application-inspector.md` for the full rationale and the pipeline
+this entity anchors; this section covers only the persisted schema.
+
+`Application` `belongsTo` `JobPosting` (`job_posting_id`, required) and
+`hasMany` `WorkflowRun` and `ApplicationQuestion`. A `JobPosting` may
+accumulate zero or more `Application`s over time — nothing requires a
+1:1 relationship, and re-pursuing an opportunity after a prior attempt
+ended is simply a second `Application` row against the same posting.
+
+**`status` is real, mutable state — not a snapshot version.** This is a
+deliberate departure from every other generated/derived entity in this
+document: a `JobAnalysis`/`JobMatch`/`ResumeVariant` correction is always
+a new row; an `Application`'s status genuinely changes in place, because
+it describes an ongoing real-world process, not a point-in-time
+generation result. `App\Enums\ApplicationStatus` currently has exactly
+one case, `Draft` — "I am actively evaluating or pursuing this
+opportunity," broad enough to cover inspection itself. Additional cases
+(a submitted, rejected, or withdrawn application, for instance) are
+one-line additions to the enum when the features that produce them
+exist, following the same `EvidenceSource`/`CareerFactType` convention
+already established elsewhere in this document — not something this
+schema needs to anticipate today.
+
+**Deletion**: `applications.job_posting_id` RESTRICTs rather than
+cascades — see "Deletion behavior" above for why, and for the resulting
+transitive block on `CareerProfile` deletion. `WorkflowRun` and
+`ApplicationQuestion` both cascade with their owning `Application`, since
+neither has any independent existence apart from it.
+
+### ApplicationQuestion
+
+One field or question discovered on an external application, produced by
+exactly one `AgentRun` (`agent_run_id`, required, RESTRICT — the
+provenance of an extracted question must survive even if its producing
+`AgentRun`'s own diagnostic row is later reasoned about independently;
+nothing currently deletes an `AgentRun` in isolation, but the FK
+direction still reflects "this is provenance to protect," the same
+posture `career_fact_matches.career_fact_id` and every other
+provenance-into-history FK in this document already takes).
+
+**`position` is explicit, required, and zero-based — never inferred from
+row-insertion or primary-key order.** It records the field's actual
+position in the source form's own document order, exactly as the
+extraction encountered it (`0` = first field). This is real domain
+information (what order a human filling out the actual form would
+encounter these questions), not a database implementation detail, and
+relying on `id ASC` to encode it would silently break the moment
+persistence logic ever batches, retries, or reorders inserts. See
+`docs/application-inspector.md` for the full reasoning.
+
+**`raw_label`, `required`, and `options` may all be `null`.** A real
+Lever application form, inspected during this feature's investigation,
+had a genuine case (a large university-selector control) where neither
+DOM structure nor accessibility information formally associated a label
+with its control. An honest, explicit "unresolved" is a legitimate
+extraction outcome here — the same "report uncertainty rather than
+force a guess" posture `JobAnalysisFinding.requirement_strength`'s own
+nullability already establishes elsewhere in this document — never
+silently defaulted to a guessed value.
+
+This subtree carries no question-normalization or answer-resolution
+fields — deliberately. `ApplicationQuestion` in this milestone only
+records what was _found_; what a question _means_ and what value, if
+any, Career Toolkit could safely supply are later, separate concerns
+layered on top, not fields on this table today.
+
+## WorkflowRun, WorkflowStep, and AgentRun
+
+Career Toolkit's own durable execution-state model for a business
+process that spans more than one bounded step — sitting _above_
+`App\Models\GenerationAttempt`, not replacing or generalizing it. See
+`docs/application-inspector.md` for the full rationale (including why
+`GenerationAttempt` remains untouched and specialized) and the pipeline
+these three models currently anchor: read-only browser-based application
+inspection. This section covers only the persisted schema.
+
+`WorkflowRun` `belongsTo` `Application` directly via `application_id` —
+a plain, required foreign key, **not** a polymorphic `subject` the way
+`GenerationAttempt.subject` is. `GenerationAttempt` earns its own
+polymorphism because it has three real, simultaneous subject types today
+(`JobPosting`/`JobAnalysis`/`JobMatch`); `WorkflowRun` has exactly one
+real subject type, `Application`, so introducing polymorphism now would
+be pure speculative generality — the same reasoning
+`GenerationAttempt.result()` already applies to itself (a second
+polymorphic column was rejected there for an identical reason). Migrate
+to a polymorphic subject only if and when a second real `WorkflowRun`
+subject type actually exists.
+
+`WorkflowRun` `hasMany` `WorkflowStep`, which in turn `hasMany`
+`AgentRun` — a `WorkflowStep` represents _intent_ ("perform this bounded
+step"), while an `AgentRun` represents one concrete _attempt_ at
+satisfying it, the same intent/attempt split `GenerationAttempt` already
+embodies for generation work, one layer down. The schema permits more
+than one `AgentRun` per `WorkflowStep` (`agent_runs.workflow_step_id`
+carries no uniqueness constraint), but nothing in this codebase
+currently creates a second `AgentRun` under an already-existing
+`WorkflowStep` — a failed inspection is always retried as an entirely
+new `WorkflowRun`/`WorkflowStep`/`AgentRun`, mirroring
+`GenerationAttempt`'s own "a retry is always a new row" convention
+exactly, never a reopened one.
+
+**`workflow_type`, `step_key`, and `agent_type` are all plain strings,
+not backed enums.** Each currently has exactly one real value
+(`application_inspection`, `inspect_application`, `browser_inspector`
+respectively). A shared enum mixing vocabulary from workflow types that
+don't exist yet would be exactly the kind of premature abstraction this
+document repeatedly avoids elsewhere (see "Why there is no separate
+`Experience` entity," "Project skills are derived, not stored"); the
+right moment to introduce a real enum is when a second real value for
+any of these actually exists, not before.
+
+**Status model**: `WorkflowRun` and `WorkflowStep` share one enum,
+`App\Enums\WorkflowStatus` (`pending`, `running`, `succeeded`, `failed`,
+`cancelled`) — reused deliberately across both models, since a step's
+own state machine is structurally identical to a run's, just at finer
+grain; two separately-defined enums with the same cases would only
+invite drift. `AgentRun` uses its own distinct enum,
+`App\Enums\AgentRunStatus` (`queued`, `running`, `succeeded`, `failed`)
+— the same four-case shape as `GenerationStatus`, deliberately
+duplicated rather than shared, since `GenerationAttempt` stays
+specialized and nothing about `AgentRun` should reach into its enum.
+There is no `waiting` status in this milestone: nothing in the current
+pipeline pauses, so the supporting columns a real `waiting` state would
+need (a wait reason, a pointer to what's being waited on) don't exist
+yet either — adding both later is a small, additive migration, not a
+restructuring of what's built now.
+
+**`AgentRun.status` and `AgentRun.inspection_outcome` are deliberately
+orthogonal.** `status` answers only "did the browser execution itself
+complete without error." `inspection_outcome`
+(`App\Enums\InspectionOutcome`: `complete`, `partial`,
+`authentication_required`, `mutation_required`, `unsupported`) —
+populated only when `status` is `succeeded` — separately answers "what
+was actually achieved." A technically successful execution that
+correctly stopped at a login wall it was never authorized to cross is
+`status: succeeded` + `inspection_outcome: authentication_required`,
+never a failure. `AgentRun` also carries `failure_category`
+(`App\Enums\AgentRunFailureCategory`) and `failure_message`, mirroring
+`GenerationAttempt`'s own proven failure-diagnostics convention exactly,
+plus a small `result_summary` JSON column for non-content operational
+diagnostics (timing, warnings, counts) — the same "known-useful,
+not worth over-normalizing" escape hatch `Evidence.metadata` already
+establishes elsewhere in this document, never a raw page/DOM dump.
+
+**Deletion**: `WorkflowRun` cascades fully with its owning `Application`;
+`WorkflowStep` cascades with its `WorkflowRun`; `AgentRun` cascades with
+its `WorkflowStep` — this entire subtree has no existence independent of
+the `Application` that owns it, unlike the cross-references into live
+canonical data this document protects with RESTRICT elsewhere.
+
 ## Deferred: future resume-artifact concepts
 
-`JobApplication` and `ResumeFactSelection` are not implemented.
-`ResumeVariant` itself, previously deferred here, is now implemented
-— see "ResumeVariant" above.
+`ResumeFactSelection` is not implemented. `ResumeVariant` itself,
+previously deferred here, is now implemented — see "ResumeVariant"
+above. `JobApplication`, previously deferred here under that name, now
+exists in an early form as `Application` — see "Application" above;
+only its domain foundation (the entity itself, its relationship to
+`JobPosting`, and the `WorkflowRun`/`WorkflowStep`/`AgentRun` execution
+model it anchors) is implemented so far. Question normalization, answer
+resolution, application filling, and application submission are all
+still not implemented — see `docs/application-inspector.md` for the
+full list of what remains deferred.
