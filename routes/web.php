@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\ApplicationController;
+use App\Http\Controllers\ApplicationInspectionStatusController;
 use App\Http\Controllers\CareerDataController;
 use App\Http\Controllers\GenerationAttemptController;
 use App\Http\Controllers\JobAnalysisController;
@@ -31,6 +33,15 @@ Route::get('/jobs/{jobPosting}/analyses/{jobAnalysis}', [JobAnalysisController::
 // Read-only polling endpoint for a GenerationAttempt's durable status —
 // see App\Http\Controllers\GenerationAttemptController.
 Route::get('/generation-attempts/{generationAttempt}', [GenerationAttemptController::class, 'show'])->name('generation-attempts.show');
+
+// "Inspect Application" — dispatches the durable inspection workflow
+// (see App\Support\ApplicationInspection\DispatchApplicationInspection)
+// and the read-only results page. Never calls the browser worker
+// directly — see routes/api.php for the machine-only protocol surface
+// this workflow's AgentRun is eventually claimed and reported through.
+Route::post('/jobs/{jobPosting}/applications', [ApplicationController::class, 'store'])->name('jobs.applications.store');
+Route::get('/applications/{application}', [ApplicationController::class, 'show'])->name('applications.show');
+Route::get('/applications/{application}/status', [ApplicationInspectionStatusController::class, 'show'])->name('applications.status');
 
 // Job Match generation is also queued now (GenerateJobMatchJob), same
 // pattern as Job Analysis above. AllowLongRunningGeneration is kept on

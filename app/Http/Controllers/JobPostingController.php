@@ -90,6 +90,10 @@ class JobPostingController extends Controller
                 ->map($this->transformAnalysisSummary(...))
                 ->all(),
             'latest_job_analysis_attempt' => $this->latestUnresolvedAttempt($job, $presenter),
+            // At most one Application per JobPosting — see the
+            // applications.job_posting_id unique constraint and
+            // App\Support\ApplicationInspection\DispatchApplicationInspection.
+            'application_id' => $job->applications()->value('id'),
         ];
     }
 

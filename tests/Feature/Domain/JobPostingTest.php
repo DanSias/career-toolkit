@@ -27,11 +27,13 @@ it('deletes job postings when their career profile is deleted', function () {
     expect(JobPosting::find($job->id))->toBeNull();
 });
 
-it('has many applications', function () {
+it('has an application relation, at most one per posting', function () {
+    // See tests/Feature/Domain/ApplicationTest.php "allows at most one
+    // application per job posting" for the uniqueness invariant itself.
     $job = JobPosting::factory()->create();
-    Application::factory()->for($job, 'jobPosting')->count(2)->create();
+    Application::factory()->for($job, 'jobPosting')->create();
 
-    expect($job->applications)->toHaveCount(2);
+    expect($job->applications)->toHaveCount(1);
 });
 
 it('stores no analysis, matching, or resume-generation fields', function () {

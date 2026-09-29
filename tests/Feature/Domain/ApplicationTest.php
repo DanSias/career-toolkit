@@ -14,11 +14,19 @@ it('belongs to a job posting', function () {
     expect($application->jobPosting->is($job))->toBeTrue();
 });
 
-it('lets a job posting own multiple applications', function () {
+it('allows at most one application per job posting', function () {
+    // Tightened in Phase 3 (routes/api.php, App\Support\
+    // ApplicationInspection\DispatchApplicationInspection): a plain
+    // unique constraint on job_posting_id, not merely an application-
+    // level check, guarantees "reuse the existing Draft Application,
+    // never create a second one" even under a concurrent race. See
+    // the applications.job_posting_id migration and
+    // docs/domain-model.md "Application".
     $job = JobPosting::factory()->create();
-    Application::factory()->for($job, 'jobPosting')->count(3)->create();
+    Application::factory()->for($job, 'jobPosting')->create();
 
-    expect($job->applications)->toHaveCount(3);
+    expect(fn () => Application::factory()->for($job, 'jobPosting')->create())
+        ->toThrow(QueryException::class);
 });
 
 it('has many workflow runs', function () {
