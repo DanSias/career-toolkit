@@ -1,0 +1,134 @@
+<!doctype html>
+<!--
+  Synthetic fixture, not a copy of any real page. Each field below is a
+  minimized reproduction of one specific structural pattern the
+  investigation's PoC actually observed on a real Greenhouse
+  application form (native label[for], wrapping <label>, aria-label,
+  aria-labelledby, placeholder-only, a field with no formal association
+  at all, a custom ARIA-role widget, a native <select> with a
+  placeholder option, a fieldset-grouped radio set, a hidden field, and
+  submit/non-submit buttons) — no real applicant or company content is
+  included. One field per test scenario, deliberately, so
+  test/greenhouse-extractor.test.js can assert on each by position.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Job Application for Test Role at Fixture Co</title>
+    </head>
+    <body>
+        <script src="https://job-boards.cdn.greenhouse.io/assets/vendor-fake.js"></script>
+
+        <form>
+            <!-- position 0: native label[for], required via attribute -->
+            <label for="first_name">First Name*</label>
+            <input type="text" id="first_name" name="first_name" required />
+
+            <!-- position 1: wrapping <label>, required via attribute -->
+            <label>
+                Last Name*
+                <input type="text" name="last_name" required />
+            </label>
+
+            <!-- position 2: native label[for], no required attribute -> definitively false -->
+            <label for="phone">Phone</label>
+            <input type="tel" id="phone" name="phone" />
+
+            <!-- position 3: aria-label only, no wrapping/for label -->
+            <textarea
+                aria-label="Why do you want to work here?"
+                name="summary"
+            ></textarea>
+
+            <!-- position 4: aria-labelledby, select with a placeholder option to exclude -->
+            <div id="country_label">Country*</div>
+            <select
+                id="country"
+                name="country"
+                aria-labelledby="country_label"
+                required
+            >
+                <option value="" disabled selected>Select...</option>
+                <option value="US">United States</option>
+                <option value="CA">Canada</option>
+                <option value="GB">United Kingdom</option>
+            </select>
+
+            <!-- position 5: placeholder only, no other label mechanism -->
+            <input type="text" name="linkedin_url" placeholder="LinkedIn URL" />
+
+            <!-- plain, non-<label> preceding text -> proximity fallback -->
+            <!-- position 6 -->
+            <div>Portfolio (optional)</div>
+            <input type="text" name="portfolio_url" />
+
+            <!-- position 7: no preceding text within reach, no attributes -> unresolved -->
+            <input type="text" name="unlabeled_field" />
+
+            <!-- position 8: custom ARIA-role widget, aria-label present, no id/name,
+         no aria-required and no native required IDL -> required: null.
+         Real visible text (not empty) so it has a non-zero rendered box,
+         matching how a real custom combobox always shows current/
+         placeholder text. -->
+            <div role="combobox" aria-label="Preferred Location" tabindex="0">
+                Select a location…
+            </div>
+
+            <!-- position 9: checkbox, native label[for], optional -->
+            <label for="subscribe">Subscribe to job alerts</label>
+            <input type="checkbox" id="subscribe" name="subscribe" />
+
+            <!-- position 10: reproduces Greenhouse's real custom-combobox pattern
+         (observed on a live Anthropic application) — a visible widget
+         showing only its own generic "Select..." prompt, immediately
+         followed by a separate, unlabeled underlying input holding the
+         selected value. That prompt text must NOT be reported as if it
+         were this field's real label. -->
+            <div>Select...</div>
+            <input type="text" name="relocation_value" required />
+
+            <h3>Attachments</h3>
+            <!-- position 10: file control, native label[for], required -->
+            <label for="resume">Resume/CV*</label>
+            <input
+                type="file"
+                id="resume"
+                name="resume"
+                required
+                accept=".pdf,.doc,.docx"
+            />
+
+            <h3>Voluntary Self-Identification</h3>
+            <fieldset>
+                <legend>Gender</legend>
+                <!-- positions 11-13: fieldset/legend section context, optional -->
+                <input
+                    type="radio"
+                    name="gender"
+                    value="male"
+                    id="gender_male"
+                />
+                <label for="gender_male">Male</label>
+                <input
+                    type="radio"
+                    name="gender"
+                    value="female"
+                    id="gender_female"
+                />
+                <label for="gender_female">Female</label>
+                <input
+                    type="radio"
+                    name="gender"
+                    value="decline"
+                    id="gender_decline"
+                />
+                <label for="gender_decline">Decline to self-identify</label>
+            </fieldset>
+
+            <input type="hidden" name="csrf_token" value="fixture-only" />
+
+            <button type="submit">Submit Application</button>
+            <button type="button">Save Draft</button>
+        </form>
+    </body>
+</html>

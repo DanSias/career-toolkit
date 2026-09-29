@@ -1,0 +1,17 @@
+{
+    "name": "browser-inspector",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Career Toolkit's read-only Application Inspector browser worker. Independently built/deployed Docker component — see README.md. No dependency on the Career Toolkit Laravel application, its database, or its node_modules.",
+    "type": "module",
+    "scripts": {
+        "inspect": "node src/cli.js",
+        "test": "node --test test/"
+    },
+    "dependencies": {
+        "playwright": "1.63.0"
+    },
+    "engines": {
+        "node": ">=22"
+    }
+}
