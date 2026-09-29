@@ -2,13 +2,57 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import { GenerationStatus } from '@/components/generation-status';
 import { useGenerationAttemptPolling } from '@/hooks/use-generation-attempt-polling';
 import AppShell from '@/layouts/app-shell';
+import { show as applicationsShow } from '@/routes/applications';
 import { index as jobsIndex } from '@/routes/jobs';
 import {
     show as analysesShow,
     store as analysesStore,
 } from '@/routes/jobs/analyses';
+import { store as applicationsStore } from '@/routes/jobs/applications';
 import type { GenerationAttempt } from '@/types/generation-attempt';
 import type { JobShowProps } from '@/types/job-posting';
+
+function InspectApplicationAction({
+    jobId,
+    applicationId,
+    hasSourceUrl,
+}: {
+    jobId: number;
+    applicationId: number | null;
+    hasSourceUrl: boolean;
+}) {
+    const form = useForm({});
+
+    if (!hasSourceUrl) {
+        return null;
+    }
+
+    if (applicationId !== null) {
+        return (
+            <Link
+                href={applicationsShow.url({ application: applicationId })}
+                className="inline-flex items-center rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            >
+                View Application Inspection
+            </Link>
+        );
+    }
+
+    return (
+        <button
+            type="button"
+            disabled={form.processing}
+            onClick={() =>
+                form.post(applicationsStore.url({ jobPosting: jobId }), {
+                    showProgress: false,
+                })
+            }
+            className="inline-flex items-center rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        >
+            Inspect Application
+        </button>
+    );
+}
 
 function GenerateAnalysisAction({
     jobId,
@@ -110,6 +154,14 @@ export default function JobsShow({ job }: JobShowProps) {
                         <dd>{job.captured_at}</dd>
                     </div>
                 </dl>
+
+                <div className="mt-4">
+                    <InspectApplicationAction
+                        jobId={job.id}
+                        applicationId={job.application_id}
+                        hasSourceUrl={job.source_url !== null}
+                    />
+                </div>
             </div>
 
             <div className="mt-6">

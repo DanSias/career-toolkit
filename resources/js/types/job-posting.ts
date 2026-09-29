@@ -27,6 +27,7 @@ export type JobPostingDetail = {
     description: string;
     analyses: JobAnalysisSummary[];
     latest_job_analysis_attempt: GenerationAttempt | null;
+    application_id: number | null;
 };
 
 export type JobsIndexProps = {
