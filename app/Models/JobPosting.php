@@ -53,6 +53,18 @@ class JobPosting extends Model
     }
 
     /**
+     * Every attempt (zero or more) to evaluate or pursue this posting —
+     * see App\Models\Application and docs/domain-model.md
+     * "Application".
+     *
+     * @return HasMany<Application, $this>
+     */
+    public function applications(): HasMany
+    {
+        return $this->hasMany(Application::class);
+    }
+
+    /**
      * Every job_analysis GenerationAttempt ever made against this
      * posting — queued, running, succeeded, or failed. See
      * App\Models\GenerationAttempt and docs/job-analysis-generation.md

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Application;
 use App\Models\CareerProfile;
 use App\Models\JobPosting;
 
@@ -24,6 +25,13 @@ it('deletes job postings when their career profile is deleted', function () {
     $profile->delete();
 
     expect(JobPosting::find($job->id))->toBeNull();
+});
+
+it('has many applications', function () {
+    $job = JobPosting::factory()->create();
+    Application::factory()->for($job, 'jobPosting')->count(2)->create();
+
+    expect($job->applications)->toHaveCount(2);
 });
 
 it('stores no analysis, matching, or resume-generation fields', function () {
