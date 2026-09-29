@@ -6,7 +6,8 @@
     "type": "module",
     "scripts": {
         "inspect": "node src/cli.js",
-        "test": "node --test test/"
+        "poll": "node src/poll.js",
+        "test": "node --test 'test/**/*.test.js'"
     },
     "dependencies": {
         "playwright": "1.63.0"

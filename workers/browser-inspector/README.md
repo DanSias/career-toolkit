@@ -33,12 +33,12 @@ this worker's code, not as a disabled option, as an absent one:
 
 This worker is independently built and independently deployed — a
 Docker component, not a Laravel dependency. `src/inspect.js` is the
-reusable extraction boundary; `src/cli.js` is a thin development/test
-wrapper around it. A future implementation pass will have Career
-Toolkit's own orchestration call into `inspect()` (or an equivalent
-entry point) via a poll/claim/result protocol — not by shelling out to
-this CLI in production. See `docs/application-inspector.md` "Approved
-future worker transport."
+reusable extraction boundary, untouched since Phase 2. `src/cli.js`
+remains a thin one-shot development/test wrapper around it.
+`src/poll.js` is the production runtime: it claims work from Career
+Toolkit over HTTP, calls the same `inspect()`, and reports the result
+back — see "Worker runtime" below. See `docs/application-inspector.md`
+for the full protocol.
 
 ## Prerequisites
 
@@ -82,6 +82,60 @@ npm run inspect -- <url>
   are successful executions); `1` = technical failure
   (`status: "failed"`); `2` = usage error (bad/missing argument, never
   reached the browser).
+
+## Worker runtime
+
+`src/poll.js` is the default container entrypoint (`Dockerfile`). It
+loops: claim → inspect → report, forever, until `SIGINT`/`SIGTERM`.
+
+```sh
+node src/poll.js
+# or:
+npm run poll
+```
+
+### Configuration (`src/config.js`)
+
+| Variable | Required | Default | Meaning |
+|---|---|---|---|
+| `CAREER_TOOLKIT_URL` | yes | — | Base URL of Career Toolkit, e.g. `http://192.168.1.50:8000`. The worker only ever makes **outbound** requests to this URL — it never listens on any inbound port. |
+| `BROWSER_WORKER_TOKEN` | yes | — | Shared-secret bearer token. Must match Career Toolkit's `BROWSER_WORKER_TOKEN` env var exactly. Used only in this process's HTTP requests to Career Toolkit — never passed into `inspect()`, Playwright, or any browser page context. |
+| `BROWSER_WORKER_IDENTITY` | no | `browser-inspector` | Sent as `worker_identity` on every claim; recorded on the `AgentRun` for audit only, not used for authorization. |
+| `BROWSER_WORKER_POLL_INTERVAL_MS` | no | `5000` | Delay between claim attempts when no work is available. |
+| `BROWSER_WORKER_MAX_BACKOFF_MS` | no | `60000` | Ceiling for exponential backoff after a claim/poll error (network failure, Career Toolkit unreachable, etc). |
+| `BROWSER_WORKER_RESULT_RETRY_ATTEMPTS` | no | `3` | Attempts to deliver one result before giving up. |
+| `BROWSER_WORKER_RESULT_RETRY_BACKOFF_MS` | no | `2000` | Linear backoff unit between result-delivery retries. |
+
+Missing a required variable fails fast at startup (`loadConfig()`
+throws) rather than running misconfigured.
+
+### Loop behavior
+
+- **Claim**: `POST {CAREER_TOOLKIT_URL}/api/worker/agent-runs/claim`. A
+  `204` means no work; the loop sleeps `BROWSER_WORKER_POLL_INTERVAL_MS`
+  and tries again. A `200` returns exactly `agent_run_id`,
+  `application_url`, and `inspection_policy` — nothing about the
+  underlying `Application`, `JobPosting`, or Career Profile.
+- **Inspect**: the claimed `application_url` is passed to the
+  unmodified `inspect()` from Phase 2 — the worker's extraction
+  behavior is identical regardless of transport.
+- **Report**: `POST {CAREER_TOOLKIT_URL}/api/worker/agent-runs/{id}/result`
+  with `inspect()`'s own return value as the JSON body verbatim — it
+  already matches Career Toolkit's validated contract field-for-field
+  (see "JSON output contract" below).
+- **Result-delivery retry** (`src/poll.js`'s `deliverResult()`) only
+  retries a **transport-level** failure (a thrown exception — network
+  unreachable, connection reset). Any response that actually came back
+  from Career Toolkit — including a `409` stale-result rejection — is
+  treated as a completed delivery and is never retried; the browser
+  inspection itself is never re-run to retry a delivery. If all
+  transport retries are exhausted, the result is dropped and the
+  `AgentRun`'s claim lease simply expires — Career Toolkit's own claim
+  recovery marks it `failed`/`claim_timeout` on the next poll from any
+  worker, and the user can trigger a fresh retry from the UI.
+- **Claim/poll errors** (Career Toolkit unreachable, non-2xx/204
+  response) back off exponentially up to `BROWSER_WORKER_MAX_BACKOFF_MS`
+  rather than retrying immediately in a tight loop.
 
 ## JSON output contract
 
@@ -304,8 +358,9 @@ human chose to capture."
   credentials, no unrelated API keys — this worker holds no
   credentials of any kind.
 - No network service is exposed; the worker has no inbound listening
-  port in this pass (Phase 3 will add an outbound-only poll loop, never
-  an inbound one — see `docs/application-inspector.md`).
+  port at all. `src/poll.js` only ever makes outbound HTTP requests to
+  `CAREER_TOOLKIT_URL` — Career Toolkit never initiates a connection to
+  this worker or the AI box it runs on.
 
 ## Diagnostics
 
@@ -330,7 +385,7 @@ cleanup policy — not implemented here because nothing yet needs it.
 npm test          # everything under test/ — see below for prerequisites
 ```
 
-Two kinds:
+Three kinds:
 
 - **Deterministic, fixture-based** (`test/url-safety.test.js`,
   `test/result-contract.test.js`, `test/greenhouse-extractor.test.js`)
@@ -341,6 +396,15 @@ Two kinds:
   `page.setContent()`, so it requires Chromium to be available: already
   true inside the Docker image; locally, run
   `npx playwright install chromium` once first.
+- **Runtime/protocol, fixture-server-based** (`test/client.test.js`,
+  `test/poll.test.js`) — `client.test.js` starts a real, minimal
+  `node:http` server on a random local port to stand in for Career
+  Toolkit, so `createClient()`'s actual `fetch()` calls are exercised
+  end-to-end without depending on a real Laravel server. `poll.test.js`
+  drives `runOnce()`/`deliverResult()`/`runForever()` against a fake
+  in-memory client object with an injectable `inspect()` stub, so no
+  test here ever launches a real browser or requires the real Laravel
+  server — see `src/poll.js`'s `inspectFn` parameter.
 - **Live smoke test** (not an automated test file — see "AI-box
   deployment" below) — run explicitly, by hand, against a real public
   Greenhouse posting. Never part of `npm test`, exactly because a live
@@ -361,22 +425,25 @@ ssh <host> "cd <path> && docker build -t browser-inspector:0.1.0 ."
 # deterministic tests, inside the real image:
 ssh <host> "docker run --rm --entrypoint node -v \$(pwd)/<path>/test:/app/test:ro browser-inspector:0.1.0 --test test/*.test.js"
 
-# live smoke test against a real, currently-open public Greenhouse posting
-# (find one via Greenhouse's own public API, e.g.
+# one-shot live smoke test (bypasses the protocol; CLI mode only —
+# find a real open posting via Greenhouse's own public API, e.g.
 #  curl -s 'https://boards-api.greenhouse.io/v1/boards/<company>/jobs' — do not guess a URL):
-ssh <host> "docker run --rm browser-inspector:0.1.0 '<live greenhouse job URL>'"
+ssh <host> "docker run --rm --entrypoint node browser-inspector:0.1.0 src/cli.js '<live greenhouse job URL>'"
+
+# production runtime — the poll loop, talking to a real Career Toolkit instance
+# reachable from this host on the LAN:
+ssh <host> "docker run -d --name browser-inspector --restart unless-stopped \
+    -e CAREER_TOOLKIT_URL='http://<career-toolkit-host>:8000' \
+    -e BROWSER_WORKER_TOKEN='<shared secret, matches Career Toolkit's .env>' \
+    -e BROWSER_WORKER_IDENTITY='ai-box' \
+    browser-inspector:0.1.0"
+
+# tail logs / stop:
+ssh <host> "docker logs -f browser-inspector"
+ssh <host> "docker stop browser-inspector && docker rm browser-inspector"
 ```
 
-No port is exposed and no volume needs to persist — remove the image
-(`docker rmi browser-inspector:0.1.0`) and the deployment directory
-when done; nothing about this worker needs to remain resident on the
-host between runs.
-
-## What Phase 3 will add
-
-A poll/claim/result HTTP transport to Career Toolkit (this worker
-becomes a long-running process instead of a one-shot CLI invocation),
-authentication via a shared-secret bearer token, and the Laravel-side
-orchestration that turns one `InspectionResult` into persisted
-`ApplicationQuestion` rows. None of that exists in this repository yet
-— see `docs/application-inspector.md`.
+No port is exposed on the container in either mode — the poll loop
+only makes outbound requests. No volume needs to persist; remove the
+image (`docker rmi browser-inspector:0.1.0`) and the deployment
+directory when fully done with a host.
