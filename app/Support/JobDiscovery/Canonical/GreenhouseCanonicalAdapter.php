@@ -2,6 +2,7 @@
 
 namespace App\Support\JobDiscovery\Canonical;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
 use Carbon\CarbonImmutable;
@@ -96,6 +97,11 @@ final class GreenhouseCanonicalAdapter implements CanonicalRetrievalContract
             canonicalSourceId: (string) $id,
             title: $title,
             description: is_string($job['content'] ?? null) ? $job['content'] : null,
+            // Greenhouse's `content` (with ?content=true) is the full
+            // posting body, confirmed live — 201/201 real jobs on a
+            // tested board carried complete content inline, no
+            // per-job call needed. See this class's own docblock.
+            descriptionCompleteness: DescriptionCompleteness::Complete,
             location: is_string($job['location']['name'] ?? null) ? $job['location']['name'] : null,
             remoteStatus: null,
             employmentType: null,

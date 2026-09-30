@@ -2,6 +2,7 @@
 
 namespace App\Support\JobDiscovery\Canonical;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobRemoteStatus;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
@@ -113,6 +114,14 @@ final class LeverCanonicalAdapter implements CanonicalRetrievalContract
             canonicalSourceId: $id,
             title: $title,
             description: $this->assembleDescription($job),
+            // Complete as of the fix described in this class's own
+            // docblock — assembleDescription() now joins
+            // descriptionPlain + additionalPlain + every lists[]
+            // section, live-confirmed against the real velaura board
+            // (5,435 of ~5,600 real characters represented; the
+            // original descriptionPlain-only implementation captured
+            // only 542).
+            descriptionCompleteness: DescriptionCompleteness::Complete,
             location: is_string($categories['location'] ?? null) ? $categories['location'] : null,
             remoteStatus: $this->normalizeWorkplaceType($job['workplaceType'] ?? null),
             employmentType: is_string($categories['commitment'] ?? null) ? $categories['commitment'] : null,

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobDiscoverySource;
 use App\Support\JobDiscovery\Providers\AdzunaDiscoveryProvider;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
@@ -58,6 +59,14 @@ it('retrieves and normalizes a successful response', function () {
         ->and($candidate->compensationCurrency)->toBe('USD')
         ->and($candidate->applicationUrl)->toBe('https://www.adzuna.com/land/ad/129698749')
         ->and($candidate->postedAt)->not->toBeNull();
+});
+
+it('always declares Preview description completeness, never Complete', function () {
+    Http::fake(['api.adzuna.com/*' => Http::response(['results' => [fakeAdzunaJob()]])]);
+
+    $candidate = (new AdzunaDiscoveryProvider)->retrieve()[0];
+
+    expect($candidate->descriptionCompleteness)->toBe(DescriptionCompleteness::Preview);
 });
 
 it('sends the configured app_id/app_key as query parameters', function () {

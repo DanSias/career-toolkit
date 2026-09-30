@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobRemoteStatus;
 use App\Support\JobDiscovery\Canonical\AshbyCanonicalAdapter;
@@ -43,6 +44,14 @@ it('retrieves and normalizes a board listing', function () {
         ->and($posting->applicationUrl)->toBe('https://jobs.ashbyhq.com/ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2')
         ->and($posting->sourceUpdatedAt)->not->toBeNull()
         ->and($posting->sourceMetadata['compensationSummary'])->toBe('€110K – €185K');
+});
+
+it('always declares Complete description completeness', function () {
+    Http::fake(['api.ashbyhq.com/*' => Http::response(['jobs' => [fakeAshbyJob()]])]);
+
+    $posting = (new AshbyCanonicalAdapter)->retrieveBoard('ashby')[0];
+
+    expect($posting->descriptionCompleteness)->toBe(DescriptionCompleteness::Complete);
 });
 
 it('never fabricates compensationMin/Max from the free-text compensation summary', function () {

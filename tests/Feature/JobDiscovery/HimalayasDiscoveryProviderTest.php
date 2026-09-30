@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobDiscoverySource;
 use App\Enums\JobRemoteStatus;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
@@ -55,6 +56,17 @@ it('retrieves and normalizes a successful response', function () {
         ->and($candidate->applicationUrl)->toBe('https://himalayas.app/companies/acme/jobs/senior-backend-engineer-123')
         ->and($candidate->postedAt)->not->toBeNull()
         ->and($candidate->sourceMetadata['companySlug'])->toBe('acme');
+});
+
+it('always declares Complete description completeness', function () {
+    Http::fake(['himalayas.test/*' => Http::response([
+        'jobs' => [fakeHimalayasJob()],
+        'totalCount' => 1,
+    ])]);
+
+    $candidate = (new HimalayasDiscoveryProvider)->retrieve()[0];
+
+    expect($candidate->descriptionCompleteness)->toBe(DescriptionCompleteness::Complete);
 });
 
 it('handles a job missing optional fields without rejecting it', function () {

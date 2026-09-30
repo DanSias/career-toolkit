@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobDiscoverySource;
 use App\Enums\JobPostingLifecycleStatus;
@@ -19,6 +20,7 @@ function discoveryCandidate(array $overrides = []): DiscoveredJobCandidate
         company: $overrides['company'] ?? 'Acme',
         title: $overrides['title'] ?? 'Senior Software Engineer',
         description: array_key_exists('description', $overrides) ? $overrides['description'] : 'Build things.',
+        descriptionCompleteness: $overrides['descriptionCompleteness'] ?? DescriptionCompleteness::Complete,
         location: array_key_exists('location', $overrides) ? $overrides['location'] : 'United States',
         remoteStatus: $overrides['remoteStatus'] ?? null,
         employmentType: $overrides['employmentType'] ?? null,
@@ -41,6 +43,7 @@ function canonicalMatch(array $overrides = []): CanonicalJobPosting
         canonicalSourceId: $overrides['canonicalSourceId'] ?? 'gh-1',
         title: $overrides['title'] ?? 'Senior Software Engineer',
         description: $overrides['description'] ?? 'Canonical description.',
+        descriptionCompleteness: $overrides['descriptionCompleteness'] ?? DescriptionCompleteness::Complete,
         location: $overrides['location'] ?? 'New York, NY',
         remoteStatus: $overrides['remoteStatus'] ?? null,
         employmentType: $overrides['employmentType'] ?? null,

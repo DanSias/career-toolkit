@@ -2,6 +2,7 @@
 
 namespace App\Support\JobDiscovery\Canonical;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobRemoteStatus;
 use Carbon\CarbonImmutable;
@@ -15,6 +16,11 @@ use Carbon\CarbonImmutable;
  * kinds of source, matched by App\Support\JobDiscovery\Canonical\
  * MatchCanonicalPosting, never conflated into one type. See
  * docs/job-discovery.md "Discovery identity vs. canonical identity".
+ *
+ * descriptionCompleteness has no default and every canonical adapter
+ * must pass it explicitly — kept symmetrical with
+ * DiscoveredJobCandidate's own field; see App\Enums\
+ * DescriptionCompleteness.
  */
 final readonly class CanonicalJobPosting
 {
@@ -26,6 +32,7 @@ final readonly class CanonicalJobPosting
         public string $canonicalSourceId,
         public string $title,
         public ?string $description,
+        public DescriptionCompleteness $descriptionCompleteness,
         public ?string $location,
         public ?JobRemoteStatus $remoteStatus,
         public ?string $employmentType,

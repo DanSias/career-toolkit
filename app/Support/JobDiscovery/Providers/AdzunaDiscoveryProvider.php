@@ -2,6 +2,7 @@
 
 namespace App\Support\JobDiscovery\Providers;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobDiscoverySource;
 use App\Support\JobDiscovery\DiscoveredJobCandidate;
 use Carbon\CarbonImmutable;
@@ -133,6 +134,13 @@ final class AdzunaDiscoveryProvider implements DiscoveryProviderContract
             company: $company,
             title: strip_tags($title),
             description: is_string($job['description'] ?? null) ? strip_tags($job['description']) : null,
+            // Adzuna's own documentation states the search API returns
+            // only a snippet of the job description — confirmed
+            // directly against real responses (~500-char, ellipsis-
+            // truncated) during the Automatic Job Discovery
+            // investigation. Never Complete, regardless of what any
+            // individual response happens to contain.
+            descriptionCompleteness: DescriptionCompleteness::Preview,
             location: is_string($job['location']['display_name'] ?? null) ? $job['location']['display_name'] : null,
             // Adzuna's search API has no structured remote flag —
             // confirmed against the official response schema. Left

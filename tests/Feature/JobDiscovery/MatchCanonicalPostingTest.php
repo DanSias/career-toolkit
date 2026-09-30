@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobDiscoverySource;
 use App\Support\JobDiscovery\Canonical\CanonicalJobPosting;
@@ -15,6 +16,7 @@ function discoveredCandidateFor(string $title, ?string $location = 'United State
         company: 'Acme',
         title: $title,
         description: null,
+        descriptionCompleteness: DescriptionCompleteness::Unknown,
         location: $location,
         remoteStatus: null,
         employmentType: null,
@@ -36,6 +38,7 @@ function canonicalPosting(string $id, string $title, ?string $location = null): 
         canonicalSourceId: $id,
         title: $title,
         description: null,
+        descriptionCompleteness: DescriptionCompleteness::Unknown,
         location: $location,
         remoteStatus: null,
         employmentType: null,

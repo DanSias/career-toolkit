@@ -2,6 +2,7 @@
 
 namespace App\Support\JobDiscovery\Providers;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobDiscoverySource;
 use App\Enums\JobRemoteStatus;
 use App\Support\JobDiscovery\DiscoveredJobCandidate;
@@ -126,6 +127,13 @@ final class HimalayasDiscoveryProvider implements DiscoveryProviderContract
             company: $company,
             title: $title,
             description: is_string($job['description'] ?? null) ? $job['description'] : null,
+            // Himalayas itself models snippet-vs-complete as two
+            // distinct fields (a separate short `excerpt` alongside
+            // `description`) — its `description` is the genuinely
+            // complete posting, confirmed against real live samples
+            // (4,300-6,500+ chars, no truncation) during the
+            // Automatic Job Discovery investigation.
+            descriptionCompleteness: DescriptionCompleteness::Complete,
             location: $this->normalizeLocation($job['locationRestrictions'] ?? null),
             remoteStatus: JobRemoteStatus::Remote,
             employmentType: is_string($job['employmentType'] ?? null) ? $job['employmentType'] : null,

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobRemoteStatus;
 use App\Support\JobDiscovery\Canonical\LeverCanonicalAdapter;
@@ -57,7 +58,8 @@ it('retrieves and normalizes a board listing (a plain JSON array, not an object)
         ->and($posting->description)->toContain('Responsibilities')
         ->and($posting->description)->toContain('Lead the compiler team.')
         ->and($posting->description)->toContain('Qualifications')
-        ->and($posting->description)->toContain('Strong C++.');
+        ->and($posting->description)->toContain('Strong C++.')
+        ->and($posting->descriptionCompleteness)->toBe(DescriptionCompleteness::Complete);
 });
 
 it('normalizes remote workplaceType correctly', function () {

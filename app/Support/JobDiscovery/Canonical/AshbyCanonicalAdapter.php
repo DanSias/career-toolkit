@@ -2,6 +2,7 @@
 
 namespace App\Support\JobDiscovery\Canonical;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobRemoteStatus;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
@@ -102,6 +103,13 @@ final class AshbyCanonicalAdapter implements CanonicalRetrievalContract
             canonicalSourceId: $id,
             title: $title,
             description: is_string($job['descriptionPlain'] ?? null) ? $job['descriptionPlain'] : null,
+            // Confirmed live: descriptionPlain is already the complete
+            // posting body for every job in Ashby's list response
+            // (unlike Lever, Ashby does not split content across
+            // separate fields) — see App\Support\JobDiscovery\
+            // Canonical\LeverCanonicalAdapter's docblock for the
+            // contrast.
+            descriptionCompleteness: DescriptionCompleteness::Complete,
             location: is_string($job['location'] ?? null) ? $job['location'] : null,
             remoteStatus: $this->normalizeRemote($job),
             employmentType: is_string($job['employmentType'] ?? null) ? $job['employmentType'] : null,

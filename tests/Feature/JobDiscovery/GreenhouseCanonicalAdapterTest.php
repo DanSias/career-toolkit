@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Support\JobDiscovery\Canonical\GreenhouseCanonicalAdapter;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
@@ -38,6 +39,14 @@ it('retrieves and normalizes a board listing', function () {
         ->and($posting->applicationUrl)->toBe('https://job-boards.greenhouse.io/anthropic/jobs/4461450008')
         ->and($posting->sourceUpdatedAt)->not->toBeNull()
         ->and($posting->sourceMetadata['requisition_id'])->toBe('3356');
+});
+
+it('always declares Complete description completeness', function () {
+    Http::fake(['boards-api.greenhouse.io/*' => Http::response(['jobs' => [fakeGreenhouseJob()]])]);
+
+    $posting = (new GreenhouseCanonicalAdapter)->retrieveBoard('anthropic')[0];
+
+    expect($posting->descriptionCompleteness)->toBe(DescriptionCompleteness::Complete);
 });
 
 it('requests content=true so descriptions are included in one call', function () {

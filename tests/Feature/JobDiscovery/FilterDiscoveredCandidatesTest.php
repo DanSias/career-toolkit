@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobDiscoverySource;
 use App\Enums\JobRemoteStatus;
 use App\Support\JobDiscovery\DiscoveredJobCandidate;
@@ -15,6 +16,7 @@ function candidate(array $overrides = []): DiscoveredJobCandidate
         company: $overrides['company'] ?? 'Acme',
         title: $overrides['title'] ?? 'Senior Software Engineer',
         description: $overrides['description'] ?? 'Build backend APIs and data pipelines.',
+        descriptionCompleteness: $overrides['descriptionCompleteness'] ?? DescriptionCompleteness::Complete,
         location: array_key_exists('location', $overrides) ? $overrides['location'] : 'United States',
         remoteStatus: array_key_exists('remoteStatus', $overrides) ? $overrides['remoteStatus'] : JobRemoteStatus::Remote,
         employmentType: array_key_exists('employmentType', $overrides) ? $overrides['employmentType'] : 'full_time',
