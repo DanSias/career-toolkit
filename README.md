@@ -84,12 +84,14 @@ validation instead — it runs against a disposable in-memory SQLite
 database (`phpunit.xml`'s `DB_DATABASE=:memory:` + `APP_ENV=testing`),
 never `database/database.sqlite`.
 
-This is enforced, not just documented: `AppServiceProvider` calls
-`DB::prohibitDestructiveCommands(! app()->environment('testing'))`,
-which hard-blocks those commands (even with `--force`) everywhere
-except the `testing` environment. If you ever see "This command is
-prohibited from running in this environment," that's this guardrail
-working as intended — don't work around it.
+Destructive commands are allowed only in `testing` with a resolved SQLite
+`:memory:` database or an existing temporary file named `career_toolkit_test_*`
+directly inside the system temporary directory. All other targets are blocked,
+including the real development file even when `APP_ENV=testing`. Relative paths,
+symlinks, database URLs and explicit `--database` selections are checked. Never
+work around a prohibition. Tests refuse cached configuration, do not load the
+local `.env`, and reject non-disposable targets before database refreshes.
+
 
 ## Project layout notes
 

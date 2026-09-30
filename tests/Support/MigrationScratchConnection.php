@@ -2,6 +2,7 @@
 
 namespace Tests\Support;
 
+use App\Support\DisposableDatabase;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -20,17 +21,21 @@ final class MigrationScratchConnection
 {
     public const NAME = 'sqlite_migration_test';
 
-    /**
-     * Migrates a fresh scratch database fully, then rolls back the
-     * given number of most-recent migrations — leaving it in the
-     * "old schema" state immediately before those migrations, with
-     * real historical data insertable via raw DB::table() calls.
-     */
-    public static function setUp(int $rollbackSteps): string
+    /** Build exactly the schema before the named migration, independent of later files. */
+    public static function setUpBefore(string $migration): string
     {
-        $path = tempnam(sys_get_temp_dir(), 'career_toolkit_migration_test_').'.sqlite';
-        touch($path);
+        $files = glob(database_path('migrations/*.php')) ?: [];
+        sort($files);
+        $boundary = database_path('migrations/'.$migration.'.php');
+        if (! in_array($boundary, $files, true)) {
+            throw new \InvalidArgumentException("Unknown migration boundary: {$migration}");
+        }
 
+        $path = tempnam(sys_get_temp_dir(), 'career_toolkit_test_');
+        if ($path === false) {
+            throw new \RuntimeException('Could not create disposable migration database.');
+        }
+        DB::purge(self::NAME);
         config(['database.connections.'.self::NAME => [
             'driver' => 'sqlite',
             'database' => $path,
@@ -38,8 +43,15 @@ final class MigrationScratchConnection
             'foreign_key_constraints' => true,
         ]]);
 
-        Artisan::call('migrate', ['--database' => self::NAME, '--force' => true]);
-        Artisan::call('migrate:rollback', ['--database' => self::NAME, '--step' => $rollbackSteps, '--force' => true]);
+        if (! DisposableDatabase::allowsDestructiveCommands(self::NAME)) {
+            throw new \RuntimeException('Migration scratch target is not disposable.');
+        }
+        $before = array_values(array_filter($files, fn (string $file) => $file < $boundary));
+        $exit = Artisan::call('migrate', ['--database' => self::NAME, '--path' => $before, '--realpath' => true, '--force' => true]);
+        if ($exit !== 0 || self::db()->table('migrations')->where('migration', '>=', $migration)->exists()
+            || self::db()->table('migrations')->count() !== count($before)) {
+            throw new \RuntimeException('Failed to establish the requested migration boundary.');
+        }
 
         return $path;
     }

@@ -13,6 +13,7 @@ use App\Models\JobMatch;
 use App\Models\JobPosting;
 use App\Models\Project;
 use App\Models\Role;
+use App\Support\DisposableDatabase;
 use App\Support\JobAnalysis\Providers\OllamaJobAnalysisClient;
 use App\Support\JobAnalysis\Providers\OpenAIJobAnalysisClient;
 use App\Support\JobMatch\Providers\OllamaJobMatchClient;
@@ -22,9 +23,11 @@ use App\Support\ResumeVariant\Providers\OllamaResumeWordingClient;
 use App\Support\ResumeVariant\Providers\OpenAIResumeSelectionClient;
 use App\Support\ResumeVariant\Providers\OpenAIResumeWordingClient;
 use Carbon\CarbonImmutable;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use InvalidArgumentException;
@@ -206,24 +209,20 @@ class AppServiceProvider extends ServiceProvider
     {
         Date::use(CarbonImmutable::class);
 
-        // Prohibits db:wipe/migrate:fresh/migrate:refresh/migrate:reset/
-        // migrate:rollback OUTRIGHT (Illuminate\Console\Prohibitable —
-        // unlike ConfirmableTrait's production-only confirmation prompt,
-        // this is never bypassed by --force) everywhere except the
-        // 'testing' environment. This app is local-first with no
-        // staging/production deploy target, so "production" alone
-        // never actually guarded the one database that matters: the
-        // real local dev SQLite file at DB_DATABASE. `testing` is only
-        // ever active via phpunit.xml's environment override
-        // (DB_DATABASE=:memory:), which is also what Illuminate\
-        // Foundation\Testing\RefreshDatabase uses internally to run
-        // migrate:fresh against the disposable in-memory database —
-        // so automated tests are unaffected, and a destructive command
-        // run directly against .env's real database now fails closed.
-        // See README.md "Database safety" and docs/job-discovery.md.
-        DB::prohibitDestructiveCommands(
-            ! app()->environment('testing'),
-        );
+        DB::prohibitDestructiveCommands(! DisposableDatabase::allowsDestructiveCommands());
+
+        // Re-evaluate the actual --database target, including nested Artisan
+        // calls. A safe default connection must not authorize an unsafe override.
+        Event::listen(CommandStarting::class, function (CommandStarting $event): void {
+            if (! in_array($event->command, ['db:wipe', 'migrate:fresh', 'migrate:refresh', 'migrate:reset', 'migrate:rollback'], true)) {
+                return;
+            }
+
+            $connection = $event->input->getOption('database');
+            DB::prohibitDestructiveCommands(
+                ! DisposableDatabase::allowsDestructiveCommands(is_string($connection) ? $connection : null),
+            );
+        });
 
         Password::defaults(fn (): ?Password => app()->isProduction()
             ? Password::min(12)
