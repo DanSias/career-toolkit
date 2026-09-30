@@ -48,7 +48,8 @@ export function useApplicationInspectionPolling(
                     return;
                 }
 
-                const next = (await response.json()) as ApplicationInspectionState;
+                const next =
+                    (await response.json()) as ApplicationInspectionState;
 
                 if (cancelled) {
                     return;

@@ -1,6 +1,9 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { InspectionStateBadge } from '@/components/badges';
 import { GenerationStatus } from '@/components/generation-status';
+import { WaitingForWorkerNotice } from '@/components/worker-status-badge';
 import { useGenerationAttemptPolling } from '@/hooks/use-generation-attempt-polling';
+import { useWorkerStatusPolling } from '@/hooks/use-worker-status-polling';
 import AppShell from '@/layouts/app-shell';
 import { show as applicationsShow } from '@/routes/applications';
 import { index as jobsIndex } from '@/routes/jobs';
@@ -10,47 +13,60 @@ import {
 } from '@/routes/jobs/analyses';
 import { store as applicationsStore } from '@/routes/jobs/applications';
 import type { GenerationAttempt } from '@/types/generation-attempt';
+import type { InspectionSummary } from '@/types/application-inspection';
 import type { JobShowProps } from '@/types/job-posting';
 
 function InspectApplicationAction({
     jobId,
-    applicationId,
+    inspection,
     hasSourceUrl,
 }: {
     jobId: number;
-    applicationId: number | null;
+    inspection: InspectionSummary;
     hasSourceUrl: boolean;
 }) {
     const form = useForm({});
+    const workerStatus = useWorkerStatusPolling();
+    const isActive =
+        inspection.state === 'queued' || inspection.state === 'running';
 
     if (!hasSourceUrl) {
         return null;
     }
 
-    if (applicationId !== null) {
-        return (
-            <Link
-                href={applicationsShow.url({ application: applicationId })}
-                className="inline-flex items-center rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-            >
-                View Application Inspection
-            </Link>
-        );
-    }
-
     return (
-        <button
-            type="button"
-            disabled={form.processing}
-            onClick={() =>
-                form.post(applicationsStore.url({ jobPosting: jobId }), {
-                    showProgress: false,
-                })
-            }
-            className="inline-flex items-center rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-        >
-            Inspect Application
-        </button>
+        <div>
+            <div className="flex items-center gap-3">
+                <InspectionStateBadge summary={inspection} />
+                {inspection.application_id !== null ? (
+                    <Link
+                        href={applicationsShow.url({
+                            application: inspection.application_id,
+                        })}
+                        className="inline-flex items-center rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                    >
+                        View Application Inspection
+                    </Link>
+                ) : (
+                    <button
+                        type="button"
+                        disabled={form.processing}
+                        onClick={() =>
+                            form.post(
+                                applicationsStore.url({ jobPosting: jobId }),
+                                {
+                                    showProgress: false,
+                                },
+                            )
+                        }
+                        className="inline-flex items-center rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                    >
+                        Inspect Application
+                    </button>
+                )}
+            </div>
+            {isActive && <WaitingForWorkerNotice status={workerStatus} />}
+        </div>
     );
 }
 
@@ -110,7 +126,7 @@ export default function JobsShow({ job }: JobShowProps) {
                 href={jobsIndex.url()}
                 className="text-sm font-medium text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
             >
-                ← Back to Jobs
+                ← Back to Opportunities
             </Link>
 
             <div className="mt-4">
@@ -158,7 +174,7 @@ export default function JobsShow({ job }: JobShowProps) {
                 <div className="mt-4">
                     <InspectApplicationAction
                         jobId={job.id}
-                        applicationId={job.application_id}
+                        inspection={job.inspection}
                         hasSourceUrl={job.source_url !== null}
                     />
                 </div>

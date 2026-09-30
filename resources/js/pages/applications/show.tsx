@@ -1,6 +1,8 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import { GenerationStatus } from '@/components/generation-status';
+import { WaitingForWorkerNotice } from '@/components/worker-status-badge';
 import { useApplicationInspectionPolling } from '@/hooks/use-application-inspection-polling';
+import { useWorkerStatusPolling } from '@/hooks/use-worker-status-polling';
 import AppShell from '@/layouts/app-shell';
 import { show as jobsShow } from '@/routes/jobs';
 import { store as inspectStore } from '@/routes/jobs/applications';
@@ -125,6 +127,12 @@ function InspectionResultSection({
                 {result.unresolved_count > 0 && (
                     <span>{result.unresolved_count} unresolved</span>
                 )}
+                {result.finished_at && (
+                    <span>
+                        Last inspected{' '}
+                        {new Date(result.finished_at).toLocaleString()}
+                    </span>
+                )}
             </div>
 
             {result.warnings.length > 0 && (
@@ -166,6 +174,7 @@ function InspectApplicationAction({
         inspection.application_id,
         inspection,
     );
+    const workerStatus = useWorkerStatusPolling();
     const run = state.workflow_run;
     const isActive = run?.status === 'pending' || run?.status === 'running';
     const disabled = form.processing || isActive;
@@ -177,9 +186,12 @@ function InspectApplicationAction({
                     type="button"
                     disabled={disabled}
                     onClick={() =>
-                        form.post(inspectStore.url({ jobPosting: jobPostingId }), {
-                            showProgress: false,
-                        })
+                        form.post(
+                            inspectStore.url({ jobPosting: jobPostingId }),
+                            {
+                                showProgress: false,
+                            },
+                        )
                     }
                     className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
                 >
@@ -191,7 +203,8 @@ function InspectApplicationAction({
                 </button>
                 {run && (
                     <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                        {run.status === 'succeeded' && 'Last inspection succeeded'}
+                        {run.status === 'succeeded' &&
+                            'Last inspection succeeded'}
                         {run.status === 'failed' && 'Last inspection failed'}
                         {run.status === 'pending' && 'Queued…'}
                         {run.status === 'running' && 'Inspecting…'}
@@ -216,6 +229,8 @@ function InspectApplicationAction({
                 </p>
             )}
 
+            {isActive && <WaitingForWorkerNotice status={workerStatus} />}
+
             <InspectionResultSection inspection={state} />
         </div>
     );
@@ -235,7 +250,7 @@ export default function ApplicationShow({
                 href={jobsShow.url({ jobPosting: application.job_posting.id })}
                 className="text-sm font-medium text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
             >
-                ← Back to job
+                ← Back to Opportunity
             </Link>
 
             <div className="mt-4">
@@ -252,8 +267,8 @@ export default function ApplicationShow({
                     Application Inspection
                 </h2>
                 <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-                    Read-only — extracts the application's fields and
-                    questions without filling or submitting anything.
+                    Read-only — extracts the application's fields and questions
+                    without filling or submitting anything.
                 </p>
                 <div className="mt-3">
                     <InspectApplicationAction
