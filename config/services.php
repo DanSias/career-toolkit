@@ -135,7 +135,9 @@ return [
     | requires a free app_id/app_key pair (developer.adzuna.com) — a
     | missing key fails that one provider's attempt closed (see
     | App\Support\JobDiscovery\Providers\AdzunaDiscoveryProvider),
-    | never silently skipped and never blocking Himalayas.
+    | never silently skipped and never blocking Himalayas. Jobicy's
+    | public feed (jobicy.com/api/v2/remote-jobs), like Himalayas,
+    | needs no credentials.
     */
     'himalayas' => [
         'base_url' => env('HIMALAYAS_BASE_URL', 'https://himalayas.app/jobs/api'),
@@ -145,6 +147,10 @@ return [
         'app_id' => env('ADZUNA_APP_ID'),
         'app_key' => env('ADZUNA_APP_KEY'),
         'country' => env('ADZUNA_COUNTRY', 'us'),
+    ],
+
+    'jobicy' => [
+        'base_url' => env('JOBICY_BASE_URL', 'https://jobicy.com/api/v2/remote-jobs'),
     ],
 
 ];

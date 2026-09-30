@@ -19,6 +19,7 @@ use App\Support\JobDiscovery\Providers\AdzunaDiscoveryProvider;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderContract;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
 use App\Support\JobDiscovery\Providers\HimalayasDiscoveryProvider;
+use App\Support\JobDiscovery\Providers\JobicyDiscoveryProvider;
 use Throwable;
 
 /**
@@ -57,10 +58,12 @@ final class RunJobDiscovery
         ?GreenhouseCanonicalAdapter $greenhouse = null,
         ?LeverCanonicalAdapter $lever = null,
         ?AshbyCanonicalAdapter $ashby = null,
+        ?JobicyDiscoveryProvider $jobicy = null,
     ) {
         $this->providers = [
             JobDiscoverySource::Himalayas->value => $himalayas ?? new HimalayasDiscoveryProvider,
             JobDiscoverySource::Adzuna->value => $adzuna ?? new AdzunaDiscoveryProvider,
+            JobDiscoverySource::Jobicy->value => $jobicy ?? new JobicyDiscoveryProvider,
         ];
 
         $this->canonicalAdapters = [

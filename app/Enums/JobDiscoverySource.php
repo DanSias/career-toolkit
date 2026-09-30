@@ -25,4 +25,5 @@ enum JobDiscoverySource: string
     case Manual = 'manual';
     case Himalayas = 'himalayas';
     case Adzuna = 'adzuna';
+    case Jobicy = 'jobicy';
 }

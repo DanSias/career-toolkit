@@ -53,29 +53,51 @@ function adzunaJobFixture(string $id, string $title = 'Software Engineer', strin
     ];
 }
 
-it('ingests candidates from both providers when both succeed', function () {
+function jobicyJobFixture(int $id, string $title = 'Software Engineer', string $company = 'Acme'): array
+{
+    return [
+        'id' => $id,
+        'jobTitle' => $title,
+        'companyName' => $company,
+        'jobDescription' => '<p>Build things.</p>',
+        'jobGeo' => 'USA',
+        'jobType' => ['Full-Time'],
+        'url' => "https://jobicy.com/jobs/{$id}",
+        'pubDate' => '2026-09-01T12:00:00+00:00',
+    ];
+}
+
+it('ingests candidates from all three providers when all succeed', function () {
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1')]]),
         'api.adzuna.com/*' => Http::response(['results' => [adzunaJobFixture('a1')]]),
+        'jobicy.com/*' => Http::response(['jobs' => [jobicyJobFixture(1)]]),
     ]);
 
     $discoveryRun = (new RunJobDiscovery)->run();
 
     expect($discoveryRun->status)->toBe(DiscoveryStatus::Succeeded)
-        ->and($discoveryRun->providerAttempts)->toHaveCount(2)
-        ->and(JobPosting::count())->toBe(2);
+        ->and($discoveryRun->providerAttempts)->toHaveCount(3)
+        ->and(JobPosting::count())->toBe(3);
 
     $himalayasAttempt = $discoveryRun->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
     expect($himalayasAttempt->status)->toBe(DiscoveryStatus::Succeeded)
         ->and($himalayasAttempt->candidates_retrieved)->toBe(1)
         ->and($himalayasAttempt->candidates_accepted)->toBe(1)
         ->and($himalayasAttempt->jobs_created)->toBe(1);
+
+    $jobicyAttempt = $discoveryRun->providerAttempts->firstWhere('provider', JobDiscoverySource::Jobicy);
+    expect($jobicyAttempt->status)->toBe(DiscoveryStatus::Succeeded)
+        ->and($jobicyAttempt->candidates_retrieved)->toBe(1)
+        ->and($jobicyAttempt->candidates_accepted)->toBe(1)
+        ->and($jobicyAttempt->jobs_created)->toBe(1);
 });
 
-it('isolates one provider failing from the other succeeding', function () {
+it('isolates one provider failing from the others succeeding', function () {
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1')]]),
         'api.adzuna.com/*' => Http::response(null, 500),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
     ]);
 
     $discoveryRun = (new RunJobDiscovery)->run();
@@ -97,6 +119,25 @@ it('isolates one provider failing from the other succeeding', function () {
     expect(JobPosting::count())->toBe(1);
 });
 
+it('isolates Jobicy failing from the other providers succeeding', function () {
+    Http::fake([
+        'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1')]]),
+        'api.adzuna.com/*' => Http::response(['results' => []]),
+        'jobicy.com/*' => Http::response(null, 500),
+    ]);
+
+    $discoveryRun = (new RunJobDiscovery)->run();
+
+    expect($discoveryRun->status)->toBe(DiscoveryStatus::Partial);
+
+    $jobicyAttempt = $discoveryRun->providerAttempts->firstWhere('provider', JobDiscoverySource::Jobicy);
+    expect($jobicyAttempt->status)->toBe(DiscoveryStatus::Failed)
+        ->and($jobicyAttempt->failure_message)->not->toBeNull();
+
+    // Himalayas's successful candidate was still ingested despite Jobicy's failure.
+    expect(JobPosting::count())->toBe(1);
+});
+
 it('records accurate counts including filtered-out candidates', function () {
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [
@@ -104,6 +145,7 @@ it('records accurate counts including filtered-out candidates', function () {
             himalayasJobFixture('2', 'Warehouse Associate'),
         ]]),
         'api.adzuna.com/*' => Http::response(['results' => []]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
     ]);
 
     $discoveryRun = (new RunJobDiscovery)->run();
@@ -124,6 +166,7 @@ it('canonically enriches a candidate whose company resolves to a known ATS board
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1', 'Software Engineer', 'Acme')]]),
         'api.adzuna.com/*' => Http::response(['results' => []]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
         'boards-api.greenhouse.io/*' => Http::response(['jobs' => [[
             'id' => 999,
             'title' => 'Software Engineer',
@@ -148,6 +191,7 @@ it('still ingests a candidate whose company does not resolve to any known ATS bo
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1', 'Software Engineer', 'Totally Unknown Co')]]),
         'api.adzuna.com/*' => Http::response(['results' => []]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
     ]);
 
     $discoveryRun = (new RunJobDiscovery)->run();
@@ -162,6 +206,7 @@ it('a canonical adapter failing does not block ingestion — the candidate still
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1', 'Software Engineer', 'Acme')]]),
         'api.adzuna.com/*' => Http::response(['results' => []]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
         'boards-api.greenhouse.io/*' => Http::response(null, 500),
     ]);
 
@@ -175,6 +220,7 @@ it('rerunning the pipeline is safe — no duplicates, existing rows just get upd
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1')]]),
         'api.adzuna.com/*' => Http::response(['results' => []]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
     ]);
 
     (new RunJobDiscovery)->run();
@@ -188,6 +234,7 @@ it('a failed run does not corrupt JobPostings created by a prior successful run'
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1')]]),
         'api.adzuna.com/*' => Http::response(['results' => []]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
     ]);
     (new RunJobDiscovery)->run();
     expect(JobPosting::count())->toBe(1);
@@ -195,6 +242,7 @@ it('a failed run does not corrupt JobPostings created by a prior successful run'
     Http::fake([
         'himalayas.app/*' => Http::response(null, 500),
         'api.adzuna.com/*' => Http::response(null, 500),
+        'jobicy.com/*' => Http::response(null, 500),
     ]);
     (new RunJobDiscovery)->run();
 
@@ -202,10 +250,11 @@ it('a failed run does not corrupt JobPostings created by a prior successful run'
         ->and(JobPosting::first()->title)->not->toBeEmpty();
 });
 
-it('settles both attempts and distinguishes partial from total provider failure', function (bool $himalayasFails, bool $adzunaFails, DiscoveryStatus $status) {
+it('settles every attempt and distinguishes partial from total provider failure', function (bool $himalayasFails, bool $adzunaFails, bool $jobicyFails, DiscoveryStatus $status) {
     Http::fake([
         'himalayas.app/*' => $himalayasFails ? Http::response(null, 500) : Http::response(['jobs' => [himalayasJobFixture('1')]]),
         'api.adzuna.com/*' => $adzunaFails ? Http::response(null, 500) : Http::response(['results' => [adzunaJobFixture('a1')]]),
+        'jobicy.com/*' => $jobicyFails ? Http::response(null, 500) : Http::response(['jobs' => []]),
     ]);
     $run = (new RunJobDiscovery)->run();
     expect($run->status)->toBe($status)->and($run->finished_at)->not->toBeNull();
@@ -213,9 +262,10 @@ it('settles both attempts and distinguishes partial from total provider failure'
         expect($attempt->finished_at)->not->toBeNull()->and($attempt->status)->toBeIn([DiscoveryStatus::Succeeded, DiscoveryStatus::Failed]);
     }
 })->with([
-    [false, true, DiscoveryStatus::Partial],
-    [true, false, DiscoveryStatus::Partial],
-    [true, true, DiscoveryStatus::Failed],
+    [false, true, false, DiscoveryStatus::Partial],
+    [true, false, false, DiscoveryStatus::Partial],
+    [true, true, false, DiscoveryStatus::Partial],
+    [true, true, true, DiscoveryStatus::Failed],
 ]);
 
 it('settles an unexpected orchestration failure and preserves earlier successful writes and counts', function () {
@@ -224,6 +274,7 @@ it('settles an unexpected orchestration failure and preserves earlier successful
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1'), himalayasJobFixture('2', 'Software Engineer', 'broken-company')]]),
         'api.adzuna.com/*' => Http::response(['results' => [adzunaJobFixture('a1')]]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
     ]);
     $run = (new RunJobDiscovery)->run();
     $attempt = $run->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
@@ -237,6 +288,7 @@ it('settles malformed individual entries through provider failure isolation', fu
     Http::fake([
         'himalayas.app/*' => Http::response(['jobs' => [null]]),
         'api.adzuna.com/*' => Http::response(['results' => [adzunaJobFixture('a1')]]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
     ]);
     $run = (new RunJobDiscovery)->run();
     $attempt = $run->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
@@ -257,6 +309,7 @@ it('reports identity conflicts safely while continuing other candidates', functi
         'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1'), himalayasJobFixture('2', 'Software Engineer', 'Unknown')]]),
         'boards-api.greenhouse.io/*' => Http::response(['jobs' => [['id' => 99, 'title' => 'Software Engineer']]]),
         'api.adzuna.com/*' => Http::response(['results' => []]),
+        'jobicy.com/*' => Http::response(['jobs' => []]),
     ]);
     $run = (new RunJobDiscovery)->run();
     $attempt = $run->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
