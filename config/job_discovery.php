@@ -46,4 +46,17 @@ return [
         'employment_type' => null,
     ],
 
+    /*
+    | Automatic scheduling — see bootstrap/app.php's withSchedule() and
+    | docs/job-discovery.md "Scheduling / orchestration". The schedule
+    | checks hourly but only actually runs discovery when the last
+    | SUCCESSFUL DiscoveryRun is older than stale_after_hours — one
+    | mechanism gives both the daily cadence and "catch up if the app
+    | wasn't running at the usual time" behavior, rather than two
+    | separate schedule entries.
+    */
+    'schedule' => [
+        'stale_after_hours' => (int) env('JOB_DISCOVERY_STALE_AFTER_HOURS', 23),
+    ],
+
 ];

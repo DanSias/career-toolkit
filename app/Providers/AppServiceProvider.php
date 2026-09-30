@@ -25,6 +25,7 @@ use App\Support\ResumeVariant\Providers\OpenAIResumeWordingClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -200,6 +201,31 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureMorphMap();
+        $this->configureDevScheduler();
+    }
+
+    /**
+     * Makes `composer run dev` / `php artisan dev` also run
+     * `schedule:work` as a 5th multiplexed process alongside the
+     * existing server/queue/logs/vite ones — the official Laravel
+     * mechanism for registering an additional dev-mode process
+     * (Illuminate\Foundation\DevCommands::artisan(), see its own
+     * registerDefaults() for the same pattern this mirrors). Without
+     * this, bootstrap/app.php's schedule definition would never
+     * actually execute during normal local use — a Schedule entry
+     * alone does nothing without something continuously ticking it.
+     * See docs/job-discovery.md "Automatic scheduling — deployment
+     * question" and README.md "Running the app".
+     *
+     * Guarded by runningInConsole(): DevCommands::register() already
+     * no-ops outside the console, but the guard also means this never
+     * does any work for a normal HTTP request.
+     */
+    protected function configureDevScheduler(): void
+    {
+        if ($this->app->runningInConsole()) {
+            DevCommands::artisan('schedule:work', 'scheduler');
+        }
     }
 
     /**
