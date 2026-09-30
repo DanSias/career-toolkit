@@ -93,6 +93,24 @@ class JobPostingController extends Controller
             'source_url' => $job->source_url,
             'captured_at' => $job->created_at?->toDateString(),
             'inspection' => $inspection,
+            'discovery' => $this->transformDiscoveryMetadata($job),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function transformDiscoveryMetadata(JobPosting $job): array
+    {
+        return [
+            'source' => $job->discovery_source->value,
+            'canonical_source' => $job->canonical_source?->value,
+            'discovered_at' => $job->isDiscovered() ? $job->discovered_at->toDateString() : null,
+            'remote_status' => $job->remote_status?->value,
+            'employment_type' => $job->employment_type,
+            'compensation_min' => $job->compensation_min,
+            'compensation_max' => $job->compensation_max,
+            'compensation_currency' => $job->compensation_currency,
         ];
     }
 
@@ -123,6 +141,7 @@ class JobPostingController extends Controller
             'latest_job_analysis_attempt' => $this->latestUnresolvedAttempt($job, $presenter),
             'application_id' => $application?->id,
             'inspection' => $summarizer->forApplication($application),
+            'discovery' => $this->transformDiscoveryMetadata($job),
         ];
     }
 

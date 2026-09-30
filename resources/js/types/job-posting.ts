@@ -1,6 +1,23 @@
 import type { InspectionSummary } from '@/types/application-inspection';
 import type { GenerationAttempt } from '@/types/generation-attempt';
 
+/**
+ * Matches JobPostingController::transformDiscoveryMetadata() exactly.
+ * source is always present ('manual' for hand-created postings);
+ * everything else is null unless discovery/canonical enrichment
+ * populated it.
+ */
+export type JobPostingDiscoveryMetadata = {
+    source: string;
+    canonical_source: string | null;
+    discovered_at: string | null;
+    remote_status: string | null;
+    employment_type: string | null;
+    compensation_min: number | null;
+    compensation_max: number | null;
+    compensation_currency: string | null;
+};
+
 export type JobPostingSummary = {
     id: number;
     company: string;
@@ -10,6 +27,7 @@ export type JobPostingSummary = {
     source_url: string | null;
     captured_at: string | null;
     inspection: InspectionSummary;
+    discovery: JobPostingDiscoveryMetadata;
 };
 
 export type JobAnalysisSummary = {
@@ -31,6 +49,7 @@ export type JobPostingDetail = {
     latest_job_analysis_attempt: GenerationAttempt | null;
     application_id: number | null;
     inspection: InspectionSummary;
+    discovery: JobPostingDiscoveryMetadata;
 };
 
 export type JobsIndexFilters = {

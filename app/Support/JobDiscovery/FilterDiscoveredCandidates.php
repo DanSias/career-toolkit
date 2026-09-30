@@ -18,11 +18,16 @@ final class FilterDiscoveredCandidates
     {
         $haystack = mb_strtolower($candidate->title.' '.($candidate->description ?? ''));
 
-        if (! $this->matchesAnyKeyword($haystack, $criteria->keywords)) {
+        // Empty keywords = no positive filter = accept everything;
+        // empty excludedKeywords = nothing to exclude — these are
+        // deliberately NOT the same "empty means accept" shortcut, so
+        // each uses its own explicit check rather than sharing one
+        // matchesAnyKeyword() semantics that only fits one direction.
+        if ($criteria->keywords !== [] && ! $this->matchesAnyKeyword($haystack, $criteria->keywords)) {
             return false;
         }
 
-        if ($this->matchesAnyKeyword($haystack, $criteria->excludedKeywords)) {
+        if ($criteria->excludedKeywords !== [] && $this->matchesAnyKeyword($haystack, $criteria->excludedKeywords)) {
             return false;
         }
 
@@ -38,14 +43,14 @@ final class FilterDiscoveredCandidates
     }
 
     /**
+     * Both call sites in accepts() already guard the empty-list case
+     * explicitly before calling this — see accepts()'s own comment —
+     * so this only ever runs with a genuinely non-empty list.
+     *
      * @param  string[]  $keywords
      */
     private function matchesAnyKeyword(string $haystack, array $keywords): bool
     {
-        if ($keywords === []) {
-            return true;
-        }
-
         foreach ($keywords as $keyword) {
             if (str_contains($haystack, mb_strtolower($keyword))) {
                 return true;

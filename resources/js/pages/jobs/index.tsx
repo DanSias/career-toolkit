@@ -10,7 +10,41 @@ import {
 import { store as inspectStore } from '@/routes/jobs/applications';
 import { show as applicationsShow } from '@/routes/applications';
 import AppShell from '@/layouts/app-shell';
-import type { JobPostingSummary, JobsIndexProps } from '@/types/job-posting';
+import type {
+    JobPostingDiscoveryMetadata,
+    JobPostingSummary,
+    JobsIndexProps,
+} from '@/types/job-posting';
+
+const DISCOVERY_SOURCE_LABELS: Record<string, string> = {
+    himalayas: 'Himalayas',
+    adzuna: 'Adzuna',
+};
+
+function discoverySourceLabel(source: string): string {
+    return DISCOVERY_SOURCE_LABELS[source] ?? source;
+}
+
+function formatCompensation(
+    discovery: JobPostingDiscoveryMetadata,
+): string | null {
+    if (
+        discovery.compensation_min === null &&
+        discovery.compensation_max === null
+    ) {
+        return null;
+    }
+
+    const currency = discovery.compensation_currency ?? '';
+    const min = discovery.compensation_min?.toLocaleString();
+    const max = discovery.compensation_max?.toLocaleString();
+
+    if (min && max) {
+        return `${currency} ${min}–${max}`.trim();
+    }
+
+    return `${currency} ${min ?? max}`.trim();
+}
 
 const STATUS_TABS: {
     value: 'all' | 'not_inspected' | 'inspected';
@@ -166,7 +200,24 @@ export default function JobsIndex({ jobs, filters }: JobsIndexProps) {
                                         {job.location && (
                                             <span>{job.location} · </span>
                                         )}
-                                        Captured {job.captured_at}
+                                        {job.discovery.source === 'manual'
+                                            ? `Captured ${job.captured_at}`
+                                            : `Discovered via ${discoverySourceLabel(job.discovery.source)}`}
+                                        {job.discovery.remote_status && (
+                                            <span>
+                                                {' '}
+                                                · {job.discovery.remote_status}
+                                            </span>
+                                        )}
+                                        {formatCompensation(job.discovery) && (
+                                            <span>
+                                                {' '}
+                                                ·{' '}
+                                                {formatCompensation(
+                                                    job.discovery,
+                                                )}
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-3">

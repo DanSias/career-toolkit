@@ -1,6 +1,8 @@
 <?php
 
 use App\Enums\AgentRunStatus;
+use App\Enums\JobDiscoverySource;
+use App\Enums\JobRemoteStatus;
 use App\Enums\WorkflowStatus;
 use App\Models\AgentRun;
 use App\Models\Application;
@@ -117,5 +119,34 @@ it('filters to only not_inspected opportunities on the not_inspected status tab'
         ->assertInertia(fn (Assert $page) => $page
             ->has('jobs', 1)
             ->where('jobs.0.id', $uninspected->id)
+        );
+});
+
+it('exposes discovery.source manual for a hand-created JobPosting', function () {
+    $profile = CareerProfile::factory()->create();
+    JobPosting::factory()->for($profile)->create();
+
+    $this->get(route('jobs.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('jobs.0.discovery.source', 'manual')
+            ->where('jobs.0.discovery.discovered_at', null)
+        );
+});
+
+it('exposes discovery metadata for a discovered JobPosting', function () {
+    $profile = CareerProfile::factory()->create();
+    JobPosting::factory()->for($profile)->discovered(JobDiscoverySource::Himalayas)->create([
+        'remote_status' => JobRemoteStatus::Remote,
+        'compensation_min' => 150000,
+        'compensation_max' => 190000,
+        'compensation_currency' => 'USD',
+    ]);
+
+    $this->get(route('jobs.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('jobs.0.discovery.source', 'himalayas')
+            ->where('jobs.0.discovery.remote_status', 'remote')
+            ->where('jobs.0.discovery.compensation_min', 150000)
+            ->where('jobs.0.discovery.compensation_max', 190000)
         );
 });

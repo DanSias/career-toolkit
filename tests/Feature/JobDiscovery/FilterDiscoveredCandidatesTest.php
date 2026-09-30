@@ -50,6 +50,18 @@ it('rejects a candidate matching no keyword', function () {
     expect((new FilterDiscoveredCandidates)->accepts($c, criteria()))->toBeFalse();
 });
 
+it('accepts a matching candidate when excludedKeywords is empty (regression: empty list must mean "excludes nothing", not "excludes everything")', function () {
+    $c = candidate();
+
+    expect((new FilterDiscoveredCandidates)->accepts($c, criteria(['excludedKeywords' => []])))->toBeTrue();
+});
+
+it('accepts any candidate when keywords is empty (no positive filter configured)', function () {
+    $c = candidate(['title' => 'Warehouse Associate', 'description' => 'Lift boxes.']);
+
+    expect((new FilterDiscoveredCandidates)->accepts($c, criteria(['keywords' => []])))->toBeTrue();
+});
+
 it('rejects a candidate containing an excluded keyword even if it also matches a keyword', function () {
     $c = candidate(['title' => 'Junior Senior Software Engineer']);
 
