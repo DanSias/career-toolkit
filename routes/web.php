@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\ApplicationInspectionStatusController;
+use App\Http\Controllers\BrowserWorkerStatusController;
 use App\Http\Controllers\CareerDataController;
 use App\Http\Controllers\GenerationAttemptController;
 use App\Http\Controllers\JobAnalysisController;
@@ -42,6 +43,11 @@ Route::get('/generation-attempts/{generationAttempt}', [GenerationAttemptControl
 Route::post('/jobs/{jobPosting}/applications', [ApplicationController::class, 'store'])->name('jobs.applications.store');
 Route::get('/applications/{application}', [ApplicationController::class, 'show'])->name('applications.show');
 Route::get('/applications/{application}/status', [ApplicationInspectionStatusController::class, 'show'])->name('applications.status');
+
+// Read-only worker presence feed for the nav-bar badge and
+// "waiting for browser worker" states — see
+// App\Support\ApplicationInspection\PresentWorkerAvailability.
+Route::get('/browser-worker/status', [BrowserWorkerStatusController::class, 'show'])->name('browser-worker.status');
 
 // Job Match generation is also queued now (GenerateJobMatchJob), same
 // pattern as Job Analysis above. AllowLongRunningGeneration is kept on

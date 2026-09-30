@@ -114,6 +114,18 @@ return [
     'browser_worker' => [
         'token' => env('BROWSER_WORKER_TOKEN'),
         'claim_ttl' => (int) env('BROWSER_WORKER_CLAIM_TTL', 60),
+
+        // The worker's own expected poll cadence
+        // (BROWSER_WORKER_POLL_INTERVAL_MS in workers/browser-inspector,
+        // in seconds here) — Career Toolkit's side of the same number,
+        // kept as a plain default rather than something the worker
+        // reports, since one shared expectation is simpler than a
+        // negotiated one for a single-worker system. Used only to
+        // derive App\Support\ApplicationInspection\
+        // PresentWorkerAvailability's online/offline threshold — never
+        // read by the UI directly. See docs/application-inspector.md
+        // "Worker presence".
+        'poll_interval_seconds' => (int) env('BROWSER_WORKER_POLL_INTERVAL_SECONDS', 5),
     ],
 
 ];

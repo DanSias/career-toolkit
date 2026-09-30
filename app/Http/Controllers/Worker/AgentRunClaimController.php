@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Worker;
 
 use App\Http\Controllers\Controller;
 use App\Support\ApplicationInspection\ClaimNextAgentRun;
+use App\Support\ApplicationInspection\RecordWorkerHeartbeat;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -16,12 +17,20 @@ use Illuminate\Http\Response;
  * Career Profile data, resume content, or any Application field beyond
  * the one URL it exists to inspect. See docs/application-inspector.md
  * "Claim protocol".
+ *
+ * Every authenticated call here also records worker presence (see
+ * App\Support\ApplicationInspection\RecordWorkerHeartbeat) — a claim
+ * poll that found no work still proves the worker is alive and
+ * reachable, so no separate heartbeat endpoint/traffic exists. See
+ * docs/application-inspector.md "Worker presence".
  */
 class AgentRunClaimController extends Controller
 {
-    public function store(Request $request, ClaimNextAgentRun $claimer): JsonResponse|Response
+    public function store(Request $request, ClaimNextAgentRun $claimer, RecordWorkerHeartbeat $heartbeat): JsonResponse|Response
     {
         $workerIdentity = (string) $request->string('worker_identity', 'unknown');
+
+        $heartbeat->record($workerIdentity, 'browser_inspector');
 
         $agentRun = $claimer->claim($workerIdentity);
 

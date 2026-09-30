@@ -6,6 +6,7 @@ use App\Enums\WorkflowStatus;
 use App\Models\AgentRun;
 use App\Models\Application;
 use App\Models\JobPosting;
+use App\Models\WorkerHeartbeat;
 use App\Models\WorkflowRun;
 use App\Models\WorkflowStep;
 use Illuminate\Testing\TestResponse;
@@ -102,6 +103,30 @@ it('never claims a non-browser_inspector agent run', function () {
     queuedAgentRun(['agent_type' => 'some_other_agent_type']);
 
     claimRequest()->assertNoContent();
+});
+
+it('records worker presence on an authenticated claim poll even when there is no work', function () {
+    claimRequest()->assertNoContent();
+
+    $heartbeat = WorkerHeartbeat::firstWhere('identity', 'test-worker');
+    expect($heartbeat)->not->toBeNull()
+        ->and($heartbeat->worker_type)->toBe('browser_inspector')
+        ->and($heartbeat->last_seen_at)->not->toBeNull();
+});
+
+it('does not record presence for an unauthenticated claim attempt', function () {
+    test()->postJson('/api/worker/agent-runs/claim', ['worker_identity' => 'sneaky-worker'])
+        ->assertUnauthorized();
+
+    expect(WorkerHeartbeat::count())->toBe(0);
+});
+
+it('upserts the same identity rather than accumulating a new row per poll', function () {
+    claimRequest();
+    claimRequest();
+    claimRequest();
+
+    expect(WorkerHeartbeat::where('identity', 'test-worker')->count())->toBe(1);
 });
 
 it('recovers an expired claim as failed with claim_timeout before assigning new work', function () {
