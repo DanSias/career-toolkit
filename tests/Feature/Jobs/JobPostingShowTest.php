@@ -114,6 +114,16 @@ it('does not expose a succeeded attempt as latest_job_analysis_attempt, since it
         ->assertInertia(fn (Assert $page) => $page->where('job.latest_job_analysis_attempt', null));
 });
 
+it('exposes a not_inspected inspection summary when no Application exists yet', function () {
+    $job = JobPosting::factory()->create();
+
+    $this->get(route('jobs.show', $job))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('job.inspection.state', 'not_inspected')
+            ->where('job.application_id', null)
+        );
+});
+
 it('exposes only the most recent attempt when several exist for the same posting', function () {
     $job = JobPosting::factory()->create();
     GenerationAttempt::factory()->create([

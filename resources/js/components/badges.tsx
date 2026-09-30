@@ -1,3 +1,4 @@
+import type { InspectionSummary } from '@/types/application-inspection';
 import { cn } from '@/lib/utils';
 import type {
     SkillCategory,
@@ -75,6 +76,61 @@ export function SkillCategoryBadge({ value }: { value: SkillCategory }) {
             )}
         >
             {CATEGORY_LABELS[value]}
+        </span>
+    );
+}
+
+const INSPECTION_STATE_STYLES: Record<InspectionSummary['state'], string> = {
+    not_inspected:
+        'bg-neutral-100 text-neutral-500 ring-neutral-500/20 dark:bg-neutral-800 dark:text-neutral-400 dark:ring-neutral-400/10',
+    queued: 'bg-sky-50 text-sky-700 ring-sky-600/20 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/20',
+    running:
+        'bg-sky-50 text-sky-700 ring-sky-600/20 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/20',
+    inspected:
+        'bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20',
+    failed: 'bg-rose-50 text-rose-700 ring-rose-600/20 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-400/20',
+    unsupported:
+        'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/20',
+};
+
+/** One-line status label for the Opportunities index/detail — see App\Support\ApplicationInspection\SummarizeInspectionStates. */
+export function InspectionStateBadge({
+    summary,
+}: {
+    summary: InspectionSummary;
+}) {
+    const label = (() => {
+        switch (summary.state) {
+            case 'not_inspected':
+                return 'Not inspected';
+            case 'queued':
+                return 'Inspection queued';
+            case 'running':
+                return 'Inspecting…';
+            case 'inspected':
+                return `Inspected — ${summary.field_count ?? 0} question${summary.field_count === 1 ? '' : 's'}`;
+            case 'failed':
+                return 'Inspection failed';
+            case 'unsupported':
+                return 'Unsupported ATS';
+        }
+    })();
+
+    return (
+        <span className="inline-flex flex-col gap-0.5">
+            <span
+                className={cn(
+                    badgeClass,
+                    INSPECTION_STATE_STYLES[summary.state],
+                )}
+            >
+                {label}
+            </span>
+            {summary.latest_attempt_failed && (
+                <span className="text-xs text-rose-600 dark:text-rose-400">
+                    Latest attempt failed
+                </span>
+            )}
         </span>
     );
 }

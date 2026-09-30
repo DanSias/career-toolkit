@@ -61,3 +61,25 @@ export type ApplicationShowProps = {
     application: ApplicationDetail;
     inspection: ApplicationInspectionState;
 };
+
+/**
+ * The compact, derived inspection-state summary shown on the
+ * Opportunities index/detail — see
+ * App\Support\ApplicationInspection\SummarizeInspectionStates. Distinct
+ * from ApplicationInspectionState above: this never carries the actual
+ * question list, only enough to render a status badge.
+ */
+export type InspectionState =
+    | 'not_inspected'
+    | 'queued'
+    | 'running'
+    | 'inspected'
+    | 'failed'
+    | 'unsupported';
+
+export type InspectionSummary = {
+    state: InspectionState;
+    application_id: number | null;
+    field_count: number | null;
+    latest_attempt_failed: boolean;
+};

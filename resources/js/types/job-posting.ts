@@ -1,3 +1,4 @@
+import type { InspectionSummary } from '@/types/application-inspection';
 import type { GenerationAttempt } from '@/types/generation-attempt';
 
 export type JobPostingSummary = {
@@ -8,6 +9,7 @@ export type JobPostingSummary = {
     has_source_url: boolean;
     source_url: string | null;
     captured_at: string | null;
+    inspection: InspectionSummary;
 };
 
 export type JobAnalysisSummary = {
@@ -28,10 +30,17 @@ export type JobPostingDetail = {
     analyses: JobAnalysisSummary[];
     latest_job_analysis_attempt: GenerationAttempt | null;
     application_id: number | null;
+    inspection: InspectionSummary;
+};
+
+export type JobsIndexFilters = {
+    q: string;
+    status: 'all' | 'not_inspected' | 'inspected';
 };
 
 export type JobsIndexProps = {
     jobs: JobPostingSummary[];
+    filters: JobsIndexFilters;
 };
 
 export type JobShowProps = {
