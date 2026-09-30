@@ -1,0 +1,49 @@
+<?php
+
+namespace App\Support\JobDiscovery;
+
+/**
+ * The smallest useful deterministic V1 discovery configuration —
+ * discovery FILTERS, never fit scoring (no weights, no percentages,
+ * nothing that ranks one accepted candidate above another). Built
+ * once from config/job_discovery.php by
+ * App\Support\JobDiscovery\RunJobDiscovery, never hand-constructed
+ * inside a provider or filter class — see
+ * App\Support\JobDiscovery\FilterDiscoveredCandidates.
+ */
+final readonly class DiscoverySearchCriteria
+{
+    /**
+     * @param  string[]  $keywords  OR-matched against title+description
+     *                              — a candidate must match at least one to be accepted. Role and
+     *                              seniority terms both belong here (e.g. "senior", "staff",
+     *                              "software engineer") rather than as a separate mandatory
+     *                              seniority gate — see FilterDiscoveredCandidates's own docblock
+     *                              for why a single OR-matched list is the conservative choice.
+     * @param  string[]  $excludedKeywords  Reject if ANY appear in
+     *                                      title+description.
+     * @param  string[]  $allowedLocations  Used only as a fallback
+     *                                      location-text check when remoteStatus is unknown — never
+     *                                      overrides an explicit Remote/Onsite/Hybrid signal.
+     */
+    public function __construct(
+        public array $keywords,
+        public array $excludedKeywords,
+        public string $remotePreference,
+        public array $allowedLocations,
+        public ?string $employmentType,
+    ) {}
+
+    public static function fromConfig(): self
+    {
+        $config = config('job_discovery.search');
+
+        return new self(
+            keywords: $config['keywords'],
+            excludedKeywords: $config['excluded_keywords'],
+            remotePreference: $config['remote_preference'],
+            allowedLocations: $config['allowed_locations'],
+            employmentType: $config['employment_type'],
+        );
+    }
+}

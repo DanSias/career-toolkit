@@ -128,4 +128,23 @@ return [
         'poll_interval_seconds' => (int) env('BROWSER_WORKER_POLL_INTERVAL_SECONDS', 5),
     ],
 
+    /*
+    | Broad-discovery providers (App\Support\JobDiscovery\Providers) —
+    | see docs/job-discovery.md. Himalayas' public feed
+    | (himalayas.app/jobs/api) needs no credentials at all. Adzuna
+    | requires a free app_id/app_key pair (developer.adzuna.com) — a
+    | missing key fails that one provider's attempt closed (see
+    | App\Support\JobDiscovery\Providers\AdzunaDiscoveryProvider),
+    | never silently skipped and never blocking Himalayas.
+    */
+    'himalayas' => [
+        'base_url' => env('HIMALAYAS_BASE_URL', 'https://himalayas.app/jobs/api'),
+    ],
+
+    'adzuna' => [
+        'app_id' => env('ADZUNA_APP_ID'),
+        'app_key' => env('ADZUNA_APP_KEY'),
+        'country' => env('ADZUNA_COUNTRY', 'us'),
+    ],
+
 ];
