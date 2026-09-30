@@ -14,7 +14,7 @@ return [
     | change what discovery looks for.
     |
     | DISCOVERY filters only — never fit scoring. `keywords` includes
-    | both role/technology terms and seniority terms in one OR-matched
+    | role/technology terms matched against the title in one OR-matched
     | list (see DiscoverySearchCriteria's own docblock for why), tuned
     | to this user's actual target profile: Senior/Staff full-stack,
     | backend/API, data-heavy, developer tooling, and AI-enabled
@@ -22,7 +22,6 @@ return [
     */
     'search' => [
         'keywords' => [
-            'senior', 'staff',
             'software engineer', 'full stack', 'full-stack', 'backend',
             'back-end', 'back end', 'api engineer', 'platform engineer',
             'developer tools', 'developer experience', 'data engineer',

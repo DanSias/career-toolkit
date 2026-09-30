@@ -4,10 +4,12 @@ use App\Enums\DiscoveryStatus;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobDiscoverySource;
 use App\Models\CareerProfile;
+use App\Models\DiscoveryProviderAttempt;
 use App\Models\DiscoveryRun;
 use App\Models\JobPosting;
 use App\Models\KnownAtsBoard;
 use App\Support\JobDiscovery\RunJobDiscovery;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 
@@ -78,8 +80,8 @@ it('isolates one provider failing from the other succeeding', function () {
 
     $discoveryRun = (new RunJobDiscovery)->run();
 
-    // The RUN itself still finishes, even though one provider failed.
-    expect($discoveryRun->status)->toBe(DiscoveryStatus::Succeeded);
+    // A partial run distinguishes this from full success.
+    expect($discoveryRun->status)->toBe(DiscoveryStatus::Partial);
 
     $himalayasAttempt = $discoveryRun->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
     $adzunaAttempt = $discoveryRun->providerAttempts->firstWhere('provider', JobDiscoverySource::Adzuna);
@@ -198,4 +200,83 @@ it('a failed run does not corrupt JobPostings created by a prior successful run'
 
     expect(JobPosting::count())->toBe(1)
         ->and(JobPosting::first()->title)->not->toBeEmpty();
+});
+
+it('settles both attempts and distinguishes partial from total provider failure', function (bool $himalayasFails, bool $adzunaFails, DiscoveryStatus $status) {
+    Http::fake([
+        'himalayas.app/*' => $himalayasFails ? Http::response(null, 500) : Http::response(['jobs' => [himalayasJobFixture('1')]]),
+        'api.adzuna.com/*' => $adzunaFails ? Http::response(null, 500) : Http::response(['results' => [adzunaJobFixture('a1')]]),
+    ]);
+    $run = (new RunJobDiscovery)->run();
+    expect($run->status)->toBe($status)->and($run->finished_at)->not->toBeNull();
+    foreach ($run->providerAttempts as $attempt) {
+        expect($attempt->finished_at)->not->toBeNull()->and($attempt->status)->toBeIn([DiscoveryStatus::Succeeded, DiscoveryStatus::Failed]);
+    }
+})->with([
+    [false, true, DiscoveryStatus::Partial],
+    [true, false, DiscoveryStatus::Partial],
+    [true, true, DiscoveryStatus::Failed],
+]);
+
+it('settles an unexpected orchestration failure and preserves earlier successful writes and counts', function () {
+    KnownAtsBoard::factory()->create(['company_name' => 'broken-company', 'ats_type' => 'greenhouse']);
+    DB::table('known_ats_boards')->where('company_name', 'broken-company')->update(['ats_type' => 'invalid']);
+    Http::fake([
+        'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1'), himalayasJobFixture('2', 'Software Engineer', 'broken-company')]]),
+        'api.adzuna.com/*' => Http::response(['results' => [adzunaJobFixture('a1')]]),
+    ]);
+    $run = (new RunJobDiscovery)->run();
+    $attempt = $run->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
+    expect($run->status)->toBe(DiscoveryStatus::Partial)->and($run->finished_at)->not->toBeNull()
+        ->and($attempt->status)->toBe(DiscoveryStatus::Failed)->and($attempt->finished_at)->not->toBeNull()
+        ->and($attempt->failure_category)->toBe('unexpected_error')->and($attempt->jobs_created)->toBe(1)
+        ->and(JobPosting::count())->toBe(2);
+});
+
+it('settles malformed individual entries through provider failure isolation', function () {
+    Http::fake([
+        'himalayas.app/*' => Http::response(['jobs' => [null]]),
+        'api.adzuna.com/*' => Http::response(['results' => [adzunaJobFixture('a1')]]),
+    ]);
+    $run = (new RunJobDiscovery)->run();
+    $attempt = $run->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
+    expect($run->status)->toBe(DiscoveryStatus::Partial)->and($attempt->status)->toBe(DiscoveryStatus::Failed)
+        ->and($attempt->failure_category)->toBe('provider_error')->and($attempt->finished_at)->not->toBeNull()
+        ->and(JobPosting::count())->toBe(1);
+});
+
+it('reports identity conflicts safely while continuing other candidates', function () {
+    $profile = CareerProfile::first();
+    $old = JobPosting::factory()->for($profile)->discovered(JobDiscoverySource::Himalayas)->create([
+        'discovery_source_id' => 'https://himalayas.app/jobs/1',
+        'canonical_source' => JobCanonicalSource::Greenhouse, 'canonical_source_id' => 'old',
+    ]);
+    $before = $old->fresh()->toArray();
+    KnownAtsBoard::factory()->create(['company_name' => 'acme', 'ats_type' => 'greenhouse', 'board_identifier' => 'acme']);
+    Http::fake([
+        'himalayas.app/*' => Http::response(['jobs' => [himalayasJobFixture('1'), himalayasJobFixture('2', 'Software Engineer', 'Unknown')]]),
+        'boards-api.greenhouse.io/*' => Http::response(['jobs' => [['id' => 99, 'title' => 'Software Engineer']]]),
+        'api.adzuna.com/*' => Http::response(['results' => []]),
+    ]);
+    $run = (new RunJobDiscovery)->run();
+    $attempt = $run->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
+    expect($run->status)->toBe(DiscoveryStatus::Partial)->and($attempt->failure_category)->toBe('identity_conflict')
+        ->and($attempt->status)->toBe(DiscoveryStatus::Failed)->and($attempt->jobs_created)->toBe(1)
+        ->and($old->fresh()->toArray())->toBe($before)->and(JobPosting::count())->toBe(2);
+});
+
+it('settles a run and its running attempt if orchestration fails outside candidate processing', function () {
+    Http::fake(['himalayas.app/*' => Http::response(['jobs' => []])]);
+    DiscoveryProviderAttempt::updating(function () {
+        throw new RuntimeException('Simulated attempt finalization exception');
+    });
+    try {
+        $run = (new RunJobDiscovery)->run();
+        expect($run->status)->toBe(DiscoveryStatus::Failed)->and($run->finished_at)->not->toBeNull()
+            ->and($run->providerAttempts)->toHaveCount(1)
+            ->and($run->providerAttempts->first()->status)->toBe(DiscoveryStatus::Failed)
+            ->and($run->providerAttempts->first()->finished_at)->not->toBeNull();
+    } finally {
+        DiscoveryProviderAttempt::flushEventListeners();
+    }
 });

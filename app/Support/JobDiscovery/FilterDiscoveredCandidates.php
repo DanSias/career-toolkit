@@ -2,6 +2,7 @@
 
 namespace App\Support\JobDiscovery;
 
+use App\Enums\JobDiscoverySource;
 use App\Enums\JobRemoteStatus;
 
 /**
@@ -23,7 +24,7 @@ final class FilterDiscoveredCandidates
         // deliberately NOT the same "empty means accept" shortcut, so
         // each uses its own explicit check rather than sharing one
         // matchesAnyKeyword() semantics that only fits one direction.
-        if ($criteria->keywords !== [] && ! $this->matchesAnyKeyword($haystack, $criteria->keywords)) {
+        if ($criteria->keywords !== [] && ! $this->matchesAnyKeyword($candidate->title, $criteria->keywords)) {
             return false;
         }
 
@@ -52,7 +53,12 @@ final class FilterDiscoveredCandidates
     private function matchesAnyKeyword(string $haystack, array $keywords): bool
     {
         foreach ($keywords as $keyword) {
-            if (str_contains($haystack, mb_strtolower($keyword))) {
+            $words = preg_split('/\\s+/u', trim($keyword)) ?: [];
+            if ($words === [] || $words === ['']) {
+                continue;
+            }
+            $phrase = implode('\\s+', array_map(fn (string $word) => preg_quote($word, '~'), $words));
+            if (preg_match('~(?<![\\p{L}\\p{N}_])'.$phrase.'(?![\\p{L}\\p{N}_])~iu', $haystack) === 1) {
                 return true;
             }
         }
@@ -72,6 +78,18 @@ final class FilterDiscoveredCandidates
             return false;
         }
 
+        // Himalayas supplies explicit eligible-country restrictions. Remote
+        // describes the workplace, not permission to work from any country.
+        if ($candidate->source === JobDiscoverySource::Himalayas) {
+            $restrictions = $candidate->sourceMetadata['locationRestrictions'] ?? null;
+            if (is_array($restrictions)) {
+                $countries = array_values(array_filter($restrictions, fn ($country) => is_string($country) && trim($country) !== ''));
+                if ($countries !== [] && array_intersect(array_map(fn (string $country) => mb_strtolower(trim($country)), $countries), ['united states', 'united states of america', 'us', 'usa', 'worldwide', 'anywhere', 'global']) === []) {
+                    return false;
+                }
+            }
+        }
+
         if ($candidate->remoteStatus === JobRemoteStatus::Remote) {
             return true;
         }
@@ -86,7 +104,7 @@ final class FilterDiscoveredCandidates
         $location = mb_strtolower($candidate->location);
 
         foreach ($criteria->allowedLocations as $allowed) {
-            if (str_contains($location, mb_strtolower($allowed))) {
+            if ($this->matchesAnyKeyword($location, [$allowed])) {
                 return true;
             }
         }

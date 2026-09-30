@@ -38,9 +38,17 @@ final class IngestDiscoveredCandidate
         CareerProfile $careerProfile,
     ): IngestResult {
         return DB::transaction(function () use ($candidate, $canonicalMatch, $careerProfile) {
-            $existing = $this->findByDiscoveryIdentity($candidate)
-                ?? $this->findByCanonicalIdentity($canonicalMatch)
-                ?? $this->findByApplicationUrl($candidate, $canonicalMatch);
+            $discovery = $this->findByDiscoveryIdentity($candidate);
+            $canonical = $this->findByCanonicalIdentity($canonicalMatch);
+            if ($discovery !== null && $canonical !== null && $discovery->id !== $canonical->id) {
+                throw new DiscoveryIngestionException('Discovery and canonical identities belong to different postings; candidate skipped.');
+            }
+            if ($discovery !== null && $this->canonicalConflicts($discovery, $canonicalMatch)) {
+                // A reused aggregator ID cannot represent a new posting without
+                // colliding with the original discovery identity. Never overwrite it.
+                throw new DiscoveryIngestionException('Discovery identity was reused for a different canonical posting; candidate skipped.');
+            }
+            $existing = $discovery ?? $canonical ?? $this->findByApplicationUrl($candidate, $canonicalMatch);
 
             if ($existing !== null) {
                 return new IngestResult(
@@ -89,11 +97,27 @@ final class IngestDiscoveredCandidate
 
         $normalized = $this->normalizeUrl($url);
 
-        return JobPosting::query()
+        $matches = JobPosting::query()
             ->where('discovery_source', '!=', JobDiscoverySource::Manual->value)
             ->whereNotNull('source_url')
-            ->get(['id', 'source_url'])
-            ->first(fn (JobPosting $job) => $this->normalizeUrl($job->source_url) === $normalized);
+            ->get()
+            ->filter(fn (JobPosting $job) => $this->normalizeUrl($job->source_url) === $normalized)
+            // A new canonical posting sharing an old URL is a repost, not an
+            // update. Its new discovery identity permits a separate row.
+            ->reject(fn (JobPosting $job) => $this->canonicalConflicts($job, $canonicalMatch));
+
+        if ($matches->count() > 1) {
+            throw new DiscoveryIngestionException('Application URL matches multiple postings; candidate skipped.');
+        }
+
+        return $matches->first();
+    }
+
+    private function canonicalConflicts(JobPosting $existing, ?CanonicalJobPosting $canonical): bool
+    {
+        return $canonical !== null && $existing->canonical_source !== null
+            && ($existing->canonical_source !== $canonical->canonicalSource
+                || $existing->canonical_source_id !== $canonical->canonicalSourceId);
     }
 
     private function createNew(DiscoveredJobCandidate $candidate, ?CanonicalJobPosting $canonicalMatch, CareerProfile $careerProfile): JobPosting
@@ -132,27 +156,36 @@ final class IngestDiscoveredCandidate
      */
     private function updateExisting(JobPosting $existing, DiscoveredJobCandidate $candidate, ?CanonicalJobPosting $canonicalMatch): JobPosting
     {
-        $c = $this->canonicalFields($canonicalMatch);
-
-        $existing->update([
-            'title' => $c['title'] ?? $candidate->title,
-            'description' => $c['description'] ?? $candidate->description ?? $existing->description,
-            'location' => $c['location'] ?? $candidate->location,
-            'source_url' => $c['applicationUrl'] ?? $candidate->applicationUrl ?? $existing->source_url,
-            // Never unset once resolved, even on a later rediscovery
-            // where canonical matching happened not to run/succeed.
-            'canonical_source' => $c['canonicalSource'] ?? $existing->canonical_source,
-            'canonical_source_id' => $c['canonicalSourceId'] ?? $existing->canonical_source_id,
-            'remote_status' => $c['remoteStatus'] ?? $candidate->remoteStatus ?? $existing->remote_status,
-            'employment_type' => $c['employmentType'] ?? $candidate->employmentType ?? $existing->employment_type,
-            'compensation_min' => $c['compensationMin'] ?? $candidate->compensationMin ?? $existing->compensation_min,
-            'compensation_max' => $c['compensationMax'] ?? $candidate->compensationMax ?? $existing->compensation_max,
-            'compensation_currency' => $c['compensationCurrency'] ?? $candidate->compensationCurrency ?? $existing->compensation_currency,
-            'compensation_interval' => $c['compensationInterval'] ?? $candidate->compensationInterval ?? $existing->compensation_interval,
-            'source_updated_at' => $c['sourceUpdatedAt'] ?? $candidate->sourceUpdatedAt ?? $existing->source_updated_at,
+        $updates = [
             'last_checked_at' => now(),
-            'discovery_metadata' => $this->mergedMetadata($candidate, $canonicalMatch, $existing->discovery_metadata ?? []),
-        ]);
+            'discovery_metadata' => $this->mergedMetadata($candidate, $canonicalMatch, $existing),
+        ];
+
+        // Failed/absent enrichment must not downgrade authoritative content.
+        // A successful same-identity refresh may update it again later.
+        if ($existing->canonical_source === null || $canonicalMatch !== null) {
+            $fields = [
+                'title' => 'title', 'description' => 'description', 'location' => 'location',
+                'source_url' => 'applicationUrl', 'remote_status' => 'remoteStatus',
+                'employment_type' => 'employmentType', 'compensation_min' => 'compensationMin',
+                'compensation_max' => 'compensationMax', 'compensation_currency' => 'compensationCurrency',
+                'compensation_interval' => 'compensationInterval', 'source_updated_at' => 'sourceUpdatedAt',
+            ];
+            foreach ($fields as $column => $property) {
+                $value = $canonicalMatch?->{$property};
+                if ($value === null && $existing->canonical_source === null) {
+                    $value = $candidate->{$property};
+                }
+                if ($value !== null) {
+                    $updates[$column] = $value;
+                }
+            }
+            if ($canonicalMatch !== null) {
+                $updates['canonical_source'] = $canonicalMatch->canonicalSource;
+                $updates['canonical_source_id'] = $canonicalMatch->canonicalSourceId;
+            }
+        }
+        $existing->update($updates);
 
         return $existing;
     }
@@ -188,29 +221,42 @@ final class IngestDiscoveredCandidate
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $previous
-     * @return array<string, mixed>
-     */
-    private function mergedMetadata(DiscoveredJobCandidate $candidate, ?CanonicalJobPosting $canonicalMatch, array $previous = []): array
+    /** @return array<string, mixed> */
+    private function mergedMetadata(DiscoveredJobCandidate $candidate, ?CanonicalJobPosting $canonicalMatch, ?JobPosting $existing = null): array
     {
-        return array_filter([
-            ...$previous,
-            'discovery' => $candidate->sourceMetadata,
-            'canonical' => $canonicalMatch?->sourceMetadata,
-        ], fn ($value) => $value !== null && $value !== []);
+        $metadata = $existing->discovery_metadata ?? [];
+        if ($existing === null || ($existing->discovery_source === $candidate->source
+            && $existing->discovery_source_id === $candidate->sourceJobId)) {
+            $metadata['discovery'] = $candidate->sourceMetadata;
+        }
+        if ($canonicalMatch !== null && $canonicalMatch->sourceMetadata !== []) {
+            $metadata['canonical'] = $canonicalMatch->sourceMetadata;
+        }
+
+        return $metadata;
     }
 
     private function normalizeUrl(string $url): string
     {
-        $parts = parse_url(mb_strtolower(trim($url)));
-
-        if ($parts === false) {
-            return mb_strtolower(trim($url));
+        $url = trim($url);
+        $parts = parse_url($url);
+        if ($parts === false || ! isset($parts['scheme'], $parts['host'])) {
+            return $url;
         }
 
-        $path = rtrim($parts['path'] ?? '', '/');
+        $scheme = strtolower($parts['scheme']);
+        $host = strtolower($parts['host']);
+        $port = $parts['port'] ?? null;
+        $authority = isset($parts['user']) ? $parts['user'].(isset($parts['pass']) ? ':'.$parts['pass'] : '').'@' : '';
+        $authority .= $host;
+        if ($port !== null && ! ($scheme === 'https' && $port === 443) && ! ($scheme === 'http' && $port === 80)) {
+            $authority .= ':'.$port;
+        }
 
-        return ($parts['host'] ?? '').$path;
+        // Preserve case, query order/values and fragments: any may identify
+        // a distinct job. No unverified "tracking" parameter removal.
+        return $scheme.'://'.$authority.rtrim($parts['path'] ?? '', '/')
+            .(isset($parts['query']) ? '?'.$parts['query'] : '')
+            .(isset($parts['fragment']) ? '#'.$parts['fragment'] : '');
     }
 }

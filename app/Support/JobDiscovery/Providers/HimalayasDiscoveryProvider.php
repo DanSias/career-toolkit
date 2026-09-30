@@ -26,6 +26,16 @@ use Throwable;
  * recent batch and leaves all keyword/seniority/exclusion filtering to
  * App\Support\JobDiscovery\FilterDiscoveredCandidates rather than a
  * provider-specific query param this codebase couldn't verify.
+ *
+ * The feed silently caps `limit` at 20 regardless of what's
+ * requested — confirmed directly against the real live endpoint
+ * during Discovery Phase 1's Checkpoint A validation (requesting 200
+ * still returns exactly 20, with `limit: 20` echoed back in the
+ * response). One page (20 candidates) per run is therefore the real
+ * per-run ceiling for this provider in Phase 1 — real cursor-based
+ * pagination across multiple pages per run is a Phase 2+ enhancement,
+ * not implemented here; daily reruns still accumulate fresh coverage
+ * over time via the same dedup path every other rediscovery uses.
  */
 final class HimalayasDiscoveryProvider implements DiscoveryProviderContract
 {
@@ -38,6 +48,9 @@ final class HimalayasDiscoveryProvider implements DiscoveryProviderContract
     private const RETRYABLE_STATUSES = [408, 429, 500, 502, 503, 504];
 
     public function __construct(
+        // Requested as an upper bound — the live feed currently caps
+        // the real response at 20 regardless of this value. See this
+        // class's own docblock.
         private readonly int $limit = 200,
     ) {}
 
@@ -75,10 +88,20 @@ final class HimalayasDiscoveryProvider implements DiscoveryProviderContract
             throw new DiscoveryProviderException('Himalayas response did not contain a jobs array — response shape may have changed.');
         }
 
-        return array_values(array_filter(array_map(
-            fn (array $job) => $this->normalize($job),
-            $jobs,
-        )));
+        foreach ($jobs as $job) {
+            if (! is_array($job)) {
+                throw new DiscoveryProviderException('Provider response contained a malformed job entry.');
+            }
+        }
+
+        try {
+            return array_values(array_filter(array_map(
+                fn (array $job) => $this->normalize($job),
+                $jobs,
+            )));
+        } catch (\TypeError|\ValueError $e) {
+            throw new DiscoveryProviderException('Provider response contained malformed job fields.', previous: $e);
+        }
     }
 
     /**

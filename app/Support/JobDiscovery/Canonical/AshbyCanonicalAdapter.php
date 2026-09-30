@@ -69,10 +69,20 @@ final class AshbyCanonicalAdapter implements CanonicalRetrievalContract
             throw new DiscoveryProviderException('Ashby response did not contain a jobs array — response shape may have changed.');
         }
 
-        return array_values(array_filter(array_map(
-            fn (array $job) => $this->normalize($job),
-            $jobs,
-        )));
+        foreach ($jobs as $job) {
+            if (! is_array($job)) {
+                throw new DiscoveryProviderException('Provider response contained a malformed job entry.');
+            }
+        }
+
+        try {
+            return array_values(array_filter(array_map(
+                fn (array $job) => $this->normalize($job),
+                $jobs,
+            )));
+        } catch (\TypeError|\ValueError $e) {
+            throw new DiscoveryProviderException('Provider response contained malformed job fields.', previous: $e);
+        }
     }
 
     /**

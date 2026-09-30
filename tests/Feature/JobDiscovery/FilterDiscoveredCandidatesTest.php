@@ -26,6 +26,7 @@ function candidate(array $overrides = []): DiscoveredJobCandidate
         postedAt: null,
         sourceUpdatedAt: null,
         discoveredAt: CarbonImmutable::now(),
+        sourceMetadata: $overrides['sourceMetadata'] ?? [],
     );
 }
 
@@ -122,4 +123,46 @@ it('does not reject for a missing candidate employment_type even when criteria s
     $c = candidate(['employmentType' => null]);
 
     expect((new FilterDiscoveredCandidates)->accepts($c, criteria(['employmentType' => 'full_time'])))->toBeTrue();
+});
+
+it('checks structured remote country restrictions independently of workplace type', function (?array $restrictions, bool $accepted) {
+    $job = candidate(['sourceMetadata' => ['locationRestrictions' => $restrictions]]);
+    expect((new FilterDiscoveredCandidates)->accepts($job, criteria()))->toBe($accepted);
+})->with([
+    'South Korea only' => [['South Korea'], false],
+    'United Kingdom only' => [['United Kingdom'], false],
+    'United States' => [['United States'], true],
+    'multiple including US' => [['United Kingdom', 'United States'], true],
+    'unknown' => [null, true],
+    'unrestricted' => [[], true],
+]);
+
+it('matches whole words and phrases rather than substrings', function (string $title, string $description, array $keywords, bool $accepted) {
+    expect((new FilterDiscoveredCandidates)->accepts(candidate(['title' => $title, 'description' => $description]), criteria(['keywords' => $keywords])))
+        ->toBe($accepted);
+})->with([
+    'internal is not intern' => ['Software Engineer', 'Build internal tools', ['software engineer'], true],
+    'intern excluded' => ['Software Engineer Intern', 'Build tools', ['software engineer'], false],
+    'senior word' => ['Senior Software Engineer', '', ['senior'], true],
+    'staff word' => ['Staff Backend Engineer', '', ['staff'], true],
+    'seniority not senior' => ['Seniority Analyst', '', ['senior'], false],
+    'phrase whitespace' => ['Senior Software   Engineer', '', ['software engineer'], true],
+    'backend role' => ['Staff Backend Engineer', '', ['backend'], true],
+    'role only mentioned in description' => ['CEO Office – AI Neobank App', 'Work with senior staff and software engineer teams building backend APIs.', ['software engineer', 'backend'], false],
+]);
+
+it('does not treat seniority alone as a target role in the default configuration', function () {
+    expect((new FilterDiscoveredCandidates)->accepts(candidate(['title' => 'Senior Account Executive']), DiscoverySearchCriteria::fromConfig()))->toBeFalse();
+});
+
+it('rejects the observed CEO Office posting whose description mentions senior leadership', function () {
+    // Exact title and relevant excerpt from the preserved first live run.
+    $job = candidate([
+        'title' => 'CEO Office - AI Neobank App',
+        'description' => '<li><p>Able to work directly with senior leadership and cross-functional teams.</p></li>',
+        'sourceMetadata' => ['locationRestrictions' => ['United Kingdom']],
+    ]);
+    // Test role matching independently of its also-ineligible geography.
+    config(['job_discovery.search.remote_preference' => 'any']);
+    expect((new FilterDiscoveredCandidates)->accepts($job, DiscoverySearchCriteria::fromConfig()))->toBeFalse();
 });

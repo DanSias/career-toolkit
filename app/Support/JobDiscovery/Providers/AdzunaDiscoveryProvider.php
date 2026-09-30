@@ -95,10 +95,20 @@ final class AdzunaDiscoveryProvider implements DiscoveryProviderContract
             throw new DiscoveryProviderException('Adzuna response did not contain a results array — response shape may have changed.');
         }
 
-        return array_values(array_filter(array_map(
-            fn (array $job) => $this->normalize($job, $country),
-            $results,
-        )));
+        foreach ($results as $job) {
+            if (! is_array($job)) {
+                throw new DiscoveryProviderException('Provider response contained a malformed job entry.');
+            }
+        }
+
+        try {
+            return array_values(array_filter(array_map(
+                fn (array $job) => $this->normalize($job, $country),
+                $results,
+            )));
+        } catch (\TypeError|\ValueError $e) {
+            throw new DiscoveryProviderException('Provider response contained malformed job fields.', previous: $e);
+        }
     }
 
     /**

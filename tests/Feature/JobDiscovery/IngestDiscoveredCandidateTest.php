@@ -2,10 +2,12 @@
 
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobDiscoverySource;
+use App\Enums\JobPostingLifecycleStatus;
 use App\Models\CareerProfile;
 use App\Models\JobPosting;
 use App\Support\JobDiscovery\Canonical\CanonicalJobPosting;
 use App\Support\JobDiscovery\DiscoveredJobCandidate;
+use App\Support\JobDiscovery\DiscoveryIngestionException;
 use App\Support\JobDiscovery\IngestDiscoveredCandidate;
 use Carbon\CarbonImmutable;
 
@@ -216,4 +218,75 @@ it('never rejects ingestion for a candidate with no description, defaulting to a
     $result = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(['description' => null]), null, $profile);
 
     expect($result->jobPosting->description)->toBe('');
+});
+
+it('preserves uncertain URL identity while normalizing only harmless differences', function (string $firstUrl, string $secondUrl, bool $same) {
+    $profile = CareerProfile::factory()->create();
+    $first = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(['applicationUrl' => $firstUrl]), null, $profile);
+    $second = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(['sourceJobId' => 'other', 'applicationUrl' => $secondUrl]), null, $profile);
+    expect($second->jobPosting->id === $first->jobPosting->id)->toBe($same)
+        ->and(JobPosting::count())->toBe($same ? 1 : 2);
+})->with([
+    'host scheme port slash' => ['https://EXAMPLE.com:443/apply/', 'HTTPS://example.com/apply', true],
+    'query IDs' => ['https://example.com/apply?job=1', 'https://example.com/apply?job=2', false],
+    'path case' => ['https://example.com/Jobs/ABC', 'https://example.com/jobs/abc', false],
+    'uncertain tracking' => ['https://example.com/apply?ref=1', 'https://example.com/apply?ref=2', false],
+    'fragment routing' => ['https://example.com/#/jobs/1', 'https://example.com/#/jobs/2', false],
+]);
+
+it('rejects convergence between existing discovery and canonical owners without changing either', function () {
+    $profile = CareerProfile::factory()->create();
+    (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(), null, $profile);
+    (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(['sourceJobId' => 'other']), canonicalMatch(), $profile);
+    $before = JobPosting::orderBy('id')->get()->toArray();
+    expect(fn () => (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(), canonicalMatch(), $profile))
+        ->toThrow(DiscoveryIngestionException::class);
+    expect(JobPosting::orderBy('id')->get()->toArray())->toBe($before);
+});
+
+it('rejects a reused discovery ID with a different canonical identity without changing history', function () {
+    $profile = CareerProfile::factory()->create();
+    (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(), canonicalMatch(), $profile);
+    $before = JobPosting::first()->toArray();
+    expect(fn () => (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(), canonicalMatch(['canonicalSourceId' => 'gh-new']), $profile))
+        ->toThrow(DiscoveryIngestionException::class);
+    expect(JobPosting::first()->toArray())->toBe($before)->and(JobPosting::count())->toBe(1);
+});
+
+it('creates a new canonical repost despite a shared URL and leaves the closed old posting historical', function () {
+    $profile = CareerProfile::factory()->create();
+    $old = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(), canonicalMatch(), $profile)->jobPosting;
+    $old->update(['status' => JobPostingLifecycleStatus::Closed]);
+    $before = $old->fresh()->toArray();
+    $new = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(['sourceJobId' => 'new']), canonicalMatch(['canonicalSourceId' => 'gh-new']), $profile);
+    expect($new->wasCreated)->toBeTrue()->and($new->jobPosting->canonical_source_id)->toBe('gh-new')
+        ->and($old->fresh()->toArray())->toBe($before)->and(JobPosting::count())->toBe(2);
+});
+
+it('preserves canonical content through missing enrichment and refreshes the same identity on later success', function () {
+    $profile = CareerProfile::factory()->create();
+    $candidate = discoveryCandidate(['sourceMetadata' => ['category' => 'original']]);
+    $first = (new IngestDiscoveredCandidate)->ingest($candidate, canonicalMatch(['sourceMetadata' => ['department' => 'Engineering']]), $profile)->jobPosting;
+    $authoritative = $first->only(['title', 'description', 'location', 'source_url', 'canonical_source', 'canonical_source_id', 'compensation_min', 'compensation_max']);
+    $this->travel(1)->hours();
+    $during = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(['title' => 'Aggregator title', 'description' => 'Truncated snippet', 'sourceMetadata' => ['category' => 'updated']]), null, $profile)->jobPosting;
+    expect($during->only(array_keys($authoritative)))->toBe($authoritative)
+        ->and($during->discovery_metadata['canonical'])->toBe(['department' => 'Engineering'])
+        ->and($during->last_checked_at->isAfter($first->last_checked_at))->toBeTrue();
+    $after = (new IngestDiscoveredCandidate)->ingest($candidate, canonicalMatch(['title' => 'Fresh canonical title', 'description' => 'Fresh full content', 'sourceMetadata' => ['department' => 'Platform']]), $profile)->jobPosting;
+    expect($after->id)->toBe($first->id)->and($after->description)->toBe('Fresh full content')
+        ->and($after->title)->toBe('Fresh canonical title')
+        ->and($after->discovery_metadata['canonical'])->toBe(['department' => 'Platform'])
+        ->and(JobPosting::count())->toBe(1);
+});
+
+it('keeps original provider metadata when another aggregator rediscovers the canonical job', function () {
+    $profile = CareerProfile::factory()->create();
+    $first = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate(['sourceMetadata' => ['companySlug' => 'original']]), canonicalMatch(), $profile)->jobPosting;
+    $second = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate([
+        'source' => JobDiscoverySource::Adzuna, 'sourceJobId' => 'adzuna-2', 'sourceMetadata' => ['category' => 'other-provider'],
+    ]), canonicalMatch(), $profile)->jobPosting;
+    expect($second->id)->toBe($first->id)->and($second->discovery_source)->toBe(JobDiscoverySource::Himalayas)
+        ->and($second->discovery_metadata['discovery'])->toBe(['companySlug' => 'original'])
+        ->and($second->discovered_at->equalTo($first->discovered_at))->toBeTrue();
 });

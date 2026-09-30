@@ -6,7 +6,6 @@ use App\Enums\DiscoveryStatus;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobDiscoverySource;
 use App\Models\CareerProfile;
-use App\Models\DiscoveryProviderAttempt;
 use App\Models\DiscoveryRun;
 use App\Support\CurrentCareerProfile;
 use App\Support\JobDiscovery\Canonical\AshbyCanonicalAdapter;
@@ -20,6 +19,7 @@ use App\Support\JobDiscovery\Providers\AdzunaDiscoveryProvider;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderContract;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
 use App\Support\JobDiscovery\Providers\HimalayasDiscoveryProvider;
+use Throwable;
 
 /**
  * The single discovery pipeline both `php artisan discovery:run` and
@@ -27,13 +27,9 @@ use App\Support\JobDiscovery\Providers\HimalayasDiscoveryProvider;
  * implementations. See docs/job-discovery.md "Scheduling /
  * orchestration".
  *
- * Provider failure isolation: each provider's attempt is caught
- * independently (DiscoveryProviderException only — anything else
- * propagates, since that would be a real bug, not an expected
- * provider-level failure). One provider failing never prevents
- * another's candidates from being filtered/enriched/ingested, and the
- * overall DiscoveryRun still finishes — see this class's own run()
- * and docs/job-discovery.md "Provider failure isolation".
+ * Provider attempts settle on expected and unexpected execution failures.
+ * Earlier candidate transactions remain committed; independent providers
+ * continue. Identity conflicts are reported without merging existing rows.
  *
  * Never wrapped in one all-or-nothing transaction — each candidate's
  * ingest() call is its own small transaction (see
@@ -90,11 +86,26 @@ final class RunJobDiscovery
         // more than once per run.
         $boardCache = [];
 
-        foreach ($this->providers as $source => $provider) {
-            $this->runProviderAttempt($discoveryRun, JobDiscoverySource::from($source), $provider, $criteria, $careerProfile, $boardCache);
+        $orchestrationFailed = false;
+        try {
+            foreach ($this->providers as $source => $provider) {
+                $this->runProviderAttempt($discoveryRun, JobDiscoverySource::from($source), $provider, $criteria, $careerProfile, $boardCache);
+            }
+        } catch (Throwable) {
+            $orchestrationFailed = true;
+            $discoveryRun->providerAttempts()->where('status', DiscoveryStatus::Running)->update([
+                'status' => DiscoveryStatus::Failed,
+                'finished_at' => now(),
+                'failure_category' => 'unexpected_error',
+                'failure_message' => 'Unexpected discovery orchestration failure.',
+            ]);
         }
 
-        $discoveryRun->update(['status' => DiscoveryStatus::Succeeded, 'finished_at' => now()]);
+        $attempts = $discoveryRun->providerAttempts()->get();
+        $failures = $attempts->where('status', DiscoveryStatus::Failed)->count();
+        $status = $failures === 0 && ! $orchestrationFailed ? DiscoveryStatus::Succeeded
+            : ($failures < $attempts->count() ? DiscoveryStatus::Partial : DiscoveryStatus::Failed);
+        $discoveryRun->update(['status' => $status, 'finished_at' => now()]);
 
         return $discoveryRun->fresh('providerAttempts');
     }
@@ -116,50 +127,55 @@ final class RunJobDiscovery
             'started_at' => now(),
         ]);
 
+        $retrieved = $accepted = $created = $updated = $canonicalized = 0;
+        $failureCategory = $failureMessage = null;
+
         try {
             $candidates = $provider->retrieve();
+            $retrieved = count($candidates);
+            foreach ($candidates as $candidate) {
+                if (! $this->filter->accepts($candidate, $criteria)) {
+                    continue;
+                }
+                $accepted++;
+                $canonicalMatch = $this->resolveCanonicalMatch($candidate, $boardCache);
+                try {
+                    $result = $this->ingestCandidate->ingest($candidate, $canonicalMatch, $careerProfile);
+                } catch (DiscoveryIngestionException $e) {
+                    // Preserve both existing identities and continue independent
+                    // candidates. This attempt is terminal failed, with partial counts.
+                    $failureCategory = 'identity_conflict';
+                    $failureMessage = $e->getMessage();
+
+                    continue;
+                }
+                $canonicalized += $canonicalMatch !== null ? 1 : 0;
+                if ($result->wasCreated) {
+                    $created++;
+                } else {
+                    $updated++;
+                }
+            }
         } catch (DiscoveryProviderException $e) {
-            $this->markAttemptFailed($attempt, $e);
-
-            return;
-        }
-
-        $retrieved = count($candidates);
-        $accepted = 0;
-        $created = 0;
-        $updated = 0;
-        $canonicalized = 0;
-
-        foreach ($candidates as $candidate) {
-            if (! $this->filter->accepts($candidate, $criteria)) {
-                continue;
-            }
-
-            $accepted++;
-
-            $canonicalMatch = $this->resolveCanonicalMatch($candidate, $boardCache);
-
-            if ($canonicalMatch !== null) {
-                $canonicalized++;
-            }
-
-            $result = $this->ingestCandidate->ingest($candidate, $canonicalMatch, $careerProfile);
-
-            if ($result->wasCreated) {
-                $created++;
-            } else {
-                $updated++;
-            }
+            $failureCategory = 'provider_error';
+            $failureMessage = $e->getMessage();
+        } catch (Throwable) {
+            // Never persist arbitrary exception messages: they can contain SQL,
+            // provider payloads or credential-bearing request URLs.
+            $failureCategory = 'unexpected_error';
+            $failureMessage = 'Unexpected discovery execution failure; completed candidate writes were retained.';
         }
 
         $attempt->update([
-            'status' => DiscoveryStatus::Succeeded,
+            'status' => $failureCategory === null ? DiscoveryStatus::Succeeded : DiscoveryStatus::Failed,
             'finished_at' => now(),
             'candidates_retrieved' => $retrieved,
             'candidates_accepted' => $accepted,
             'jobs_created' => $created,
             'jobs_updated' => $updated,
             'jobs_canonicalized' => $canonicalized,
+            'failure_category' => $failureCategory,
+            'failure_message' => $failureMessage,
         ]);
     }
 
@@ -194,20 +210,5 @@ final class RunJobDiscovery
         }
 
         return $this->matchCanonical->match($candidate, $boardCache[$cacheKey]);
-    }
-
-    private function markAttemptFailed(DiscoveryProviderAttempt $attempt, DiscoveryProviderException $e): void
-    {
-        $attempt->update([
-            'status' => DiscoveryStatus::Failed,
-            'finished_at' => now(),
-            'candidates_retrieved' => 0,
-            'candidates_accepted' => 0,
-            'jobs_created' => 0,
-            'jobs_updated' => 0,
-            'jobs_canonicalized' => 0,
-            'failure_category' => 'provider_error',
-            'failure_message' => $e->getMessage(),
-        ]);
     }
 }

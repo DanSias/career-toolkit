@@ -49,6 +49,6 @@ class RunJobDiscoveryCommand extends Command
 
         $this->components->info("Discovery run #{$discoveryRun->id} finished with status {$discoveryRun->status->value}.");
 
-        return self::SUCCESS;
+        return $discoveryRun->status === DiscoveryStatus::Failed ? self::FAILURE : self::SUCCESS;
     }
 }

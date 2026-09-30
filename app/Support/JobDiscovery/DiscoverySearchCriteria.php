@@ -14,12 +14,9 @@ namespace App\Support\JobDiscovery;
 final readonly class DiscoverySearchCriteria
 {
     /**
-     * @param  string[]  $keywords  OR-matched against title+description
-     *                              — a candidate must match at least one to be accepted. Role and
-     *                              seniority terms both belong here (e.g. "senior", "staff",
-     *                              "software engineer") rather than as a separate mandatory
-     *                              seniority gate — see FilterDiscoveredCandidates's own docblock
-     *                              for why a single OR-matched list is the conservative choice.
+     * @param  string[]  $keywords  Whole-word/phrase OR matching against the title.
+     *                              Defaults describe roles, not standalone seniority:
+     *                              a CEO mentioning senior engineers is not an engineering role.
      * @param  string[]  $excludedKeywords  Reject if ANY appear in
      *                                      title+description.
      * @param  string[]  $allowedLocations  Used only as a fallback
