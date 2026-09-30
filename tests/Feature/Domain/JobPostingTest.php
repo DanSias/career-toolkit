@@ -3,6 +3,7 @@
 use App\Models\Application;
 use App\Models\CareerProfile;
 use App\Models\JobPosting;
+use Illuminate\Support\Facades\Schema;
 
 it('belongs to a career profile', function () {
     $profile = CareerProfile::factory()->create();
@@ -37,11 +38,16 @@ it('has an application relation, at most one per posting', function () {
 });
 
 it('stores no analysis, matching, or resume-generation fields', function () {
-    $job = JobPosting::factory()->create();
-
-    $columns = array_keys($job->getAttributes());
+    // Table columns, not $job->getAttributes() — a freshly-created
+    // instance's in-memory attribute bag omits nullable columns that
+    // were never explicitly set, so it undercounts the real schema.
+    $columns = Schema::getColumnListing('job_postings');
 
     expect($columns)->toEqualCanonicalizing([
         'id', 'career_profile_id', 'company', 'title', 'source_url', 'location', 'description', 'created_at', 'updated_at',
+        'discovery_source', 'discovery_source_id', 'canonical_source', 'canonical_source_id',
+        'remote_status', 'employment_type',
+        'compensation_min', 'compensation_max', 'compensation_currency', 'compensation_interval',
+        'posted_at', 'source_updated_at', 'discovered_at', 'status', 'last_checked_at', 'discovery_metadata',
     ]);
 });
