@@ -75,6 +75,22 @@ npm run check             # lint + format check (via vite-plus)
 npm run check:fix         # lint + format, auto-fixing
 ```
 
+## Database safety
+
+**Never run `migrate:fresh`, `migrate:refresh`, `migrate:reset`,
+`migrate:rollback`, or `db:wipe` against the real development
+database.** Use the test suite (`php artisan test`) for fresh-schema
+validation instead — it runs against a disposable in-memory SQLite
+database (`phpunit.xml`'s `DB_DATABASE=:memory:` + `APP_ENV=testing`),
+never `database/database.sqlite`.
+
+This is enforced, not just documented: `AppServiceProvider` calls
+`DB::prohibitDestructiveCommands(! app()->environment('testing'))`,
+which hard-blocks those commands (even with `--force`) everywhere
+except the `testing` environment. If you ever see "This command is
+prohibited from running in this environment," that's this guardrail
+working as intended — don't work around it.
+
 ## Project layout notes
 
 - `sources/resume/` — holds the current resume, used as one source of truth

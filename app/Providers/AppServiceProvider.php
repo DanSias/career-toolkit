@@ -206,8 +206,23 @@ class AppServiceProvider extends ServiceProvider
     {
         Date::use(CarbonImmutable::class);
 
+        // Prohibits db:wipe/migrate:fresh/migrate:refresh/migrate:reset/
+        // migrate:rollback OUTRIGHT (Illuminate\Console\Prohibitable —
+        // unlike ConfirmableTrait's production-only confirmation prompt,
+        // this is never bypassed by --force) everywhere except the
+        // 'testing' environment. This app is local-first with no
+        // staging/production deploy target, so "production" alone
+        // never actually guarded the one database that matters: the
+        // real local dev SQLite file at DB_DATABASE. `testing` is only
+        // ever active via phpunit.xml's environment override
+        // (DB_DATABASE=:memory:), which is also what Illuminate\
+        // Foundation\Testing\RefreshDatabase uses internally to run
+        // migrate:fresh against the disposable in-memory database —
+        // so automated tests are unaffected, and a destructive command
+        // run directly against .env's real database now fails closed.
+        // See README.md "Database safety" and docs/job-discovery.md.
         DB::prohibitDestructiveCommands(
-            app()->isProduction(),
+            ! app()->environment('testing'),
         );
 
         Password::defaults(fn (): ?Password => app()->isProduction()
