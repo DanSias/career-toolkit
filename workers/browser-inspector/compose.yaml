@@ -1,0 +1,19 @@
+# Persistent deployment for the browser-inspector worker — see
+# README.md "Persistent deployment (normal operation)". Deliberately
+# minimal: one service, built from the Dockerfile in this same
+# directory, no ports (outbound-only — see README.md "Docker security
+# model"), no privileged/SYS_ADMIN/host-networking/Docker-socket
+# access, restart policy appropriate for infrastructure that should
+# stay alive across an AI-box reboot or a crashed inspection.
+#
+# Real secrets (BROWSER_WORKER_TOKEN, CAREER_TOOLKIT_URL) live in a
+# sibling .env file on the deployment host only — see .env.example —
+# never in this file and never committed.
+services:
+  browser-inspector:
+    build: .
+    image: career-toolkit-browser-worker:local
+    container_name: career-toolkit-browser-worker
+    restart: unless-stopped
+    env_file:
+      - .env

@@ -42,7 +42,8 @@ for the full protocol.
 
 ## Prerequisites
 
-- Docker (for the intended runtime).
+- Docker + Docker Compose (for the intended runtime — see "Persistent
+  deployment (normal operation)" below).
 - Node.js >= 22 and `npx playwright install chromium` (for local
   development only — the Docker image already bundles a
   version-matched Chromium).
@@ -415,35 +416,128 @@ files with JSDoc annotations didn't justify the added dependency/build
 step for this pass; `node --check` on each file is used as a minimal
 syntax gate.
 
-## AI-box deployment / live smoke test
+## Normal development connectivity
+
+For the persistent worker to claim real work, it needs to reach Career
+Toolkit's normal dev server over the LAN — not a temporary,
+manually-started one. Career Toolkit's `php artisan serve` (and the
+`composer run dev` / `php artisan dev` multiplex that wraps it) reads
+its bind address from the `SERVER_HOST` env var
+(`Illuminate\Foundation\Console\ServeCommand`), defaulting to
+`127.0.0.1` when unset. Setting `SERVER_HOST=0.0.0.0` in Career
+Toolkit's own `.env` — a one-line, one-time change, no code change, no
+extra process, no firewall/router change — makes the *same* `composer
+run dev` session already reachable from the LAN. It takes effect the
+next time that dev session is (re)started.
+
+- **Career Toolkit's own URL** (browser, on the Mac): unchanged —
+  `http://localhost:8000`.
+- **Worker-facing URL** (what `CAREER_TOOLKIT_URL` below is set to):
+  `http://<Mac's LAN IP>:8000` — find the Mac's LAN IP with
+  `ipconfig getifaddr en0` (or the active interface).
+
+This is ordinary LAN binding, not public exposure: no port forwarding,
+no tunnel, nothing reachable outside the local network.
+
+## Persistent deployment (normal operation)
+
+The worker runs as a normal, always-on Docker Compose service on the
+AI box — not something started by hand for each inspection. Career
+Toolkit never starts, stops, or has credentials for this; the worker
+sits idle, polling, until Career Toolkit creates work (see "Worker
+runtime" above). This repository (`workers/browser-inspector/`) is the
+only source of truth for the worker's code — the AI-box deployment
+directory is a plain, non-edited copy of it, kept in sync with
+`rsync`, the same mechanism validated during Phase 3.
+
+**Deployment directory on the AI box**: `~/career-toolkit-browser-worker/`
+(a separate directory from `~/career-toolkit-browser-poc`, which
+remains untouched historical proof-of-concept evidence — see the
+disposable smoke-test workflow below if you need that instead of a
+persistent deployment).
+
+### First-time setup
 
 ```sh
-# from a machine with SSH access to the deployment target:
-rsync -az --exclude node_modules workers/browser-inspector/ <host>:<some-clearly-disposable-path>/
-ssh <host> "cd <path> && docker build -t browser-inspector:0.1.0 ."
+ssh <host> "mkdir -p ~/career-toolkit-browser-worker"
+rsync -az --exclude node_modules --exclude .env workers/browser-inspector/ <host>:~/career-toolkit-browser-worker/
+ssh <host> "cp ~/career-toolkit-browser-worker/.env.example ~/career-toolkit-browser-worker/.env"
+# then edit ~/career-toolkit-browser-worker/.env on the host: set
+# CAREER_TOOLKIT_URL (see "Normal development connectivity" above) and
+# BROWSER_WORKER_TOKEN (must match Career Toolkit's own .env exactly)
+```
+
+### START
+
+```sh
+ssh <host> "cd ~/career-toolkit-browser-worker && docker compose up -d --build"
+```
+
+### STOP
+
+```sh
+ssh <host> "cd ~/career-toolkit-browser-worker && docker compose down"
+```
+
+### RESTART
+
+```sh
+ssh <host> "cd ~/career-toolkit-browser-worker && docker compose restart"
+```
+
+### STATUS
+
+```sh
+ssh <host> "cd ~/career-toolkit-browser-worker && docker compose ps"
+```
+
+Also check Career Toolkit's own nav-bar badge ("Browser Inspector ●
+Online / last seen Ns ago") — that's the source of truth the rest of
+the app actually uses, derived from the worker's own claim polls (see
+`docs/application-inspector.md` "Worker presence"), not from Docker's
+view of the container.
+
+### LOGS
+
+```sh
+ssh <host> "cd ~/career-toolkit-browser-worker && docker compose logs -f"
+```
+
+### UPDATE / REBUILD (after changing `workers/browser-inspector/` in this repository)
+
+```sh
+rsync -az --exclude node_modules --exclude .env workers/browser-inspector/ <host>:~/career-toolkit-browser-worker/
+ssh <host> "cd ~/career-toolkit-browser-worker && docker compose up -d --build"
+```
+
+`restart: unless-stopped` (in `compose.yaml`) means the service also
+survives an AI-box reboot and restarts automatically after a crash —
+without a scheduler/watchdog process, matching the same "boring,
+always-there infrastructure" posture as everything else this worker
+does. No port is exposed (outbound-only — see "Docker security model"
+below); no privileged mode, `SYS_ADMIN`, Docker socket, or host
+networking is required, same as every prior pass.
+
+## Disposable smoke testing (not the persistent deployment)
+
+For a one-off, throwaway validation that doesn't touch the persistent
+deployment above — e.g. testing an unreleased change before updating
+it — deploy to a separate, clearly disposable path and clean up
+afterward:
+
+```sh
+ssh <host> "mkdir -p ~/some-clearly-disposable-path"
+rsync -az --exclude node_modules workers/browser-inspector/ <host>:~/some-clearly-disposable-path/
+ssh <host> "cd ~/some-clearly-disposable-path && docker build -t browser-inspector:scratch ."
 
 # deterministic tests, inside the real image:
-ssh <host> "docker run --rm --entrypoint node -v \$(pwd)/<path>/test:/app/test:ro browser-inspector:0.1.0 --test test/*.test.js"
+ssh <host> "docker run --rm --entrypoint node -v \$(pwd)/test:/app/test:ro browser-inspector:scratch --test test/*.test.js"
 
 # one-shot live smoke test (bypasses the protocol; CLI mode only —
 # find a real open posting via Greenhouse's own public API, e.g.
 #  curl -s 'https://boards-api.greenhouse.io/v1/boards/<company>/jobs' — do not guess a URL):
-ssh <host> "docker run --rm --entrypoint node browser-inspector:0.1.0 src/cli.js '<live greenhouse job URL>'"
+ssh <host> "docker run --rm --entrypoint node browser-inspector:scratch src/cli.js '<live greenhouse job URL>'"
 
-# production runtime — the poll loop, talking to a real Career Toolkit instance
-# reachable from this host on the LAN:
-ssh <host> "docker run -d --name browser-inspector --restart unless-stopped \
-    -e CAREER_TOOLKIT_URL='http://<career-toolkit-host>:8000' \
-    -e BROWSER_WORKER_TOKEN='<shared secret, matches Career Toolkit's .env>' \
-    -e BROWSER_WORKER_IDENTITY='ai-box' \
-    browser-inspector:0.1.0"
-
-# tail logs / stop:
-ssh <host> "docker logs -f browser-inspector"
-ssh <host> "docker stop browser-inspector && docker rm browser-inspector"
+# cleanup:
+ssh <host> "docker rmi browser-inspector:scratch && rm -rf ~/some-clearly-disposable-path"
 ```
-
-No port is exposed on the container in either mode — the poll loop
-only makes outbound requests. No volume needs to persist; remove the
-image (`docker rmi browser-inspector:0.1.0`) and the deployment
-directory when fully done with a host.

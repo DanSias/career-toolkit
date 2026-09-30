@@ -60,6 +60,12 @@ npm run build
 php artisan serve
 ```
 
+If a persistent browser-inspector worker is deployed on the LAN (see
+`workers/browser-inspector/README.md` "Normal development
+connectivity"), set `SERVER_HOST=0.0.0.0` in `.env` so `php artisan
+serve`/`composer run dev` binds to all interfaces instead of just
+`127.0.0.1` — ordinary LAN binding, not public exposure.
+
 ## Useful commands
 
 ```bash

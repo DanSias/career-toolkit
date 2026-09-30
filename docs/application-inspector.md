@@ -254,6 +254,32 @@ moment any of the following becomes real, rather than before:
 - materially broader worker capabilities than claim+report
 - a need for independent credential revocation/scoping
 
+## Worker presence
+
+Career Toolkit needs to tell the user whether inspection capacity is
+actually available, rather than leaving a queued inspection unexplained
+if the worker happens to be offline. Piggybacked entirely on the
+existing claim-poll protocol rather than a dedicated heartbeat
+endpoint: a successful, authenticated `POST /api/worker/agent-runs/claim`
+— whether or not it found work — already proves the worker is alive
+and reachable, so `App\Http\Controllers\Worker\AgentRunClaimController`
+upserts a `WorkerHeartbeat` row (`App\Support\ApplicationInspection\
+RecordWorkerHeartbeat`) on every call. No separate protocol traffic, no
+Redis, no WebSockets, no distributed presence infrastructure.
+
+`WorkerHeartbeat` is a small, purpose-built table (`identity` unique,
+`worker_type`, `last_seen_at`) — a presence record, not a generalized
+worker registry — upserted by identity, never accumulated as history.
+`App\Support\ApplicationInspection\PresentWorkerAvailability` derives
+`online`/`offline` from `last_seen_at` against a threshold computed as
+3x `services.browser_worker.poll_interval_seconds` (comfortably
+survives one missed/slow poll without flapping): a *config-derived*
+number, never a magic constant duplicated independently in the
+frontend. `GET /browser-worker/status` exposes this for the nav-bar
+badge and any "waiting for browser worker" message; Career Toolkit only
+ever *observes* presence here — there is no start/stop/restart action,
+and none is planned.
+
 ## Retry semantics
 
 A failed inspection is never resumed in place. Retrying always means: a
@@ -301,6 +327,21 @@ was never authorized to cross, not a bug. Greenhouse-only v1 will
 normally only ever produce `succeeded` + `complete`; the other outcome
 values exist now so the schema doesn't need to change the day Lever or
 Workday support is added.
+
+## Opportunities inspection state
+
+The Opportunities index/detail (the product-facing label for
+`JobPosting` browsing — the model itself is unchanged) shows each
+opportunity's inspection state (`not_inspected` / `queued` / `running`
+/ `inspected` / `failed` / `unsupported`) without a second status
+column on `JobPosting`. `App\Support\ApplicationInspection\
+SummarizeInspectionStates` derives it in bulk from the same
+`WorkflowRun`/`AgentRun` history `PresentApplicationInspection` already
+reads for the Application page — the durable execution history stays
+the single source of truth. As with that page, a later failed retry
+never hides a previous successful result: `state: inspected` with
+`latest_attempt_failed: true` is distinct from a plain `failed`, which
+only appears when no attempt has ever succeeded.
 
 ## Explicit v1 exclusions
 
