@@ -22,6 +22,17 @@ use Throwable;
  * an aggregator's own Lever board; a typical employer board is far
  * smaller) — revisit with real skip/limit paging only if evidence
  * shows a board this app actually resolves to exceeds one page.
+ *
+ * Lever splits a posting's real content across three fields —
+ * `descriptionPlain` (overview), `additionalPlain` (a second prose
+ * block, e.g. "Why work here" / EEO text), and `lists[]` (structured
+ * sections such as Responsibilities/Qualifications, each an
+ * optional `text` label plus HTML `content`) — confirmed directly
+ * against the real `velaura` board: `descriptionPlain` alone was
+ * only 542 of ~5,600 real characters. assembleDescription() below
+ * joins all three; reading `descriptionPlain` alone (the original
+ * Phase 1 implementation) silently discarded the majority of every
+ * Lever posting's actual content.
  */
 final class LeverCanonicalAdapter implements CanonicalRetrievalContract
 {
@@ -101,7 +112,7 @@ final class LeverCanonicalAdapter implements CanonicalRetrievalContract
             canonicalSource: JobCanonicalSource::Lever,
             canonicalSourceId: $id,
             title: $title,
-            description: is_string($job['descriptionPlain'] ?? null) ? $job['descriptionPlain'] : null,
+            description: $this->assembleDescription($job),
             location: is_string($categories['location'] ?? null) ? $categories['location'] : null,
             remoteStatus: $this->normalizeWorkplaceType($job['workplaceType'] ?? null),
             employmentType: is_string($categories['commitment'] ?? null) ? $categories['commitment'] : null,
@@ -117,6 +128,73 @@ final class LeverCanonicalAdapter implements CanonicalRetrievalContract
                 'country' => $job['country'] ?? null,
             ], fn ($value) => $value !== null),
         );
+    }
+
+    /**
+     * Joins descriptionPlain + additionalPlain + each lists[] section
+     * (label, when Lever supplies one, plus its HTML content
+     * converted to plain text) into one human-readable description.
+     * Never truncated; sections with no real content are skipped
+     * rather than leaving blank gaps. See this class's own docblock.
+     *
+     * @param  array<string, mixed>  $job
+     */
+    private function assembleDescription(array $job): ?string
+    {
+        $sections = [];
+
+        if (is_string($job['descriptionPlain'] ?? null) && trim($job['descriptionPlain']) !== '') {
+            $sections[] = trim($job['descriptionPlain']);
+        }
+
+        if (is_string($job['additionalPlain'] ?? null) && trim($job['additionalPlain']) !== '') {
+            $sections[] = trim($job['additionalPlain']);
+        }
+
+        foreach (is_array($job['lists'] ?? null) ? $job['lists'] : [] as $list) {
+            if (! is_array($list) || ! is_string($list['content'] ?? null)) {
+                continue;
+            }
+
+            $body = $this->htmlToPlainText($list['content']);
+            if ($body === '') {
+                continue;
+            }
+
+            $label = is_string($list['text'] ?? null) ? trim($list['text']) : '';
+            // Lever sometimes supplies the section label as `text`,
+            // and sometimes embeds it as the content's own first
+            // heading instead (observed on the real velaura board) —
+            // never both, but guard against a future board doing so
+            // to avoid a duplicated heading line.
+            if ($label !== '' && ! str_starts_with(mb_strtolower($body), mb_strtolower($label))) {
+                $body = "{$label}\n{$body}";
+            }
+
+            $sections[] = $body;
+        }
+
+        return $sections === [] ? null : implode("\n\n", $sections);
+    }
+
+    /**
+     * Minimal, deterministic HTML-to-plain-text conversion for
+     * Lever's `lists[].content` — not a general document parser.
+     * Block-level tags become line breaks so stripping the remaining
+     * markup doesn't run paragraphs/headings together; everything
+     * else is discarded.
+     */
+    private function htmlToPlainText(string $html): string
+    {
+        $withBreaks = preg_replace('~</(p|div|h[1-6]|li)>~i', "\n", $html) ?? $html;
+        $withBreaks = preg_replace('~<br\s*/?>~i', "\n", $withBreaks) ?? $withBreaks;
+        $plain = html_entity_decode(strip_tags($withBreaks), ENT_QUOTES | ENT_HTML5);
+        $plain = str_replace("\u{A0}", ' ', $plain);
+        $plain = preg_replace('/[ \t]+/', ' ', $plain) ?? $plain;
+        $plain = preg_replace('/\n[ \t]+/', "\n", $plain) ?? $plain;
+        $plain = preg_replace('/\n{3,}/', "\n\n", trim($plain)) ?? $plain;
+
+        return trim($plain);
     }
 
     private function normalizeWorkplaceType(mixed $value): ?JobRemoteStatus
