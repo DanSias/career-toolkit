@@ -326,15 +326,20 @@ it('assembles a complete, real ResumeDocument from the Pearly fixture', function
         ->and($document->experience[1]->isCurrent)->toBeFalse()
         ->and($document->experience[1]->dateRangeLabel)->toBe('Sep 2015 – Jul 2024')
         ->and($document->experience[1]->bullets)->toHaveCount(5)
-        ->and($document->skills)->toHaveCount(4)
-        ->and($document->skills[0]->label)->toBe('Technologies')
+        // v2 Skills presentation grouping (see GenerateResumeDocument's
+        // own docblock): "Technologies"/"Platforms & Tools" renamed to
+        // "Languages & Frameworks"/"Data & Platforms" (same skills,
+        // straight category rename); the old "Workflow" group no
+        // longer exists — CI/CD (practice, not on the Marketing
+        // Technology slug allow-list) folds into "Engineering" instead,
+        // appended after Analytics systems per its own display_order.
+        ->and($document->skills)->toHaveCount(3)
+        ->and($document->skills[0]->label)->toBe('Languages & Frameworks')
         ->and($document->skills[0]->skills)->toBe(['TypeScript', 'Node.js', 'PostgreSQL', 'MySQL', 'React', 'Express.js'])
-        ->and($document->skills[1]->label)->toBe('Platforms & Tools')
+        ->and($document->skills[1]->label)->toBe('Data & Platforms')
         ->and($document->skills[1]->skills)->toBe(['BigQuery', 'Google Cloud Functions', 'Salesforce', 'Jira', 'GitLab'])
         ->and($document->skills[2]->label)->toBe('Engineering')
-        ->and($document->skills[2]->skills)->toBe(['API integration & design', 'Data pipelines', 'High-risk data remediation engineering', 'Security-conscious engineering', 'Analytics systems'])
-        ->and($document->skills[3]->label)->toBe('Workflow')
-        ->and($document->skills[3]->skills)->toBe(['CI/CD'])
+        ->and($document->skills[2]->skills)->toBe(['API integration & design', 'Data pipelines', 'High-risk data remediation engineering', 'Security-conscious engineering', 'Analytics systems', 'CI/CD'])
         // This fixture reconstructs a real generation from before
         // Selected Projects existed (schema_version 1.1) — correctly
         // empty, not fabricated data. See PearlyResumeVariantFixture.
