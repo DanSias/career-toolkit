@@ -1,5 +1,9 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import { InspectionStateBadge } from '@/components/badges';
+import { useState } from 'react';
+import {
+    DescriptionCompletenessBadge,
+    InspectionStateBadge,
+} from '@/components/badges';
 import { GenerationStatus } from '@/components/generation-status';
 import { WaitingForWorkerNotice } from '@/components/worker-status-badge';
 import { useGenerationAttemptPolling } from '@/hooks/use-generation-attempt-polling';
@@ -14,7 +18,10 @@ import {
 import { store as applicationsStore } from '@/routes/jobs/applications';
 import type { GenerationAttempt } from '@/types/generation-attempt';
 import type { InspectionSummary } from '@/types/application-inspection';
-import type { JobShowProps } from '@/types/job-posting';
+import type {
+    DescriptionCompleteness,
+    JobShowProps,
+} from '@/types/job-posting';
 
 function InspectApplicationAction({
     jobId,
@@ -73,11 +80,14 @@ function InspectApplicationAction({
 function GenerateAnalysisAction({
     jobId,
     initialAttempt,
+    completeness,
 }: {
     jobId: number;
     initialAttempt: GenerationAttempt | null;
+    completeness: DescriptionCompleteness;
 }) {
-    const form = useForm({});
+    const form = useForm({ allow_incomplete_description: false });
+    const [confirming, setConfirming] = useState(false);
     const attempt = useGenerationAttemptPolling(initialAttempt);
     const isActive =
         attempt !== null &&
@@ -89,15 +99,65 @@ function GenerateAnalysisAction({
             <button
                 type="button"
                 disabled={disabled}
-                onClick={() =>
+                onClick={() => {
+                    if (completeness !== 'complete') {
+                        setConfirming(true);
+                        return;
+                    }
                     form.post(analysesStore.url({ jobPosting: jobId }), {
                         showProgress: false,
-                    })
-                }
+                    });
+                }}
                 className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
             >
                 {disabled ? 'Generating…' : 'Generate Analysis'}
             </button>
+            {confirming && !isActive && (
+                <div className="mt-3 max-w-md rounded-md border border-neutral-300 p-3 text-sm dark:border-neutral-700">
+                    <p>
+                        {completeness === 'preview'
+                            ? 'This posting contains only a preview.'
+                            : 'Career Toolkit cannot verify that this description is complete.'}{' '}
+                        Missing requirements or responsibilities can affect
+                        analysis.
+                    </p>
+                    <div className="mt-2 flex gap-3">
+                        <button
+                            type="button"
+                            disabled={disabled}
+                            className="font-medium underline disabled:opacity-50"
+                            onClick={() => {
+                                form.transform(() => ({
+                                    allow_incomplete_description: true,
+                                }));
+                                form.post(
+                                    analysesStore.url({ jobPosting: jobId }),
+                                    {
+                                        showProgress: false,
+                                        onSuccess: () => setConfirming(false),
+                                        onFinish: () =>
+                                            form.transform((data) => data),
+                                    },
+                                );
+                            }}
+                        >
+                            Analyze Anyway
+                        </button>
+                        <button
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => setConfirming(false)}
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+            {form.errors.allow_incomplete_description && (
+                <p role="alert" className="mt-2 text-sm">
+                    {form.errors.allow_incomplete_description}
+                </p>
+            )}
             <GenerationStatus
                 active={isActive}
                 label="Generating analysis"
@@ -136,6 +196,27 @@ export default function JobsShow({ job }: JobShowProps) {
                 <p className="text-sm text-neutral-600 dark:text-neutral-400">
                     {job.company}
                 </p>
+
+                <div className="mt-3">
+                    <DescriptionCompletenessBadge
+                        value={job.discovery.description_completeness}
+                    />
+                    {job.discovery.description_completeness !== 'complete' && (
+                        <p
+                            className={
+                                job.discovery.description_completeness ===
+                                'preview'
+                                    ? 'mt-2 text-sm text-amber-700 dark:text-amber-300'
+                                    : 'mt-2 text-sm text-neutral-500 dark:text-neutral-400'
+                            }
+                        >
+                            {job.discovery.description_completeness ===
+                            'preview'
+                                ? 'This opportunity only contains a preview of the job description. Some requirements or responsibilities may be missing.'
+                                : 'Career Toolkit cannot confirm that this is the complete job description.'}
+                        </p>
+                    )}
+                </div>
 
                 <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
                     {job.location && (
@@ -188,6 +269,7 @@ export default function JobsShow({ job }: JobShowProps) {
                     <GenerateAnalysisAction
                         jobId={job.id}
                         initialAttempt={job.latest_job_analysis_attempt}
+                        completeness={job.discovery.description_completeness}
                     />
                 </div>
 

@@ -19,7 +19,7 @@ use Tests\Support\FakeJobAnalysisProvider;
  */
 it('creates a queued GenerationAttempt on POST', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
 
     $this->post(route('jobs.analyses.store', $jobPosting));
 
@@ -35,7 +35,7 @@ it('creates a queued GenerationAttempt on POST', function () {
 
 it('dispatches GenerateJobAnalysisJob referencing the new attempt', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
 
     $this->post(route('jobs.analyses.store', $jobPosting));
 
@@ -46,7 +46,7 @@ it('dispatches GenerateJobAnalysisJob referencing the new attempt', function () 
 
 it('returns immediately without running GenerateJobAnalysis synchronously', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
     $fake = new FakeJobAnalysisProvider;
     app()->instance(GeneratesJobAnalysis::class, $fake);
 
@@ -58,7 +58,7 @@ it('returns immediately without running GenerateJobAnalysis synchronously', func
 
 it('redirects back to the JobPosting page, not a JobAnalysis show page', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
 
     $response = $this->post(route('jobs.analyses.store', $jobPosting));
 
@@ -67,7 +67,7 @@ it('redirects back to the JobPosting page, not a JobAnalysis show page', functio
 
 it('does not create or dispatch another attempt while one is already queued for the same posting', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
 
     $this->post(route('jobs.analyses.store', $jobPosting));
     $this->post(route('jobs.analyses.store', $jobPosting));
@@ -78,7 +78,7 @@ it('does not create or dispatch another attempt while one is already queued for 
 
 it('does not create or dispatch another attempt while one is already running for the same posting', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
     GenerationAttempt::factory()->create([
         'subject_type' => (new JobPosting)->getMorphClass(),
         'subject_id' => $jobPosting->id,
@@ -94,7 +94,7 @@ it('does not create or dispatch another attempt while one is already running for
 
 it('allows a new attempt once the prior attempt for the same posting has failed', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
     GenerationAttempt::factory()->create([
         'subject_type' => (new JobPosting)->getMorphClass(),
         'subject_id' => $jobPosting->id,
@@ -110,7 +110,7 @@ it('allows a new attempt once the prior attempt for the same posting has failed'
 
 it('allows a new attempt once the prior attempt for the same posting has succeeded', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
     GenerationAttempt::factory()->create([
         'subject_type' => (new JobPosting)->getMorphClass(),
         'subject_id' => $jobPosting->id,
@@ -126,8 +126,8 @@ it('allows a new attempt once the prior attempt for the same posting has succeed
 
 it('does not let an active attempt for a different posting block this posting', function () {
     Queue::fake();
-    $jobPosting = JobPosting::factory()->create();
-    $otherJobPosting = JobPosting::factory()->create();
+    $jobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
+    $otherJobPosting = JobPosting::factory()->create(['description_completeness' => 'complete']);
     GenerationAttempt::factory()->create([
         'subject_type' => (new JobPosting)->getMorphClass(),
         'subject_id' => $otherJobPosting->id,

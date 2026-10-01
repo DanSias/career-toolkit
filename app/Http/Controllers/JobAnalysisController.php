@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\GenerationStatus;
 use App\Enums\GenerationType;
 use App\Enums\JobAnalysisFindingCategory;
@@ -15,6 +16,8 @@ use App\Support\CurrentCareerProfile;
 use App\Support\GenerationAttempt\PresentGenerationAttempt;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -36,8 +39,17 @@ use Inertia\Response;
  */
 class JobAnalysisController extends Controller
 {
-    public function store(JobPosting $jobPosting): RedirectResponse
+    public function store(Request $request, JobPosting $jobPosting): RedirectResponse
     {
+        $request->validate(['allow_incomplete_description' => ['sometimes', 'boolean']]);
+
+        if ($jobPosting->description_completeness !== DescriptionCompleteness::Complete
+            && ! $request->boolean('allow_incomplete_description')) {
+            throw ValidationException::withMessages([
+                'allow_incomplete_description' => 'The description may be incomplete. Missing requirements or responsibilities can affect analysis. Choose Analyze Anyway to continue.',
+            ]);
+        }
+
         $hasActiveAttempt = $jobPosting->generationAttempts()
             ->active()
             ->where('generation_type', GenerationType::JobAnalysis)
