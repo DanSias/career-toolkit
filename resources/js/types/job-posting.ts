@@ -7,6 +7,8 @@ import type { GenerationAttempt } from '@/types/generation-attempt';
  * everything else is null unless discovery/canonical enrichment
  * populated it.
  */
+export type DescriptionCompleteness = 'complete' | 'preview' | 'unknown';
+
 export type JobPostingDiscoveryMetadata = {
     source: string;
     canonical_source: string | null;
@@ -16,6 +18,7 @@ export type JobPostingDiscoveryMetadata = {
     compensation_min: number | null;
     compensation_max: number | null;
     compensation_currency: string | null;
+    description_completeness: DescriptionCompleteness;
 };
 
 export type JobPostingSummary = {

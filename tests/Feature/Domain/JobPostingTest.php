@@ -44,7 +44,7 @@ it('stores no analysis, matching, or resume-generation fields', function () {
     $columns = Schema::getColumnListing('job_postings');
 
     expect($columns)->toEqualCanonicalizing([
-        'id', 'career_profile_id', 'company', 'title', 'source_url', 'location', 'description', 'created_at', 'updated_at',
+        'id', 'career_profile_id', 'company', 'title', 'source_url', 'location', 'description', 'description_completeness', 'created_at', 'updated_at',
         'discovery_source', 'discovery_source_id', 'canonical_source', 'canonical_source_id',
         'remote_status', 'employment_type',
         'compensation_min', 'compensation_max', 'compensation_currency', 'compensation_interval',

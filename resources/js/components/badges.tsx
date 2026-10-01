@@ -5,6 +5,7 @@ import type {
     Verification,
     Visibility,
 } from '@/types/career-data';
+import type { DescriptionCompleteness } from '@/types/job-posting';
 
 const badgeClass =
     'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap';
@@ -92,6 +93,42 @@ const INSPECTION_STATE_STYLES: Record<InspectionSummary['state'], string> = {
     unsupported:
         'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/20',
 };
+
+const DESCRIPTION_COMPLETENESS_STYLES: Record<DescriptionCompleteness, string> =
+    {
+        complete:
+            'bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20',
+        // Noticeable (it affects downstream analysis quality) but
+        // deliberately not the rose/error styling used elsewhere on this
+        // page — a preview isn't a failure.
+        preview:
+            'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/20',
+        // Calm/neutral on purpose — unknown is not an error state.
+        unknown:
+            'bg-neutral-100 text-neutral-500 ring-neutral-500/20 dark:bg-neutral-800 dark:text-neutral-400 dark:ring-neutral-400/10',
+    };
+
+const DESCRIPTION_COMPLETENESS_LABELS: Record<DescriptionCompleteness, string> =
+    {
+        complete: 'Complete description',
+        preview: 'Preview only',
+        unknown: 'Description completeness unknown',
+    };
+
+/** Whether a JobPosting's stored description is the complete posting, a short preview, or unestablished — see App\Enums\DescriptionCompleteness. */
+export function DescriptionCompletenessBadge({
+    value,
+}: {
+    value: DescriptionCompleteness;
+}) {
+    return (
+        <span
+            className={cn(badgeClass, DESCRIPTION_COMPLETENESS_STYLES[value])}
+        >
+            {DESCRIPTION_COMPLETENESS_LABELS[value]}
+        </span>
+    );
+}
 
 /** One-line status label for the Opportunities index/detail — see App\Support\ApplicationInspection\SummarizeInspectionStates. */
 export function InspectionStateBadge({

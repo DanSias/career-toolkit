@@ -111,6 +111,7 @@ class JobPostingController extends Controller
             'compensation_min' => $job->compensation_min,
             'compensation_max' => $job->compensation_max,
             'compensation_currency' => $job->compensation_currency,
+            'description_completeness' => $job->description_completeness->value,
         ];
     }
 

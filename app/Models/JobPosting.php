@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobCanonicalSource;
 use App\Enums\JobDiscoverySource;
 use App\Enums\JobPostingLifecycleStatus;
@@ -49,6 +50,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $source_url
  * @property string|null $location
  * @property string $description
+ * @property DescriptionCompleteness $description_completeness
  * @property JobDiscoverySource $discovery_source
  * @property string|null $discovery_source_id
  * @property JobCanonicalSource|null $canonical_source
@@ -70,6 +72,7 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable([
     'career_profile_id', 'company', 'title', 'source_url', 'location', 'description',
+    'description_completeness',
     'discovery_source', 'discovery_source_id', 'canonical_source', 'canonical_source_id',
     'remote_status', 'employment_type',
     'compensation_min', 'compensation_max', 'compensation_currency', 'compensation_interval',
@@ -99,12 +102,19 @@ class JobPosting extends Model
             $job->discovery_source ??= JobDiscoverySource::Manual;
             $job->status ??= JobPostingLifecycleStatus::Open;
             $job->discovered_at ??= now();
+            // A hand-created posting has no source-completeness
+            // provenance — never guessed as Complete merely because a
+            // description was typed/pasted in. See App\Support\
+            // JobDiscovery\IngestDiscoveredCandidate for how discovery
+            // ingestion always sets this explicitly instead.
+            $job->description_completeness ??= DescriptionCompleteness::Unknown;
         });
     }
 
     protected function casts(): array
     {
         return [
+            'description_completeness' => DescriptionCompleteness::class,
             'discovery_source' => JobDiscoverySource::class,
             'canonical_source' => JobCanonicalSource::class,
             'remote_status' => JobRemoteStatus::class,

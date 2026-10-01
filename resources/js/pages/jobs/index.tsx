@@ -1,6 +1,9 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { type FormEvent, useState } from 'react';
-import { InspectionStateBadge } from '@/components/badges';
+import {
+    DescriptionCompletenessBadge,
+    InspectionStateBadge,
+} from '@/components/badges';
 import { cn } from '@/lib/utils';
 import {
     index as jobsIndex,
@@ -19,6 +22,7 @@ import type {
 const DISCOVERY_SOURCE_LABELS: Record<string, string> = {
     himalayas: 'Himalayas',
     adzuna: 'Adzuna',
+    jobicy: 'Jobicy',
 };
 
 function discoverySourceLabel(source: string): string {
@@ -221,6 +225,12 @@ export default function JobsIndex({ jobs, filters }: JobsIndexProps) {
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-3">
+                                    <DescriptionCompletenessBadge
+                                        value={
+                                            job.discovery
+                                                .description_completeness
+                                        }
+                                    />
                                     <InspectionStateBadge
                                         summary={job.inspection}
                                     />

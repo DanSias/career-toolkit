@@ -2,6 +2,7 @@
 
 namespace App\Support\JobDiscovery;
 
+use App\Enums\DescriptionCompleteness;
 use App\Enums\JobDiscoverySource;
 use App\Models\CareerProfile;
 use App\Models\JobPosting;
@@ -129,6 +130,7 @@ final class IngestDiscoveredCandidate
             'company' => $candidate->company,
             'title' => $c['title'] ?? $candidate->title,
             'description' => $c['description'] ?? $candidate->description ?? '',
+            'description_completeness' => $this->resolveDescriptionCompleteness($candidate, $canonicalMatch),
             'location' => $c['location'] ?? $candidate->location,
             'source_url' => $c['applicationUrl'] ?? $candidate->applicationUrl,
             'discovery_source' => $candidate->source,
@@ -180,6 +182,16 @@ final class IngestDiscoveredCandidate
                     $updates[$column] = $value;
                 }
             }
+            // Completeness must describe whichever description text
+            // just won above — not merely whether a canonical match
+            // exists (its own description can itself be null; see
+            // resolveDescriptionCompleteness()). Only set when
+            // 'description' was actually updated this pass, so an
+            // unchanged stored description never gets its
+            // completeness flipped for no reason.
+            if (array_key_exists('description', $updates)) {
+                $updates['description_completeness'] = $this->resolveDescriptionCompleteness($candidate, $canonicalMatch);
+            }
             if ($canonicalMatch !== null) {
                 $updates['canonical_source'] = $canonicalMatch->canonicalSource;
                 $updates['canonical_source_id'] = $canonicalMatch->canonicalSourceId;
@@ -219,6 +231,23 @@ final class IngestDiscoveredCandidate
             'compensationInterval' => $canonicalMatch->compensationInterval,
             'sourceUpdatedAt' => $canonicalMatch->sourceUpdatedAt,
         ];
+    }
+
+    /**
+     * Describes the description text ACTUALLY STORED — the same
+     * precedence as the 'description' column itself
+     * (`$c['description'] ?? $candidate->description`), never merely
+     * "a canonical match exists." A canonical match whose own
+     * description is null never wins the text, so it must never win
+     * the completeness tag either.
+     */
+    private function resolveDescriptionCompleteness(DiscoveredJobCandidate $candidate, ?CanonicalJobPosting $canonicalMatch): DescriptionCompleteness
+    {
+        if ($canonicalMatch !== null && $canonicalMatch->description !== null) {
+            return $canonicalMatch->descriptionCompleteness;
+        }
+
+        return $candidate->descriptionCompleteness;
     }
 
     /** @return array<string, mixed> */

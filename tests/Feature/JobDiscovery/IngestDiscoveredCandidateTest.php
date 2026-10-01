@@ -42,7 +42,7 @@ function canonicalMatch(array $overrides = []): CanonicalJobPosting
         canonicalSource: $overrides['canonicalSource'] ?? JobCanonicalSource::Greenhouse,
         canonicalSourceId: $overrides['canonicalSourceId'] ?? 'gh-1',
         title: $overrides['title'] ?? 'Senior Software Engineer',
-        description: $overrides['description'] ?? 'Canonical description.',
+        description: array_key_exists('description', $overrides) ? $overrides['description'] : 'Canonical description.',
         descriptionCompleteness: $overrides['descriptionCompleteness'] ?? DescriptionCompleteness::Complete,
         location: $overrides['location'] ?? 'New York, NY',
         remoteStatus: $overrides['remoteStatus'] ?? null,
@@ -292,4 +292,47 @@ it('keeps original provider metadata when another aggregator rediscovers the can
     expect($second->id)->toBe($first->id)->and($second->discovery_source)->toBe(JobDiscoverySource::Himalayas)
         ->and($second->discovery_metadata['discovery'])->toBe(['companySlug' => 'original'])
         ->and($second->discovered_at->equalTo($first->discovered_at))->toBeTrue();
+});
+
+it('persists the discovery description completeness', function (JobDiscoverySource $source, DescriptionCompleteness $completeness) {
+    $profile = CareerProfile::factory()->create();
+    $result = (new IngestDiscoveredCandidate)->ingest(discoveryCandidate([
+        'source' => $source, 'descriptionCompleteness' => $completeness,
+    ]), null, $profile);
+    expect($result->jobPosting->fresh()->description_completeness)->toBe($completeness);
+})->with([
+    [JobDiscoverySource::Jobicy, DescriptionCompleteness::Complete],
+    [JobDiscoverySource::Himalayas, DescriptionCompleteness::Complete],
+    [JobDiscoverySource::Adzuna, DescriptionCompleteness::Preview],
+    [JobDiscoverySource::Himalayas, DescriptionCompleteness::Unknown],
+]);
+
+it('uses canonical completeness on creation and on an existing preview upgrade', function (bool $existing) {
+    $profile = CareerProfile::factory()->create();
+    $ingest = new IngestDiscoveredCandidate;
+    $candidate = discoveryCandidate(['source' => JobDiscoverySource::Adzuna, 'descriptionCompleteness' => DescriptionCompleteness::Preview]);
+    if ($existing) {
+        $first = $ingest->ingest($candidate, null, $profile)->jobPosting;
+        expect($first->description_completeness)->toBe(DescriptionCompleteness::Preview);
+    }
+    $job = $ingest->ingest($candidate, canonicalMatch(), $profile)->jobPosting->fresh();
+    expect($job->description)->toBe('Canonical description.')
+        ->and($job->description_completeness)->toBe(DescriptionCompleteness::Complete)
+        ->and(JobPosting::count())->toBe(1);
+    $refreshed = $ingest->ingest($candidate, null, $profile)->jobPosting->fresh();
+    expect($refreshed->description)->toBe($job->description)
+        ->and($refreshed->description_completeness)->toBe(DescriptionCompleteness::Complete);
+})->with([false, true]);
+
+it('does not let a null canonical description claim ownership of preview text', function () {
+    $profile = CareerProfile::factory()->create();
+    $ingest = new IngestDiscoveredCandidate;
+    $candidate = discoveryCandidate(['descriptionCompleteness' => DescriptionCompleteness::Preview]);
+    $job = $ingest->ingest($candidate, canonicalMatch(['description' => null]), $profile)->jobPosting;
+    expect($job->description)->toBe($candidate->description)
+        ->and($job->description_completeness)->toBe(DescriptionCompleteness::Preview);
+    $job = $ingest->ingest($candidate, canonicalMatch(), $profile)->jobPosting;
+    $job = $ingest->ingest($candidate, canonicalMatch(['description' => null]), $profile)->jobPosting->fresh();
+    expect($job->description)->toBe('Canonical description.')
+        ->and($job->description_completeness)->toBe(DescriptionCompleteness::Complete);
 });
