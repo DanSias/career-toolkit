@@ -27,22 +27,29 @@
     heading-glued-to-next-content rule) every section/Role heading
     together with whatever immediately follows it. A Role itself is
     deliberately NOT one atomic unit: a Role with several bullets may
-    span a page boundary between bullets, with its heading always
-    staying with at least its first bullet, and its *last* bullet never
-    left stranded alone at the top of the next page when the
-    fragmentation engine can instead move that break one bullet earlier
-    (see `.role ul.bullets li:last-child` below — the one narrow
-    exception to "a Role may split anywhere between bullets", added
-    after a real TRM Labs resume's final Experience bullet was orphaned
-    this way). See the `break-*`/`page-break-*` rules below for exactly
-    where each invariant lives; none of them reference a specific
-    employer, Role, or page number.
+    span a page boundary anywhere between bullets, including
+    immediately before its own last bullet, with its heading always
+    staying with at least its first bullet. A prior revision also kept
+    a Role's last bullet from ever starting a new page alone — removed
+    as of the Technical-Skills/pagination presentation milestone: with
+    a real four-bullet role, that rule pulled its third bullet onto the
+    next page along with the fourth (the nearest earlier valid break,
+    since every bullet is independently kept whole — see `ul.bullets
+    li` below), leaving page 1 under-filled for no benefit. A role's
+    final bullet continuing alone at the top of the next page is
+    accepted, especially since it is never left visually isolated:
+    every subsequent page always has the continuation-page top safe
+    area (see the `@page` rule below) above it and further resume
+    content immediately below it. See the `break-*`/`page-break-*`
+    rules below for exactly where each remaining invariant lives; none
+    of them reference a specific employer, Role, or page number.
 
-    ATS v1 rendering contract: US Letter (explicit `@page { size:
-    letter; margin: 0 }` below — the one physical-page-geometry source
-    of truth; Chromium's own PDF page-margin options are set to 0 to
-    match it exactly, so the .page div's 0.75in padding stays the only
-    actual visual margin, never doubled), single-column, real
+    ATS v1 rendering contract: US Letter (explicit `@page` rule below —
+    the one physical-page-geometry source of truth; side/bottom margin
+    stays 0, matched exactly by Chromium's own PDF page-margin options,
+    so the .page div's 0.75in padding stays the only actual visual
+    side/bottom margin, never doubled — top margin is the one
+    exception, see that rule's own comment), single-column, real
     selectable text, standard `<ul><li>` bullets, conventional heading
     elements, no essential information conveyed only through color/
     icons/position, no essential content in the printed page header/
@@ -99,16 +106,31 @@
         }
 
         /* The single source of truth for physical page geometry: US
-           Letter, zero page margin. The .page div's own 0.75in padding
-           below is the ONLY visual margin in this document — Chromium's
-           own PDF page-margin options are set to 0 to match exactly
-           (see App\Support\ResumeDocument\GenerateResumePdf), so the
-           two can never silently double up. This rule also governs an
-           interactive browser's own print dialog when "Default margins"
-           is selected. */
+           Letter. Side/bottom page margin stays 0 on every page — the
+           .page div's own 0.75in padding remains the only visual
+           left/right/bottom margin in this document, and Chromium's
+           own PDF page-margin options for those sides are set to 0 to
+           match exactly (see App\Support\ResumeDocument\GenerateResumePdf),
+           so the two can never silently double up. Top margin is the
+           one deliberate exception: .page's own 0.75in top padding
+           only ever renders once, at the very top of the whole flowing
+           box (page 1) — CSS fragmentation does not reapply a
+           fragmented box's own padding-top at an internal page break —
+           so every CONTINUATION page would otherwise start flush
+           against the physical top edge with no breathing room at all.
+           `@page`'s own margin-top supplies that continuation-page-only
+           top safe area instead, deliberately zeroed back out for the
+           first page via `@page :first` so page 1's spacing continues
+           to come from .page's own padding exactly as before, never
+           doubled. This rule also governs an interactive browser's own
+           print dialog when "Default margins" is selected. */
         @page {
             size: letter;
-            margin: 0;
+            margin: 0.4in 0 0 0;
+        }
+
+        @page :first {
+            margin-top: 0;
         }
 
         html, body {
@@ -317,22 +339,6 @@
 
         ul.bullets li:last-child {
             margin-bottom: 0;
-        }
-
-        /* Avoids stranding a role's final bullet alone at the top of a
-           new page: if it wouldn't otherwise fit, this asks the
-           fragmentation engine to move the break one bullet earlier
-           instead, keeping the final two bullets together. Scoped to
-           Experience roles only (`.role`) — a Selected Project's own
-           single bullet is already fully atomic via `.selected-project`
-           above, where this rule would be inert anyway. Deliberately
-           NOT `break-inside: avoid` on `.role` itself — a role with
-           several bullets may still span pages between earlier bullets;
-           only the specific last-bullet-orphan case is addressed here.
-           See docs/resume-variant-generation.md "PDF export". */
-        .role ul.bullets li:last-child {
-            page-break-before: avoid;
-            break-before: avoid;
         }
 
         .skill-group {

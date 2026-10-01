@@ -455,27 +455,57 @@ it('treats every individual bullet (Experience and Selected Project) as an indiv
         ->and($bulletRule)->toContain('page-break-inside: avoid');
 });
 
-it('avoids stranding a Role\'s final bullet alone at the top of a new page, without making the whole Role unbreakable', function () {
+it('no longer keeps a Role\'s final bullet from starting a new page — a Role may split anywhere between bullets', function () {
     [, $variant] = previewCandidateVariant();
 
     $css = renderResumePrintView($variant);
 
+    // Removed as of the Technical-Skills/pagination presentation
+    // milestone: with a real four-bullet role, this rule pulled two
+    // bullets onto the next page (the nearest earlier valid break)
+    // instead of the one that actually needed to move, under-filling
+    // the prior page for no benefit. See print.blade.php's own
+    // docblock for the full reasoning.
     $lastBulletRule = cssRuleBody($css, '.role ul.bullets li:last-child');
+    expect($lastBulletRule)->toBeNull();
 
-    expect($lastBulletRule)->not->toBeNull()
-        ->and($lastBulletRule)->toContain('break-before: avoid')
-        ->and($lastBulletRule)->toContain('page-break-before: avoid');
-
-    // The narrow last-bullet rule must not be confused with, or replace,
-    // the existing "every bullet is atomic" rule — both coexist.
+    // The remaining invariants this rule never replaced still hold:
+    // every individual bullet stays whole (`ul.bullets li`), and a
+    // Role itself is still not one atomic block (`.role`) — a Role may
+    // split anywhere between bullets, including immediately before its
+    // own last one.
     $bulletRule = cssRuleBody($css, 'ul.bullets li');
     expect($bulletRule)->toContain('break-inside: avoid');
 
-    // And the whole-Role atomicity assertion above still holds — this
-    // rule is scoped to the last bullet only, never break-inside on
-    // .role itself.
     $roleRule = cssRuleBody($css, '.role');
     expect($roleRule)->not->toContain('break-inside');
+});
+
+// --- Continuation-page top safe area ----------------------------------------
+
+it('gives every continuation page a top safe area via @page margin-top, while page 1 keeps its margin at 0', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $css = renderResumePrintView($variant);
+
+    $pageRule = cssRuleBody($css, '@page');
+    expect($pageRule)->not->toBeNull()
+        ->and($pageRule)->toContain('size: letter')
+        ->and($pageRule)->toContain('margin: 0.4in 0 0 0');
+
+    $firstPageRule = cssRuleBody($css, '@page :first');
+    expect($firstPageRule)->not->toBeNull()
+        ->and($firstPageRule)->toContain('margin-top: 0');
+});
+
+it('leaves the .page div\'s own 0.75in padding — the side/bottom margin and page 1\'s top spacing — unchanged', function () {
+    [, $variant] = previewCandidateVariant();
+
+    $css = renderResumePrintView($variant);
+
+    $pageBoxRule = cssRuleBody($css, '.page');
+    expect($pageBoxRule)->not->toBeNull()
+        ->and($pageBoxRule)->toContain('padding: 0.75in');
 });
 
 it('never lets any section heading be stranded alone at the bottom of a page — a generic rule, not per-section', function () {
