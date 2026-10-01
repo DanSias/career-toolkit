@@ -138,8 +138,8 @@ final class JobicyDiscoveryProvider implements DiscoveryProviderContract
         return new DiscoveredJobCandidate(
             source: JobDiscoverySource::Jobicy,
             sourceJobId: (string) $sourceJobId,
-            company: $company,
-            title: $title,
+            company: $this->decodeEntities($company),
+            title: $this->decodeEntities($title),
             description: is_string($job['jobDescription'] ?? null) ? $this->htmlToPlainText($job['jobDescription']) : null,
             // jobDescription is the feed's full posting body — confirmed
             // live, not the short jobExcerpt field. See this class's
@@ -184,6 +184,19 @@ final class JobicyDiscoveryProvider implements DiscoveryProviderContract
         $plain = preg_replace('/\n{3,}/', "\n\n", trim($plain)) ?? $plain;
 
         return trim($plain);
+    }
+
+    /**
+     * Jobicy's `companyName`/`jobTitle` fields come through
+     * HTML-entity-encoded (confirmed live — e.g. "hims &#038; hers"
+     * instead of "hims & hers") even though they carry no markup of
+     * their own. A plain entity decode is enough; unlike
+     * htmlToPlainText() above, there are no tags to strip or block
+     * structure to preserve here.
+     */
+    private function decodeEntities(string $value): string
+    {
+        return html_entity_decode($value, ENT_QUOTES | ENT_HTML5);
     }
 
     private function parseTimestamp(mixed $value): ?CarbonImmutable

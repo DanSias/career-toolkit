@@ -80,6 +80,40 @@ it('converts jobDescription HTML to readable plain text, preserving headings and
         ->toContain('- Ship features.');
 });
 
+it('decodes HTML entities in companyName and jobTitle', function () {
+    Http::fake(['jobicy.test/*' => Http::response(['jobs' => [fakeJobicyJob([
+        'companyName' => 'hims &#038; hers',
+        'jobTitle' => 'Staff Engineer &amp; Architect',
+    ])]])]);
+
+    $candidate = (new JobicyDiscoveryProvider)->retrieve()[0];
+
+    expect($candidate->company)->toBe('hims & hers')
+        ->and($candidate->title)->toBe('Staff Engineer & Architect');
+});
+
+it('leaves ordinary company/title strings with no entities unchanged', function () {
+    Http::fake(['jobicy.test/*' => Http::response(['jobs' => [fakeJobicyJob([
+        'companyName' => 'Acme Corp',
+        'jobTitle' => 'Senior Backend Engineer',
+    ])]])]);
+
+    $candidate = (new JobicyDiscoveryProvider)->retrieve()[0];
+
+    expect($candidate->company)->toBe('Acme Corp')
+        ->and($candidate->title)->toBe('Senior Backend Engineer');
+});
+
+it('does not double-decode or corrupt a literal ampersand already present as text', function () {
+    Http::fake(['jobicy.test/*' => Http::response(['jobs' => [fakeJobicyJob([
+        'companyName' => 'R&D Labs',
+    ])]])]);
+
+    $candidate = (new JobicyDiscoveryProvider)->retrieve()[0];
+
+    expect($candidate->company)->toBe('R&D Labs');
+});
+
 it('requests the native geo=usa provider-side filter', function () {
     Http::fake(['jobicy.test/*' => Http::response(['jobs' => []])]);
 
@@ -135,3 +169,14 @@ it('throws on a persistent 500 after retries', function () {
     expect(fn () => (new JobicyDiscoveryProvider)->retrieve())
         ->toThrow(DiscoveryProviderException::class);
 });
+
+it('decodes numeric and named ampersands in both display fields', function (string $encoded, string $decoded) {
+    Http::fake(['jobicy.test/*' => Http::response(['jobs' => [fakeJobicyJob([
+        'companyName' => $encoded, 'jobTitle' => $encoded,
+    ])]])]);
+    $candidate = (new JobicyDiscoveryProvider)->retrieve()[0];
+    expect($candidate->company)->toBe($decoded)->and($candidate->title)->toBe($decoded);
+})->with([
+    ['hims &#038; hers', 'hims & hers'],
+    ['Foo &amp; Bar', 'Foo & Bar'],
+]);
