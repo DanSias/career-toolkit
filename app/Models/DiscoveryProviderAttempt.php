@@ -30,13 +30,14 @@ use Illuminate\Support\Carbon;
  * @property int|null $jobs_canonicalized
  * @property string|null $failure_category
  * @property string|null $failure_message
+ * @property string|null $failure_exception_class
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
 #[Fillable([
     'discovery_run_id', 'provider', 'status', 'started_at', 'finished_at',
     'candidates_retrieved', 'candidates_accepted', 'jobs_created', 'jobs_updated', 'jobs_canonicalized',
-    'failure_category', 'failure_message',
+    'failure_category', 'failure_message', 'failure_exception_class',
 ])]
 class DiscoveryProviderAttempt extends Model
 {

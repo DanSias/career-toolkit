@@ -11,6 +11,7 @@ use App\Models\KnownAtsBoard;
 use App\Support\JobDiscovery\RunJobDiscovery;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
 
 beforeEach(function () {
@@ -332,4 +333,30 @@ it('settles a run and its running attempt if orchestration fails outside candida
     } finally {
         DiscoveryProviderAttempt::flushEventListeners();
     }
+});
+
+it('retains structural diagnostics while excluding arbitrary exception secrets and payloads', function () {
+    Log::spy();
+    Http::fake([
+        'himalayas.app/*' => fn () => throw new RuntimeException('Safe test failure?app_key=secret-key Authorization: Bearer private-token {"payload":"sensitive-body"}'),
+        'api.adzuna.com/*' => Http::response(['results' => [adzunaJobFixture('survivor')]]),
+        'jobicy.com/*' => Http::response(['jobs' => [jobicyJobFixture(123)]]),
+    ]);
+    $run = (new RunJobDiscovery)->run();
+    $attempt = $run->providerAttempts->firstWhere('provider', JobDiscoverySource::Himalayas);
+    expect($run->status)->toBe(DiscoveryStatus::Partial)
+        ->and($attempt->status)->toBe(DiscoveryStatus::Failed)
+        ->and($attempt->failure_exception_class)->toBe(RuntimeException::class)
+        ->and($attempt->failure_message)->not->toContain('secret-key', 'private-token', 'sensitive-body')
+        ->and(JobPosting::count())->toBe(2);
+    Log::shouldHaveReceived('error')->once()->withArgs(function ($message, $context) use ($run) {
+        expect($context['provider'])->toBe('himalayas')
+            ->and($context['discovery_run_id'])->toBe($run->id)
+            ->and($context['exception'])->toBe(RuntimeException::class)
+            ->and($context['phase'])->toBe('retrieval')
+            ->and($context['exception_line'])->toBeInt()
+            ->and(json_encode([$message, $context]))->not->toContain('secret-key', 'private-token', 'sensitive-body');
+
+        return true;
+    });
 });

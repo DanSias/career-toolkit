@@ -20,6 +20,7 @@ use App\Support\JobDiscovery\Providers\DiscoveryProviderContract;
 use App\Support\JobDiscovery\Providers\DiscoveryProviderException;
 use App\Support\JobDiscovery\Providers\HimalayasDiscoveryProvider;
 use App\Support\JobDiscovery\Providers\JobicyDiscoveryProvider;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -131,7 +132,8 @@ final class RunJobDiscovery
         ]);
 
         $retrieved = $accepted = $created = $updated = $canonicalized = 0;
-        $failureCategory = $failureMessage = null;
+        $failureCategory = $failureMessage = $failureExceptionClass = null;
+        $candidate = null;
 
         try {
             $candidates = $provider->retrieve();
@@ -161,12 +163,26 @@ final class RunJobDiscovery
             }
         } catch (DiscoveryProviderException $e) {
             $failureCategory = 'provider_error';
+            $failureExceptionClass = $e::class;
             $failureMessage = $e->getMessage();
-        } catch (Throwable) {
-            // Never persist arbitrary exception messages: they can contain SQL,
-            // provider payloads or credential-bearing request URLs.
+        } catch (Throwable $e) {
+            // Arbitrary messages can contain credentials, SQL or full payloads.
+            // Keep structural diagnostics only; no exception object/trace arguments.
             $failureCategory = 'unexpected_error';
+            $failureExceptionClass = $e::class;
             $failureMessage = 'Unexpected discovery execution failure; completed candidate writes were retained.';
+
+            Log::error('Discovery provider attempt failed unexpectedly.', [
+                'discovery_run_id' => $discoveryRun->id,
+                'provider' => $source->value,
+                'exception' => $e::class,
+                'exception_file' => $e->getFile(),
+                'exception_line' => $e->getLine(),
+                'phase' => $candidate === null ? 'retrieval' : 'candidate_processing',
+                'candidate_identity_hash' => $candidate === null ? null : hash('sha256', $candidate->sourceJobId),
+                'candidates_retrieved' => $retrieved,
+                'candidates_accepted' => $accepted,
+            ]);
         }
 
         $attempt->update([
@@ -179,6 +195,7 @@ final class RunJobDiscovery
             'jobs_canonicalized' => $canonicalized,
             'failure_category' => $failureCategory,
             'failure_message' => $failureMessage,
+            'failure_exception_class' => $failureExceptionClass,
         ]);
     }
 
