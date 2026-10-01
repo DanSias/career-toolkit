@@ -32,6 +32,15 @@ final class FilterDiscoveredCandidates
             return false;
         }
 
+        // Title-only role-identity exclusions (SRE / Site Reliability /
+        // primarily DevOps). Checked against the TITLE, never the
+        // description: infrastructure terminology in a job description
+        // is common in legitimate product-engineering roles, while a
+        // title naming that role is a reliable identity signal.
+        if ($criteria->excludedTitleKeywords !== [] && $this->matchesAnyKeyword($candidate->title, $criteria->excludedTitleKeywords)) {
+            return false;
+        }
+
         if (! $this->acceptsRemotePreference($candidate, $criteria)) {
             return false;
         }

@@ -33,6 +33,22 @@ return [
             'junior', 'jr.', 'new grad', 'new graduate',
         ],
 
+        /*
+        | TITLE-ONLY role-identity exclusions: matched against the
+        | candidate's TITLE, never its description. Deliberately
+        | separate from `excluded_keywords` (which checks
+        | title+description) because DevOps/SRE terminology in a
+        | job DESCRIPTION is common in legitimate product-engineering
+        | roles and must not reject them. Keep this list narrow —
+        | obvious SRE/Site Reliability/primarily-DevOps role
+        | identities only, per the observed false positive
+        | "Principal Software Engineer, DevOps" that downstream
+        | analysis could not support.
+        */
+        'excluded_title_keywords' => [
+            'site reliability', 'sre', 'devops',
+        ],
+
         // 'remote_us' or 'any' — see FilterDiscoveredCandidates.
         'remote_preference' => 'remote_us',
 

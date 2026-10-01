@@ -37,6 +37,7 @@ function criteria(array $overrides = []): DiscoverySearchCriteria
     return new DiscoverySearchCriteria(
         keywords: $overrides['keywords'] ?? ['senior', 'software engineer'],
         excludedKeywords: $overrides['excludedKeywords'] ?? ['intern', 'junior'],
+        excludedTitleKeywords: $overrides['excludedTitleKeywords'] ?? [],
         remotePreference: $overrides['remotePreference'] ?? 'remote_us',
         allowedLocations: $overrides['allowedLocations'] ?? ['United States', 'US', 'Remote'],
         employmentType: array_key_exists('employmentType', $overrides) ? $overrides['employmentType'] : null,
@@ -167,4 +168,85 @@ it('rejects the observed CEO Office posting whose description mentions senior le
     // Test role matching independently of its also-ineligible geography.
     config(['job_discovery.search.remote_preference' => 'any']);
     expect((new FilterDiscoveredCandidates)->accepts($job, DiscoverySearchCriteria::fromConfig()))->toBeFalse();
+});
+
+it('rejects titles that clearly identify SRE / Site Reliability / primarily DevOps role identities', function (string $title) {
+    $c = candidate(['title' => $title]);
+
+    expect((new FilterDiscoveredCandidates)->accepts($c, criteria(['excludedTitleKeywords' => ['site reliability', 'sre', 'devops']])))
+        ->toBeFalse();
+})->with([
+    'the observed live false positive' => ['Principal Software Engineer, DevOps'],
+    'senior site reliability' => ['Senior Site Reliability Engineer'],
+    'site reliability' => ['Site Reliability Engineer'],
+    'senior devops' => ['Senior DevOps Engineer'],
+]);
+
+it('keeps accepting ordinary software-engineering titles under the same exclusions', function (string $title) {
+    $c = candidate(['title' => $title]);
+
+    $criteria = criteria([
+        'keywords' => ['senior', 'staff', 'software engineer', 'full stack'],
+        'excludedTitleKeywords' => ['site reliability', 'sre', 'devops'],
+    ]);
+
+    expect((new FilterDiscoveredCandidates)->accepts($c, $criteria))->toBeTrue();
+})->with([
+    'fullstack' => ['Senior Software Engineer, Fullstack'],
+    'backend' => ['Senior Software Engineer, Backend'],
+    'staff' => ['Staff Software Engineer'],
+    'full stack developer' => ['Full Stack Developer'],
+]);
+
+it('matches title-identity exclusions case-insensitively regardless of how each side is cased', function (string $title, string $keyword) {
+    $c = candidate(['title' => $title]);
+
+    expect((new FilterDiscoveredCandidates)->accepts($c, criteria(['excludedTitleKeywords' => [$keyword]])))
+        ->toBeFalse();
+})->with([
+    'uppercase phrase in the title' => ['Senior SITE RELIABILITY Engineer', 'site reliability'],
+    'camelcase title, mixed-case keyword' => ['Principal Software Engineer, DeVoPs', 'dEvOpS'],
+    'abbreviation title, mixed-case keyword' => ['Senior SRE', 'sRe'],
+]);
+
+it('does not reject a relevant title merely because the DESCRIPTION mentions DevOps / SRE / infrastructure terminology', function (string $description) {
+    $c = candidate(['title' => 'Senior Backend Software Engineer', 'description' => $description]);
+
+    // Title-only exclusions are configured; the excluded words appear in
+    // the description, so this only passes if the check never inspects
+    // description text.
+    expect((new FilterDiscoveredCandidates)->accepts($c, criteria(['excludedTitleKeywords' => ['site reliability', 'sre', 'devops']])))
+        ->toBeTrue();
+})->with([
+    'day-to-day tooling' => ['Work with the DevOps and SRE teams; Kubernetes, Terraform and AWS in everyday use.'],
+    'production support' => ['Occasionally rotate on site reliability on-call and support production infrastructure.'],
+    'no mention at all' => ['Build backend APIs and data pipelines.'],
+]);
+
+it('accepts an SRE-identified title when excludedTitleKeywords is empty (regression: an empty list excludes nothing, not everything)', function () {
+    $c = candidate(['title' => 'Senior Site Reliability Engineer']);
+
+    expect((new FilterDiscoveredCandidates)->accepts($c, criteria(['excludedTitleKeywords' => []])))->toBeTrue();
+});
+
+it('rejects the observed DevOps-titled posting under the actual repository configuration', function () {
+    // Exact title from the preserved live validation that downstream
+    // analysis later rated no_evidence on 30 of 47 findings.
+    $job = candidate([
+        'title' => 'Principal Software Engineer, DevOps',
+        'description' => 'Own AWS, Kubernetes, Terraform, and on-call production infrastructure.',
+    ]);
+
+    config(['job_discovery.search.remote_preference' => 'any']);
+    expect((new FilterDiscoveredCandidates)->accepts($job, DiscoverySearchCriteria::fromConfig()))->toBeFalse();
+});
+
+it('still accepts an ordinary full-stack title whose description mentions infrastructure, under the actual repository configuration', function () {
+    $job = candidate([
+        'title' => 'Senior Software Engineer, Fullstack',
+        'description' => 'Work with the DevOps and site reliability teams on Kubernetes, Terraform and AWS infrastructure.',
+    ]);
+
+    config(['job_discovery.search.remote_preference' => 'any']);
+    expect((new FilterDiscoveredCandidates)->accepts($job, DiscoverySearchCriteria::fromConfig()))->toBeTrue();
 });
